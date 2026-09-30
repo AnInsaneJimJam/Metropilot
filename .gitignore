@@ -1,0 +1,31 @@
+.secrets/
+cache/
+out/
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Future JavaScript builds and dependency trees
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+.vitepress/cache/
+.vitepress/dist/
+
+# Local infrastructure and generated operational artifacts
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.log
+*.db
+*.sqlite*
+artifacts/
+tmp/
+.DS_Store

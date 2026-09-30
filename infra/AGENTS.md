@@ -1,0 +1,19 @@
+# Infrastructure and operations
+
+Own future deployment definitions, network/IAM/secrets, runtime resource profiles, monitoring, backup and recovery configuration. Read [architecture](../architecture.md), [runtime research](../docs/research/runtime-and-security.md), [runtime](../docs/specs/runtime.md), and [security](../docs/specs/security.md).
+
+No infrastructure is provisioned during the scaffold task. Reference deployment is one AWS region with separate control, runtime tasks and executor, plus managed Postgres. Verify actual credits and full networking/database costs. Alibaba is an alternative after equivalent isolation/cost checks, not simultaneous multi-cloud scope.
+
+Runtime gets no signing/model/cloud secrets or DB role; allow only internal gateways. Pin images, use non-root/read-only/bounded resources, and test metadata/peer egress denial. API/executor identities and policy administration remain separate. Alerts alone are not spending caps.
+
+## Checklist
+
+- [ ] INF-1 / G1,G4: define local paper environment and reproducible pinned process/image builds.
+- [ ] INF-2 / G4: verify selected cloud account/region/credits/quotas and complete cost estimate.
+- [ ] INF-3 / G4: implement isolated tasks, IAM/secret separation, network restrictions and resource teardown.
+- [ ] INF-4 / G4,G6: implement global admission limits, usage tags, expiry enforcement and leak detection.
+- [ ] INF-5 / G8–G10: implement metrics/alerts, encrypted backups, restore and signer revocation drills.
+- [ ] INF-6 / G9: deploy approved web/docs/demo artifacts only after explicit deployment authorization.
+- [ ] INF-7 / G10: document named operational owners and measured recovery evidence.
+
+Dependencies: [API](../apps/api/AGENTS.md), [runtime](../apps/runtime/AGENTS.md), [executor](../apps/executor/AGENTS.md), and [verification](../docs/specs/verification.md). Tick only after observed infrastructure checks; templates alone do not establish isolation.
