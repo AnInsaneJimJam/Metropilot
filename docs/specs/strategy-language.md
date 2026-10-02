@@ -127,6 +127,8 @@ This fixture uses catalog entries `paper.WETH`, `paper.USD`, `paper.weth-usd`, a
 
 ## 6. AI block contract
 
+Owner clarification, 2026-10-02: AI does not author, choose or rewrite strategies. This block exists only when explicitly included by the user in their own strategy.
+
 AI is an optional typed transformation inside a workflow. Its prompt cannot invoke a signer or redefine constraints. `inputs` maps 1–16 safe names to typed expressions; untrusted observations are separately labeled data. `prompt` is plain text ≤ 4,000 characters, may refer to those input names, and uses no executable template expressions. The broker assembles system policy and data envelope; user text never overwrites those controls.
 
 `modelProfileRef` resolves at deployment to provider, exact model ID, endpoint region/workspace, allowed reasoning/thinking settings, output and context limits, and a rate-card version. Advanced users can create supported profile settings through the catalog-backed form. Provider capabilities determine whether a reasoning level exists; unsupported settings are validation errors. Model replacement or fallback requires a new explicit profile/revision; never silently change it after a failed call.

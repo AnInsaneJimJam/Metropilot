@@ -20,6 +20,7 @@ This plan is a handoff for a team, not a request to implement during the scaffol
 | Work item | Branch | Writable scope | Prerequisites |
 | --- | --- | --- | --- |
 | G1 workspace skeleton (PKG-1, APPS-1, INF-1 progress; CI-1) | `master` | Root manifests, `pnpm-lock.yaml`, `tsconfig.json`, `.node-version`, `.env.example`, stub `package.json` per app/package, `infra/compose.yaml`, `.github/`, `tests/workspace.test.ts` | G0 |
+| Strategy-language implementation research — Codex, 2026-10-02 | `master` (owner requested scoped commit and push) | `docs/research/strategy-language-build-guide.md`, strategy coverage research, language scope clarification, documentation navigation and this claim | Research complete; documentation links and diff checks passed. Current `strategy/1` remains authoritative. No code, dependency, language expansion or gate completion implied. |
 
 These are roles, not required headcount. A smaller team combines roles. Before two contributors touch `apps/web/`, the current owner explicitly transfers the editor file scope; never run concurrent writers just because roles differ. Database migrations and schema changes have a single scheduled owner, even when several roles propose them.
 

@@ -17,4 +17,8 @@ Read the [product specification](specs/product.md) for the user journey, then th
 
 [User guide source](guide/README.md) belongs to the future public docs website. Internal specifications are not public tutorials. Navigation, runnable examples, and screenshots are added when the application exists, and must describe observed behavior.
 
+[Strategy rehearsal and coverage](research/strategy-rehearsal-and-coverage.md) audits public strategies against the current language and records a proposed visual rehearsal.
+
+[Strategy-language build guide](research/strategy-language-build-guide.md) covers compiler/interpreter design, exact arithmetic, Blockly integration, recovery, semantic gaps and the implementation/test sequence.
+
 No design is a promise of tested functionality. The implementation status is [goals.md](../goals.md).
