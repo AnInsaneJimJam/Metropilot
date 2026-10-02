@@ -7,6 +7,7 @@ Scope: independently started processes and website builds. Read [architecture](.
 ## Checklist
 
 - [ ] APPS-1 / G1: define distinct start/build/test entries only when implementation begins.
+  - Progress 2026-10-02 (`master`): private ESM stub manifests for all five apps, covered by the root `pnpm check`. They have no scripts yet because no app has an entry point. Remaining: per-app start/build/test entries once each app has source.
 - [ ] APPS-2 / G4: prove process credentials/network access match architecture.
 - [ ] APPS-3 / G7–G8: verify the end-to-end contracts across apps without private source imports.
 

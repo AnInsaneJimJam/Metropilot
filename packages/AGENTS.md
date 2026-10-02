@@ -7,6 +7,7 @@ Packages exist for real app consumers or connector distribution. Read [design po
 ## Checklist
 
 - [ ] PKG-1 / G1: establish dependency direction, exports and schema-derived types.
+  - Progress 2026-10-02 (`master`): private ESM stub manifests for all five packages. [tests/workspace.test.ts](../tests/workspace.test.ts) fails if a package depends on an app or uses a non-exact external version. Remaining: `exports` maps (added with first source) and schema-derived types (CON-1).
 - [ ] PKG-2 / G2–G6: verify pure modules through their public interfaces and money modules against Postgres.
 - [ ] PKG-3 / G7–G8: prove browser bundles exclude secrets/server dependencies and consumers use one contract version.
 

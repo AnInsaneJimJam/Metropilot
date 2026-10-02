@@ -1,0 +1,7 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Exact versions only; ranges would let the lockfile and manifests drift.
+savePrefix: ''
+engineStrict: true

@@ -2,7 +2,7 @@
 
 A managed platform for retail traders to configure, test, and run trading agents on Monad without setting up servers, model accounts, protocol integrations, or a programming environment.
 
-**Status: architecture and repository scaffold only.** There is no application, executable configuration, installed dependency, deployed infrastructure, or production wallet yet. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
+**Status: architecture, scaffold and G1 workspace skeleton (in progress).** There is no application, schema, deployed infrastructure, or production wallet yet; only pinned workspace tooling, a local database definition and CI exist. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
 
 ## The product
 
@@ -58,4 +58,13 @@ The initial stack is a TypeScript pnpm workspace, React/Vite, Blockly, Fastify o
 
 Read the root and nearest scoped `AGENTS.md`. Claim a workstream in `plan.md` before editing shared contracts. Implement only after the documentation-only phase ends through a new implementation request. Mark tasks complete only with working behavior and linked verification evidence; a design paragraph is not an implemented feature. Do not commit real credentials, private keys, user prompts, or wallet exports.
 
-There are intentionally no install or start commands yet. Dependency manifests and runnable checks are the first implementation gate, not pretend setup steps in this scaffold.
+## Development setup
+
+The G1 workspace skeleton exists. There are no schemas, migrations or application features yet, so nothing can be started. Requirements: Node 24.21.0 (`.node-version`; other versions are rejected at install), pnpm via the `packageManager` pin (`corepack enable`), and Docker for the local database.
+
+```sh
+pnpm install --frozen-lockfile
+pnpm check                 # strict typecheck + node:test
+cp .env.example .env       # then change POSTGRES_PASSWORD
+pnpm db:up                 # local Postgres 17 on 127.0.0.1; pnpm db:down stops it
+```
