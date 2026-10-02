@@ -13,3 +13,5 @@ Use JSON Schema 2020-12 as source of truth; generated TypeScript types are not a
 - [ ] CON-5 / G1–G8: verify compatibility and consumer generation before changing a contract.
 
 No prerequisite beyond G0. After CON-1/2, strategy, API, accounting and connector work can proceed in parallel with disjoint ownership. Tick only with schema validation evidence; a Markdown table is not an implemented schema.
+
+Progress 2026-10-02: closed `strategy/1` grammar and `strategy-run/1` checkpoint definitions, Ajv validators and schema-derived types exist. `pnpm generate` regenerates ignored types; the normative threshold fixture passes the [language checks](../strategy/src/strategy.test.ts). CON-1/2 remain open for other domain schemas/fixtures.

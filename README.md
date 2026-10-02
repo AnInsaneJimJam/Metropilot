@@ -2,7 +2,7 @@
 
 A managed platform for retail traders to configure, test, and run trading agents on Monad without setting up servers, model accounts, protocol integrations, or a programming environment.
 
-**Status: architecture, scaffold and G1 workspace skeleton (in progress).** There is no application, schema, deployed infrastructure, or production wallet yet; only pinned workspace tooling, a local database definition and CI exist. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
+**Status: workspace skeleton and first local strategy-language core.** Strategy schemas, generated types, AST validation and resumable synthetic execution exist. The Blockly editor, hosted application, deployed infrastructure and production wallet remain pending. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
 
 ## The product
 
@@ -60,11 +60,14 @@ Read the root and nearest scoped `AGENTS.md`. Claim a workstream in `plan.md` be
 
 ## Development setup
 
-The G1 workspace skeleton exists. There are no schemas, migrations or application features yet, so nothing can be started. Requirements: Node 24.21.0 (`.node-version`; other versions are rejected at install), pnpm via the `packageManager` pin (`corepack enable`), and Docker for the local database.
+The G1 workspace skeleton and first local language core exist. There are no migrations or hosted application yet. Requirements: pnpm 12.8.1 (the `packageManager` pin), and Docker only for the local database. `pnpm install` downloads the exact Node 24.21.0 runtime declared in `devEngines.runtime`; project scripts use that local runtime even if your shell has another Node version. `.node-version` also pins CI. See [pnpm runtime management](https://pnpm.io/package_json#devenginesruntime).
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm check                 # strict typecheck + node:test
+pnpm check                 # generate schema types, strict typecheck + node:test
+pnpm strategy:demo         # synthetic threshold-sale execution; no network or wallet
 cp .env.example .env       # then change POSTGRES_PASSWORD
 pnpm db:up                 # local Postgres 17 on 127.0.0.1; pnpm db:down stops it
 ```
+
+Language entry points and implemented semantics: [strategy specification](docs/specs/strategy-language.md#9-first-local-implementation-2026-10-02).

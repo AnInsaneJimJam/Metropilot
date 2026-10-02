@@ -14,3 +14,5 @@ Keep Blockly workspace metadata separate from executable JSON. No generated-Java
 - [ ] STR-6 / G2–G6: pass roundtrip, crossing/cooldown, stale data, rounding, replay and adversarial AST checks.
 
 Prerequisite: [contracts](../contracts/AGENTS.md). Coordinate web integration scope with [web](../../apps/web/AGENTS.md); transport/process wrapper belongs to [runtime](../../apps/runtime/AGENTS.md). Tick after behavior and runnable check evidence.
+
+Progress 2026-10-02: first AST-only core supports closed validation, exact expressions, price/schedule transitions, branch/repeat/stop and resumable swap/notification commands. `pnpm check` and `pnpm strategy:demo` verify [synthetic tests](src/strategy.test.ts). STR-1–6 remain open: Blockly, scoped read/AI bindings, catalog records and all presets still require implementation; no hosted recovery or real trade is claimed.

@@ -29,3 +29,6 @@ coverage/
 artifacts/
 tmp/
 .DS_Store
+
+# Schema-derived types regenerated before checking/building
+packages/contracts/src/generated.ts

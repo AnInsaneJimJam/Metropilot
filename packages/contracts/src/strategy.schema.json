@@ -1,0 +1,1158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.local/strategy/1",
+  "title": "Strategy",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "strategy/1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "triggers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Trigger"
+      },
+      "minItems": 1,
+      "maxItems": 3
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "maxStepsPerRun": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "maxAiCallsPerRun": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "maxIntentsPerRun": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "maxActiveSecondsPerRun": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      },
+      "required": [
+        "maxStepsPerRun",
+        "maxAiCallsPerRun",
+        "maxIntentsPerRun",
+        "maxActiveSecondsPerRun"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "triggers",
+    "limits"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "Price": {
+      "type": "object",
+      "properties": {
+        "baseAssetRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+        },
+        "quoteUnit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+        },
+        "decimal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{0,17}[1-9])?$"
+        }
+      },
+      "required": [
+        "baseAssetRef",
+        "quoteUnit",
+        "decimal"
+      ],
+      "additionalProperties": false
+    },
+    "Money": {
+      "type": "object",
+      "properties": {
+        "assetRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+        },
+        "atomic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "assetRef",
+        "atomic"
+      ],
+      "additionalProperties": false
+    },
+    "Amount": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "fixed"
+            },
+            "atomic": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          },
+          "required": [
+            "kind",
+            "atomic"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "positionBps"
+            },
+            "bps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            }
+          },
+          "required": [
+            "kind",
+            "bps"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Expression": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "valueType": {
+              "const": "Boolean"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "valueType",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "valueType": {
+              "const": "Integer"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "kind",
+            "valueType",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "valueType": {
+              "const": "Decimal"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{0,17}[1-9])?$"
+            }
+          },
+          "required": [
+            "kind",
+            "valueType",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "valueType": {
+              "const": "Money"
+            },
+            "value": {
+              "$ref": "#/$defs/Money"
+            }
+          },
+          "required": [
+            "kind",
+            "valueType",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "valueType": {
+              "const": "Price"
+            },
+            "value": {
+              "$ref": "#/$defs/Price"
+            }
+          },
+          "required": [
+            "kind",
+            "valueType",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "valueType": {
+              "const": "Timestamp"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 24,
+              "maxLength": 24,
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+            }
+          },
+          "required": [
+            "kind",
+            "valueType",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "valueType": {
+              "const": "Enum"
+            },
+            "value": {
+              "type": "string",
+              "enum": [
+                "allow",
+                "skip"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "valueType",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "ref"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "field"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "field"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "compare"
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "eq",
+                "ne",
+                "lt",
+                "lte",
+                "gt",
+                "gte"
+              ]
+            },
+            "left": {
+              "$ref": "#/$defs/Expression"
+            },
+            "right": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "kind",
+            "operator",
+            "left",
+            "right"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "logical"
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "and",
+                "or",
+                "not"
+              ]
+            },
+            "operands": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minItems": 1,
+              "maxItems": 8
+            }
+          },
+          "required": [
+            "kind",
+            "operator",
+            "operands"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "arithmetic"
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "add",
+                "subtract",
+                "multiply",
+                "divide"
+              ]
+            },
+            "left": {
+              "$ref": "#/$defs/Expression"
+            },
+            "right": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "kind",
+            "operator",
+            "left",
+            "right"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Statement": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "read"
+            },
+            "connectorRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "arguments": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "maxProperties": 16,
+              "additionalProperties": {
+                "$ref": "#/$defs/Expression"
+              }
+            },
+            "bind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "connectorRef",
+            "operation",
+            "arguments",
+            "bind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "ai.decide"
+            },
+            "modelProfileRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "inputs": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "maxProperties": 16,
+              "additionalProperties": {
+                "$ref": "#/$defs/Expression"
+              },
+              "minProperties": 1
+            },
+            "outputSchemaRef": {
+              "type": "string",
+              "enum": [
+                "decision/1",
+                "summary/1"
+              ]
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "maxOutputTokens": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8192
+            },
+            "bind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "modelProfileRef",
+            "prompt",
+            "inputs",
+            "outputSchemaRef",
+            "timeoutSeconds",
+            "maxOutputTokens",
+            "bind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "if"
+            },
+            "condition": {
+              "$ref": "#/$defs/Expression"
+            },
+            "then": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Statement"
+              },
+              "minItems": 0,
+              "maxItems": 100
+            },
+            "else": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Statement"
+              },
+              "minItems": 0,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "condition",
+            "then",
+            "else"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "repeat"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "body": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Statement"
+              },
+              "minItems": 0,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "count",
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "swap.exactInput"
+            },
+            "connectorRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "tokenInRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "tokenOutRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "amount": {
+              "$ref": "#/$defs/Amount"
+            },
+            "maxSlippageBps": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "connectorRef",
+            "tokenInRef",
+            "tokenOutRef",
+            "amount",
+            "maxSlippageBps"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "notify"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "inputs": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "maxProperties": 16,
+              "additionalProperties": {
+                "$ref": "#/$defs/Expression"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "message",
+            "inputs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "stop"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Trigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "schedule"
+            },
+            "intervalSeconds": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 31536000
+            },
+            "anchorAt": {
+              "type": "string",
+              "minLength": 24,
+              "maxLength": 24,
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+            },
+            "body": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Statement"
+              },
+              "minItems": 0,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "intervalSeconds",
+            "anchorAt",
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "price.crossesAbove"
+            },
+            "feedRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "threshold": {
+              "$ref": "#/$defs/Price"
+            },
+            "maxAgeSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            },
+            "cooldownSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 31536000
+            },
+            "body": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Statement"
+              },
+              "minItems": 0,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "feedRef",
+            "threshold",
+            "maxAgeSeconds",
+            "cooldownSeconds",
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "price.crossesBelow"
+            },
+            "feedRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "threshold": {
+              "$ref": "#/$defs/Price"
+            },
+            "maxAgeSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            },
+            "cooldownSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 31536000
+            },
+            "body": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Statement"
+              },
+              "minItems": 0,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "feedRef",
+            "threshold",
+            "maxAgeSeconds",
+            "cooldownSeconds",
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": {
+              "const": "connector.event"
+            },
+            "connectorRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "eventType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,119}$"
+            },
+            "filters": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "maxProperties": 16,
+              "additionalProperties": {
+                "$ref": "#/$defs/Expression"
+              }
+            },
+            "body": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Statement"
+              },
+              "minItems": 0,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "connectorRef",
+            "eventType",
+            "filters",
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Frame": {
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "maxLength": 64
+        },
+        "branch": {
+          "enum": [
+            "body",
+            "then",
+            "else"
+          ]
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "iteration": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 9
+        }
+      },
+      "required": [
+        "ownerId",
+        "branch",
+        "index",
+        "iteration"
+      ],
+      "additionalProperties": false
+    },
+    "Waiting": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "maxLength": 64
+        },
+        "iterationPath": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          },
+          "maxItems": 2
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "kind": {
+          "enum": [
+            "swap.exactInput",
+            "notify"
+          ]
+        }
+      },
+      "required": [
+        "nodeId",
+        "iterationPath",
+        "key",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "RunCheckpoint": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "strategy-run/1"
+        },
+        "strategyHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 66
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 66
+        },
+        "deploymentRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sourceEventKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "triggerId": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "maxLength": 64
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Frame"
+          },
+          "maxItems": 12
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "intents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "activeMillis": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "status": {
+          "enum": [
+            "running",
+            "waiting",
+            "completed",
+            "failed"
+          ]
+        },
+        "waiting": {
+          "$ref": "#/$defs/Waiting"
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "nodeId": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "nodeId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "strategyHash",
+        "runId",
+        "deploymentRevision",
+        "sourceEventKey",
+        "triggerId",
+        "frames",
+        "steps",
+        "intents",
+        "activeMillis",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

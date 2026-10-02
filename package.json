@@ -8,12 +8,22 @@
     "node": ">=24.21.0 <25"
   },
   "scripts": {
-    "check": "tsc -p tsconfig.json && node --test",
+    "check": "pnpm generate && tsc -p tsconfig.json && node --test",
     "db:up": "docker compose --project-directory . -f infra/compose.yaml up -d --wait",
-    "db:down": "docker compose --project-directory . -f infra/compose.yaml down"
+    "db:down": "docker compose --project-directory . -f infra/compose.yaml down",
+    "generate": "node packages/contracts/src/generate.mjs",
+    "strategy:demo": "pnpm generate && node packages/strategy/src/demo.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.0",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "json-schema-to-typescript": "16.0.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.21.0",
+      "onFail": "download"
+    }
   }
 }

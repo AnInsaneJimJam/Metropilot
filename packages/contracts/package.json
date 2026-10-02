@@ -2,5 +2,11 @@
   "name": "@monad-hack/contracts",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "ajv": "8.20.0"
+  }
 }
