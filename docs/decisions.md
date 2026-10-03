@@ -20,6 +20,31 @@ Baseline: 2026-10-01. These engineering decisions are made for the requested sca
 | D12 | No custom smart contract or token initially | Wallet infrastructure and accounting cover current requirements | [Architecture](../architecture.md) |
 | D13 | No application code in current task | User asked for documents and scaffolding only | [Goals](../goals.md) |
 
+### G2 editor decisions, 2026-10-03
+
+Made by the editor owner (TathagatGupta98); see the [plan claim](../plan.md#active-claims). They refine D03 and D09 without replacing them. Decisions about implementation are labelled pending until their phase passes checks.
+
+| ID | Decision | Reason / consequence | Authoritative detail |
+| --- | --- | --- | --- |
+| D14 | Save submits the Blockly workspace and the strategy document together. The server converts the workspace again and rejects a hash mismatch. | The browser preview is not trusted. G2 ships the shared converter; the save endpoint itself is G3. | [Language §1, §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D15 | The workspace↔strategy converter lives in `packages/strategy/src/workspace/` and is imported by web, API and runtime. | One converter means identical hashes everywhere. The editor owner writes this sub-folder inside the engine package. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D16 | The converter is a pure walk over `Blockly.serialization.workspaces.save` JSON, with no Blockly or jsdom on the server. | A small dependency surface and no DOM on the server. Block-shape changes need converter changes. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D17 | Rookie and advanced share the same blocks and toolbox. Rookie only adds stricter limits: paper only, schedule ≥ 60 s, slippage ≤ 50 bps, ≤ 1 AI call and ≤ 1 intent per run. | Lets users grow without switching editors. Rookie limits are checked in the editor and at deployment (G3). | [Product modes](specs/product.md#modes) |
+| D18 | One undeletable root **Strategy** block holds the triggers, stacked in declaration order. | Trigger order is behaviour; canvas position must never change it. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D19 | The editor generates legal node IDs (`^[A-Za-z][A-Za-z0-9_-]{0,63}$`, e.g. `b` + 10 base36 characters) and uses them as Blockly IDs. Pasted blocks get fresh IDs. | One ID in editor, AST, errors and logs. Source maps link expression blocks, which have no AST ID. | [Language §2, §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D20 | Disabling blocks is not offered, and the converter rejects disabled blocks. | Replaces the earlier "disabled blocks kept as metadata" rule: hidden, non-executing logic confuses beginners. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D21 | An empty trigger body is an error in the editor, the schema (`minItems: 1`) and the compiler. | A trigger that does nothing is always a mistake. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D22 | Users type amounts in human units ("0.25 WETH"). They are converted exactly to atomic strings using catalog decimals (MON/WETH 18, USD 6). | No floats anywhere. Extra precision is an error, never rounded. | [Language §3, §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D23 | New swap blocks default to 30 bps maximum slippage. The rookie maximum is 50 bps; the platform maximum stays 100 bps (policy). | Monad's fast finality means quotes go stale less, so a tighter default is safe. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D24 | The schema schedule minimum becomes 10 s, allowed only for paper advanced. Rookie and all live deployments still need ≥ 60 s. | Faster paper iteration. Mode floors are checked by the editor and at deployment (G3). | [Language §4, §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D25 | Native MON gas guard: the compiler rejects `positionBps: 10000` when `tokenIn` is native (`POLICY_DENIED`), and the editor warns. | Selling all MON would strand the agent without gas. The executor still enforces the real reserve. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D26 | The paper catalog offers two swap venues: Uniswap v3 and Kuru (a Monad-native orderbook). | Lets people compare venues in paper mode. Live still starts with one verified route (D09, E04). | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D27 | Price triggers read a 30 s pool TWAP computed over finalized Monad blocks, not spot price. | One large trade can't fake a crossing. Block cadence and finality depth are catalog values, never constants. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D28 | The next engine scope is `read`, `ai.decide` and named values (`ref`/`field`), which is enough for all four presets. Connector events come later. | Unblocks the remaining two presets without widening the language. | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D29 | G2 includes a Rehearse panel that plays synthetic finalized-block prices through the engine and highlights the blocks as they run. | Users can test behaviour before deploying. It is always labelled "Synthetic rehearsal — not a paper or live fill". | [Language §9](specs/strategy-language.md#editor-decisions-2026-10-03) |
+| D30 | Root files change only where the editor is blocked: lockfile entries, root `tsconfig.json` exclusion and web scripts. The lockfile owner is told directly. | Respects the root lockfile/tsconfig single-writer claim. | [Plan](../plan.md#active-claims) |
+| D31 | Pin exact editor versions with no `^`: blockly 13.3.0, react/react-dom 19.3.0, vite 8.3.2, @vitejs/plugin-react 6.1.1, @playwright/test 1.63.0, @types/react(-dom) 19.3.0. Rely on Blockly 13's built-in keyboard navigation and drop `@blockly/keyboard-navigation`. | Rechecked on npm on 2026-10-03. Blockly 13 is keyboard and screen-reader accessible by default; the plugin (3.0.5) peers only Blockly 12. Recheck at install. | [Blockly v13 announcement](https://groups.google.com/g/blockly-announce/c/U9-gdZN5NvM) |
+
 ## External gates and fallback behavior
 
 | ID | Needed evidence | Owner / before | Fallback if unavailable |

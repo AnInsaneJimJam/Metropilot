@@ -12,11 +12,11 @@ The latest brief chooses custody: the platform can authorize transactions on the
 
 | Mode | Editable | Defaults and restrictions |
 | --- | --- | --- |
-| Rookie | Preset parameters, allowed connectors, schedule, amount, lower spending limits; optional supported model choice | Paper by default, reviewed presets, conservative limits, short tutorial, explicit promotion to live |
+| Rookie | Same blocks and toolbox as advanced (decision D17, 2026-10-03), usually starting from a preset; optional supported model choice | Stricter limits only: paper only, schedule ≥ 60 s, slippage ≤ 50 bps, at most 1 AI call and 1 intent per run; reviewed presets, short tutorial, explicit promotion to live |
 | Advanced | Full supported block vocabulary, model/prompt/reasoning settings, capabilities, budget allocation, resource profile within catalog | Same hard platform safety limits; no arbitrary executable uploads, endpoints, shell, unlimited spend, or key access |
 | Connector-only | Operator configuration and external runtime | Distributed separately after hosted MVP; keys/hosting/policy are the operator's responsibility; no hosted custody or free model entitlement |
 
-Rookie and advanced compile to the same strategy format. Switching modes preserves the document; an unsupported rookie configuration remains advanced rather than being silently simplified. Sandbox/live is a separate axis from rookie/advanced.
+Rookie and advanced compile to the same strategy format and use the same editor; rookie differs only by the stricter limits above, checked in the editor and again at deployment. Switching modes preserves the document; a document outside rookie limits stays advanced rather than being silently simplified. Sandbox/live is a separate axis from rookie/advanced.
 
 ## Onboarding contract
 
