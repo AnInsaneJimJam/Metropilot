@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { PROFILE_LIMITS } from '@monad-hack/strategy';
 import type { Experience } from '@monad-hack/strategy';
 import type { Validation } from './validation.ts';
@@ -13,6 +14,8 @@ interface Props {
   readonly onFocusBlock: (blockId: string) => void;
   readonly onLoadPreset: (preset: Preset) => void;
   readonly onStartTutorial: () => void;
+  /** The rehearse section, shown under the checks. */
+  readonly children?: ReactNode;
 }
 
 function Status({ validation, experience }: Pick<Props, 'validation' | 'experience'>) {
@@ -22,7 +25,7 @@ function Status({ validation, experience }: Pick<Props, 'validation' | 'experien
   return <p className="status-error">{count === 1 ? '1 problem' : `${count} problems`} to fix{validation.program ? ` (it compiles, but not within ${experience} limits)` : ''}.</p>;
 }
 
-export function StrategyPanel({ experience, onExperience, validation, onFocusBlock, onLoadPreset, onStartTutorial }: Props) {
+export function StrategyPanel({ experience, onExperience, validation, onFocusBlock, onLoadPreset, onStartTutorial, children }: Props) {
   const [presetId, setPresetId] = useState(PRESETS[0]?.id ?? '');
   const preset = PRESETS.find(p => p.id === presetId);
   const limits = validation?.strategy?.limits;
@@ -73,6 +76,8 @@ export function StrategyPanel({ experience, onExperience, validation, onFocusBlo
         <h3>Strategy hash</h3>
         {validation?.program ? <code className="hash">{validation.program.hash}</code> : <p className="muted">None yet.</p>}
       </section>
+
+      {children}
 
       <section aria-labelledby="presets-heading">
         <h2 id="presets-heading">Presets</h2>

@@ -5,6 +5,8 @@ import { parseSource } from './json.ts';
 import { LanguageError } from './errors.ts';
 import { atomic, decimal, expressionType, timestamp } from './expression.ts';
 export interface Catalog {
+  // Block cadence per network: rehearsal and event ingestion read it here instead of hard-coding it.
+  readonly networks: Readonly<Record<string, { readonly blockMillis: number; readonly finalityBlocks: number }>>;
   readonly assets: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live'; readonly decimals: number; readonly native?: true }>>;
   readonly feeds: Readonly<Record<string, { readonly baseAssetRef: string; readonly quoteUnit: string; readonly source: 'poolTwap'; readonly connectorRef: string; readonly windowSeconds: number; readonly finality: 'finalized' }>>;
   readonly connectors: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live'; readonly version: string; readonly venue: 'uniswap-v3' | 'kuru'; readonly actions: readonly string[] }>>;
@@ -112,6 +114,8 @@ export async function compileStrategy(source: string, catalog: Catalog): Promise
   compiled.add(result); return result;
 }
 export const syntheticCatalog: Catalog = freeze({
+  // Monad: 300 ms minimum block time, finalized 2 blocks later (docs.monad.xyz MonadBFT page, rechecked 2026-10-03).
+  networks: { 'paper-monad': { blockMillis: 300, finalityBlocks: 2 } },
   assets: {
     'paper.MON': { networkRef: 'paper-monad', mode: 'paper', decimals: 18, native: true },
     'paper.WETH': { networkRef: 'paper-monad', mode: 'paper', decimals: 18 },

@@ -5,6 +5,7 @@ import type { Experience } from '@monad-hack/strategy';
 import { ensureRoot, injectOptions, setUpBlockly } from './blocks/index.ts';
 import { loadPreset, PRESETS } from './presets/index.ts';
 import type { Preset } from './presets/index.ts';
+import { RehearsePanel } from './rehearse/RehearsePanel.tsx';
 import { StrategyPanel } from './StrategyPanel.tsx';
 import { focusBlock, useLiveValidation } from './useLiveValidation.ts';
 
@@ -38,7 +39,9 @@ export function EditorPage() {
     <main className="editor">
       <div ref={canvas} className="editor-canvas" role="region" aria-label="Strategy blocks canvas" />
       <StrategyPanel experience={experience} onExperience={setExperience} validation={validation}
-        onFocusBlock={onFocusBlock} onLoadPreset={onLoadPreset} onStartTutorial={onStartTutorial} />
+        onFocusBlock={onFocusBlock} onLoadPreset={onLoadPreset} onStartTutorial={onStartTutorial}>
+        <RehearsePanel workspace={workspace} program={validation?.program} />
+      </StrategyPanel>
     </main>
   );
 }

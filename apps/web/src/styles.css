@@ -7,11 +7,12 @@
   --ok: #1d6f42;
   --error: #b42318;
   --link: #1f5fbf;
+  --synthetic: #8a4b00;
   color-scheme: light dark;
   font-family: system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #16171a; --fg: #ececf0; --muted: #a2a5ad; --border: #33353b; --paper: #5bc78a; --ok: #5bc78a; --error: #ff8a80; --link: #8ab4ff; }
+  :root { --bg: #16171a; --fg: #ececf0; --muted: #a2a5ad; --border: #33353b; --paper: #5bc78a; --ok: #5bc78a; --error: #ff8a80; --link: #8ab4ff; --synthetic: #ffb35c; }
 }
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); }
@@ -47,6 +48,14 @@ button.link { display: inline; background: none; border: 0; padding: 0; margin: 
 .step-done::marker { content: '✓  '; }
 .tutorial table { border-collapse: collapse; font-size: 0.8rem; }
 .tutorial th, .tutorial td { border: 1px solid var(--border); padding: 2px 6px; text-align: left; }
+.synthetic-label { border: 1px dashed var(--synthetic); color: var(--synthetic); border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 0.8rem; }
+.rehearse-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rehearse-controls select { width: auto; }
+.rehearse-log { max-height: 220px; overflow: auto; padding-left: 0; list-style: none; font-size: 0.8rem; border: 1px solid var(--border); border-radius: 4px; margin: 6px 0; }
+.rehearse-log li { padding: 2px 6px; border-bottom: 1px solid var(--border); }
+.rehearse-log .event-fire, .rehearse-log .event-settled, .rehearse-log .event-completed { color: var(--ok); }
+.rehearse-log .event-failed { color: var(--error); }
+.rehearse-log .event-pending, .rehearse-log .event-non-action { color: var(--muted); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 720px) {
   .editor { flex-direction: column; }
