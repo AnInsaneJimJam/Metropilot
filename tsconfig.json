@@ -26,5 +26,8 @@
     "apps/*/src",
     "packages/*/src",
     "tests"
+  ],
+  "exclude": [
+    "apps/web"
   ]
 }

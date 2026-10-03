@@ -8,10 +8,11 @@
     "node": ">=24.21.0 <25"
   },
   "scripts": {
-    "check": "pnpm generate && tsc -p tsconfig.json && node --test",
+    "check": "pnpm generate && tsc -p tsconfig.json && pnpm --filter @monad-hack/web typecheck && node --test",
     "db:up": "docker compose --project-directory . -f infra/compose.yaml up -d --wait",
     "db:down": "docker compose --project-directory . -f infra/compose.yaml down",
     "generate": "node packages/contracts/src/generate.mjs",
+    "web:dev": "pnpm --filter @monad-hack/web dev",
     "strategy:demo": "pnpm generate && node packages/strategy/src/demo.ts"
   },
   "devDependencies": {
