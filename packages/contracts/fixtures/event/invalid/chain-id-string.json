@@ -1,0 +1,29 @@
+{
+  "description": "chainId is an integer",
+  "expect": {
+    "fieldPath": "/sourceKey/chainId",
+    "keyword": "type"
+  },
+  "document": {
+    "schemaVersion": "event/1",
+    "source": "paper.uniswap",
+    "networkRef": "monad-testnet",
+    "sourceKey": {
+      "kind": "chainLog",
+      "chainId": "10143",
+      "blockNumber": "1234567",
+      "blockHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "txHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "logIndex": 3,
+      "finality": "finalized"
+    },
+    "observedAt": "2026-10-01T12:00:00.000Z",
+    "receivedAt": "2026-10-01T12:00:01.250Z",
+    "payloadType": "pool.swap",
+    "payload": {
+      "amount0": "-1000000000000000000",
+      "amount1": "2500000000"
+    },
+    "provenanceHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}

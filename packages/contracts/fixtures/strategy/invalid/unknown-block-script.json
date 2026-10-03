@@ -1,0 +1,45 @@
+{
+  "description": "arbitrary code block",
+  "expect": {
+    "fieldPath": "/triggers/0/body/0",
+    "keyword": "discriminator"
+  },
+  "document": {
+    "schemaVersion": "strategy/1",
+    "id": "threshold_sale",
+    "name": "Paper threshold partial sale",
+    "triggers": [
+      {
+        "id": "crossing",
+        "type": "price.crossesAbove",
+        "feedRef": "paper.weth-usd",
+        "threshold": {
+          "baseAssetRef": "paper.WETH",
+          "quoteUnit": "USD",
+          "decimal": "2500"
+        },
+        "maxAgeSeconds": 30,
+        "cooldownSeconds": 3600,
+        "body": [
+          {
+            "id": "run_js",
+            "type": "script",
+            "source": "process.exit(1)"
+          },
+          {
+            "id": "record_result",
+            "type": "notify",
+            "message": "Threshold sale settled in paper mode.",
+            "inputs": {}
+          }
+        ]
+      }
+    ],
+    "limits": {
+      "maxStepsPerRun": 100,
+      "maxAiCallsPerRun": 1,
+      "maxIntentsPerRun": 1,
+      "maxActiveSecondsPerRun": 60
+    }
+  }
+}

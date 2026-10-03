@@ -1,0 +1,218 @@
+{
+  "description": "calendar-invalid date",
+  "expect": {
+    "fieldPath": "/triggers/0/anchorAt",
+    "keyword": "format"
+  },
+  "document": {
+    "schemaVersion": "strategy/1",
+    "id": "ai_gated_rebalance",
+    "name": "Scheduled AI-gated paper rebalance",
+    "triggers": [
+      {
+        "id": "hourly",
+        "type": "schedule",
+        "intervalSeconds": 3600,
+        "anchorAt": "2026-02-30T00:00:00.000Z",
+        "body": [
+          {
+            "id": "read_price",
+            "type": "read",
+            "connectorRef": "paper.uniswap",
+            "operation": "price.read",
+            "arguments": {},
+            "bind": "spot"
+          },
+          {
+            "id": "ask_model",
+            "type": "ai.decide",
+            "modelProfileRef": "paper.kimi-small",
+            "prompt": "Given the spot price input, decide whether a small paper WETH purchase is reasonable.",
+            "inputs": {
+              "spot": {
+                "kind": "ref",
+                "name": "spot"
+              }
+            },
+            "outputSchemaRef": "decision/1",
+            "timeoutSeconds": 20,
+            "maxOutputTokens": 512,
+            "bind": "verdict"
+          },
+          {
+            "id": "gate",
+            "type": "if",
+            "condition": {
+              "kind": "logical",
+              "operator": "and",
+              "operands": [
+                {
+                  "kind": "compare",
+                  "operator": "eq",
+                  "left": {
+                    "kind": "field",
+                    "name": "verdict",
+                    "field": "decision"
+                  },
+                  "right": {
+                    "kind": "literal",
+                    "valueType": "Enum",
+                    "value": "allow"
+                  }
+                },
+                {
+                  "kind": "logical",
+                  "operator": "not",
+                  "operands": [
+                    {
+                      "kind": "compare",
+                      "operator": "gt",
+                      "left": {
+                        "kind": "field",
+                        "name": "spot",
+                        "field": "price"
+                      },
+                      "right": {
+                        "kind": "literal",
+                        "valueType": "Price",
+                        "value": {
+                          "baseAssetRef": "paper.WETH",
+                          "quoteUnit": "USD",
+                          "decimal": "3000.5"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "then": [
+              {
+                "id": "buy_fixed",
+                "type": "swap.exactInput",
+                "connectorRef": "paper.uniswap",
+                "tokenInRef": "paper.USD",
+                "tokenOutRef": "paper.WETH",
+                "amount": {
+                  "kind": "fixed",
+                  "atomic": "25000000"
+                },
+                "maxSlippageBps": 50
+              }
+            ],
+            "else": [
+              {
+                "id": "skip_run",
+                "type": "stop",
+                "reason": "Model declined or price too high."
+              }
+            ]
+          },
+          {
+            "id": "report",
+            "type": "repeat",
+            "count": 2,
+            "body": [
+              {
+                "id": "note",
+                "type": "notify",
+                "message": "Run summary recorded.",
+                "inputs": {
+                  "cap": {
+                    "kind": "literal",
+                    "valueType": "Money",
+                    "value": {
+                      "assetRef": "paper.USD",
+                      "atomic": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                    }
+                  },
+                  "ratio": {
+                    "kind": "arithmetic",
+                    "operator": "divide",
+                    "left": {
+                      "kind": "literal",
+                      "valueType": "Decimal",
+                      "value": "-1.25"
+                    },
+                    "right": {
+                      "kind": "literal",
+                      "valueType": "Decimal",
+                      "value": "0.000000000000000001"
+                    }
+                  },
+                  "count": {
+                    "kind": "literal",
+                    "valueType": "Integer",
+                    "value": 9007199254740991
+                  },
+                  "flag": {
+                    "kind": "literal",
+                    "valueType": "Boolean",
+                    "value": true
+                  },
+                  "at": {
+                    "kind": "literal",
+                    "valueType": "Timestamp",
+                    "value": "2026-10-01T12:30:00.000Z"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dip",
+        "type": "price.crossesBelow",
+        "feedRef": "paper.weth-usd",
+        "threshold": {
+          "baseAssetRef": "paper.WETH",
+          "quoteUnit": "USD",
+          "decimal": "2000"
+        },
+        "maxAgeSeconds": 30,
+        "cooldownSeconds": 0,
+        "body": [
+          {
+            "id": "dip_note",
+            "type": "notify",
+            "message": "WETH crossed below 2000 USD.",
+            "inputs": {}
+          }
+        ]
+      },
+      {
+        "id": "pool_swap",
+        "type": "connector.event",
+        "connectorRef": "paper.uniswap",
+        "eventType": "pool.swap",
+        "filters": {
+          "finalized": {
+            "kind": "literal",
+            "valueType": "Boolean",
+            "value": true
+          },
+          "minLogIndex": {
+            "kind": "literal",
+            "valueType": "Integer",
+            "value": 0
+          }
+        },
+        "body": [
+          {
+            "id": "seen",
+            "type": "notify",
+            "message": "Pool swap observed.",
+            "inputs": {}
+          }
+        ]
+      }
+    ],
+    "limits": {
+      "maxStepsPerRun": 200,
+      "maxAiCallsPerRun": 1,
+      "maxIntentsPerRun": 1,
+      "maxActiveSecondsPerRun": 60
+    }
+  }
+}

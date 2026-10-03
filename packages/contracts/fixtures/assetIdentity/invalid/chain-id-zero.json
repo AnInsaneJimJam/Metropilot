@@ -1,0 +1,13 @@
+{
+  "description": "chain IDs are positive",
+  "expect": {
+    "fieldPath": "/chainId",
+    "keyword": "minimum"
+  },
+  "document": {
+    "kind": "erc20",
+    "networkRef": "monad-testnet",
+    "chainId": 0,
+    "contractAddress": "0x1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
+  }
+}

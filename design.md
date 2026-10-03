@@ -14,7 +14,7 @@ Use `apps/` only for independently started processes or website builds. Use `pac
 
 Do not pre-create controllers/services/repositories folders in every module. Start with a small entry point and cohesive files inside the owning directory when implementation begins. Split when the interface or ownership improves. No generic `utils`, `common`, or `shared` dumping ground. No empty mobile, blockchain-contract, or provider-specific app trees for speculative work.
 
-Every new directory receives a concise `AGENTS.md` stating purpose, read triggers, writable scope, invariants, prerequisites, and checkable tasks. `AGENTS.md` is the canonical filename, not `agent.md` or multiple capitalization variants. Use `.gitkeep` only when there is genuinely no trackable content; it is redundant next to `AGENTS.md`.
+Every app, package, documentation and infrastructure directory, and any directory with its own rules (for example schemas, fixtures, migrations), receives a concise `AGENTS.md` stating purpose, read triggers, writable scope, invariants, prerequisites, and checkable tasks. Code and data subfolders inside an owned module (`src/`, `scripts/`, `generated/`, `workflows/`, and the data folders below a `fixtures/` directory) inherit the nearest `AGENTS.md`; `tests/workspace.test.ts` enforces this rule. `AGENTS.md` is the canonical filename, not `agent.md` or multiple capitalization variants. Use `.gitkeep` only when there is genuinely no trackable content; it is redundant next to `AGENTS.md`.
 
 ## Module interfaces
 

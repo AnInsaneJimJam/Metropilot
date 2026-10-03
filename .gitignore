@@ -32,3 +32,4 @@ tmp/
 
 # Schema-derived types regenerated before checking/building
 packages/contracts/src/generated.ts
+packages/contracts/src/generated-contracts.ts

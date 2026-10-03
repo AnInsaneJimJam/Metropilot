@@ -1,0 +1,12 @@
+{
+  "description": "networkRef is part of identity",
+  "expect": {
+    "fieldPath": "/networkRef",
+    "keyword": "required"
+  },
+  "document": {
+    "kind": "erc20",
+    "chainId": 10143,
+    "contractAddress": "0x1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
+  }
+}

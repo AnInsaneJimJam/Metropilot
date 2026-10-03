@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "event/1",
+  "source": "paper.weth-usd",
+  "networkRef": "paper-monad",
+  "sourceKey": {
+    "kind": "providerDelivery",
+    "provider": "paper.prices",
+    "subscription": "weth-usd",
+    "deliveryEventId": "evt_000123"
+  },
+  "observedAt": "2026-10-01T12:00:00.000Z",
+  "receivedAt": "2026-10-01T12:00:01.250Z",
+  "payloadType": "price.observation",
+  "payload": {
+    "price": {
+      "baseAssetRef": "paper.WETH",
+      "quoteUnit": "USD",
+      "decimal": "2501"
+    }
+  },
+  "provenanceHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "sequence": "123"
+}

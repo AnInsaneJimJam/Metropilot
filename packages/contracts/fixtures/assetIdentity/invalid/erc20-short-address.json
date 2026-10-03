@@ -1,0 +1,13 @@
+{
+  "description": "addresses are 20 bytes",
+  "expect": {
+    "fieldPath": "/contractAddress",
+    "keyword": "pattern"
+  },
+  "document": {
+    "kind": "erc20",
+    "networkRef": "monad-testnet",
+    "chainId": 10143,
+    "contractAddress": "0x1234"
+  }
+}

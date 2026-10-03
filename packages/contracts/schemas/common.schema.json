@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/common.schema.json",
+  "title": "Common contract definitions",
+  "description": "Shared wire formats from docs/specs/api-and-data.md section 1. Not a document on its own.",
+  "$defs": {
+    "uuidv7": {
+      "title": "Uuidv7",
+      "description": "Server-generated resource ID: lower-case UUIDv7 (version 7, RFC 9562 variant).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "identifier": {
+      "title": "Identifier",
+      "description": "Document, node, trigger and binding identifier.",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    },
+    "catalogRef": {
+      "title": "CatalogRef",
+      "description": "Reference to a catalog entry (network, connector, asset, feed, model or resource profile). Never a URL or address.",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z0-9][A-Za-z0-9_-]*)*$"
+    },
+    "capabilityId": {
+      "title": "CapabilityId",
+      "description": "Stable dotted capability or event type ID, for example price.read or swap.exactInput.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][A-Za-z0-9]*(\\.[A-Za-z][A-Za-z0-9]*)+$"
+    },
+    "semver": {
+      "title": "SemVer",
+      "description": "Pinned catalog version MAJOR.MINOR.PATCH; no ranges or pre-release tags.",
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"
+    },
+    "providerId": {
+      "title": "ProviderId",
+      "description": "Namespaced opaque provider identifier, for example privy:abc123.",
+      "type": "string",
+      "maxLength": 300,
+      "pattern": "^[a-z][a-z0-9-]{0,31}:[!-~]{1,256}$"
+    },
+    "recordVersion": {
+      "title": "RecordVersion",
+      "description": "Monotonic version of a budget, policy or other server record.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "timestamp": {
+      "title": "Timestamp",
+      "description": "UTC RFC 3339 timestamp with exactly millisecond precision and Z suffix.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "atomicAmount": {
+      "title": "AtomicAmount",
+      "description": "Non-negative asset amount in atomic units as a base-10 integer string, at most uint256.",
+      "type": "string",
+      "format": "uint256",
+      "pattern": "^(0|[1-9][0-9]{0,77})$"
+    },
+    "positiveAtomicAmount": {
+      "title": "PositiveAtomicAmount",
+      "description": "Atomic amount greater than zero, at most uint256.",
+      "type": "string",
+      "format": "uint256",
+      "pattern": "^[1-9][0-9]{0,77}$"
+    },
+    "decimal": {
+      "title": "Decimal",
+      "description": "Canonical decimal string: no exponent, no leading +, no leading or trailing zeros, no -0, at most 18 fractional digits.",
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]{0,59})(\\.[0-9]{0,17}[1-9])?$",
+      "not": { "const": "-0" }
+    },
+    "nonNegativeDecimal": {
+      "title": "NonNegativeDecimal",
+      "description": "Canonical decimal string that is zero or positive.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,59})(\\.[0-9]{0,17}[1-9])?$"
+    },
+    "usdMicros": {
+      "title": "UsdMicros",
+      "description": "Non-negative USD valuation in integer micro-dollars as a base-10 string; separate from asset balances.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,29})$"
+    },
+    "blockHeight": {
+      "title": "BlockHeight",
+      "description": "Chain block height as a base-10 integer string (uint64).",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$"
+    },
+    "hash32": {
+      "title": "Hash32",
+      "description": "32-byte hash (SHA-256 content hash, block or transaction hash) as lower-case 0x hex.",
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{64}$"
+    },
+    "evmAddress": {
+      "title": "EvmAddress",
+      "description": "EVM address in normalized lower-case comparison form. Mixed-case input is checksum-verified and normalized before it reaches a contract document.",
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{40}$"
+    },
+    "chainId": {
+      "title": "ChainId",
+      "description": "EIP-155 chain ID.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4503599627370476
+    },
+    "traceId": {
+      "title": "TraceId",
+      "description": "W3C trace-context trace ID: 32 lower-case hex characters.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "mode": {
+      "title": "Mode",
+      "description": "Execution mode. Paper and live identities, balances and effects never mix.",
+      "type": "string",
+      "enum": ["paper", "live"]
+    },
+    "money": {
+      "title": "Money",
+      "description": "Amount of one catalog asset in atomic units.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetRef", "atomic"],
+      "properties": {
+        "assetRef": { "$ref": "#/$defs/catalogRef" },
+        "atomic": { "$ref": "#/$defs/atomicAmount" }
+      }
+    },
+    "price": {
+      "title": "Price",
+      "description": "Price of one base asset expressed in an explicit quote unit, for example USD per paper.WETH.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseAssetRef", "quoteUnit", "decimal"],
+      "properties": {
+        "baseAssetRef": { "$ref": "#/$defs/catalogRef" },
+        "quoteUnit": { "$ref": "#/$defs/catalogRef" },
+        "decimal": { "$ref": "#/$defs/nonNegativeDecimal" }
+      }
+    },
+    "assetIdentity": {
+      "title": "AssetIdentity",
+      "description": "Resolved asset identity; never a symbol alone. Mainnet, testnet, fork and paper registries are distinct networkRefs.",
+      "type": "object",
+      "required": ["kind"],
+      "discriminator": { "propertyName": "kind" },
+      "oneOf": [
+        { "$ref": "#/$defs/erc20AssetIdentity" },
+        { "$ref": "#/$defs/nativeAssetIdentity" },
+        { "$ref": "#/$defs/paperAssetIdentity" }
+      ]
+    },
+    "erc20AssetIdentity": {
+      "title": "Erc20AssetIdentity",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "networkRef", "chainId", "contractAddress"],
+      "properties": {
+        "kind": { "const": "erc20" },
+        "networkRef": { "$ref": "#/$defs/catalogRef" },
+        "chainId": { "$ref": "#/$defs/chainId" },
+        "contractAddress": { "$ref": "#/$defs/evmAddress" }
+      }
+    },
+    "nativeAssetIdentity": {
+      "title": "NativeAssetIdentity",
+      "description": "The chain's native gas asset (MON on Monad). Wrapped native tokens are erc20 identities.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "networkRef", "chainId"],
+      "properties": {
+        "kind": { "const": "native" },
+        "networkRef": { "$ref": "#/$defs/catalogRef" },
+        "chainId": { "$ref": "#/$defs/chainId" }
+      }
+    },
+    "paperAssetIdentity": {
+      "title": "PaperAssetIdentity",
+      "description": "Synthetic paper-registry asset. Has no chain ID or contract address so it can never be mistaken for an on-chain asset.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "networkRef", "assetRef"],
+      "properties": {
+        "kind": { "const": "paper" },
+        "networkRef": { "$ref": "#/$defs/catalogRef" },
+        "assetRef": { "$ref": "#/$defs/catalogRef" }
+      }
+    }
+  }
+}

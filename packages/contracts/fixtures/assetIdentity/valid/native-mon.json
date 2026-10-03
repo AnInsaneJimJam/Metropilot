@@ -1,0 +1,5 @@
+{
+  "kind": "native",
+  "networkRef": "monad-testnet",
+  "chainId": 10143
+}

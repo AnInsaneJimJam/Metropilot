@@ -1,0 +1,19 @@
+{
+  "description": "at least one trigger",
+  "expect": {
+    "fieldPath": "/triggers",
+    "keyword": "minItems"
+  },
+  "document": {
+    "schemaVersion": "strategy/1",
+    "id": "threshold_sale",
+    "name": "Paper threshold partial sale",
+    "triggers": [],
+    "limits": {
+      "maxStepsPerRun": 100,
+      "maxAiCallsPerRun": 1,
+      "maxIntentsPerRun": 1,
+      "maxActiveSecondsPerRun": 60
+    }
+  }
+}

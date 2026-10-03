@@ -1,0 +1,10 @@
+{
+  "description": "a symbol alone is not an identity",
+  "expect": {
+    "fieldPath": "/kind",
+    "keyword": "required"
+  },
+  "document": {
+    "symbol": "USDC"
+  }
+}

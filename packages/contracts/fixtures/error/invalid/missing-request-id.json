@@ -1,0 +1,18 @@
+{
+  "description": "requestId is required",
+  "expect": {
+    "fieldPath": "/requestId",
+    "keyword": "required"
+  },
+  "document": {
+    "code": "TYPE_MISMATCH",
+    "message": "Compare needs two prices in the same quote unit.",
+    "nodeId": "gate",
+    "fieldPath": "/triggers/0/body/2/condition",
+    "retryable": false,
+    "details": {
+      "expected": "Price",
+      "actual": "Decimal"
+    }
+  }
+}

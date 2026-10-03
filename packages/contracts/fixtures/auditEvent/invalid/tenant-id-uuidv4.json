@@ -1,0 +1,25 @@
+{
+  "description": "tenant reference must be v7",
+  "expect": {
+    "fieldPath": "/tenantId",
+    "keyword": "pattern"
+  },
+  "document": {
+    "schemaVersion": "audit-event/1",
+    "sequence": "42",
+    "tenantId": "3f2b8c1e-9d4a-4f6b-8e2c-1a2b3c4d5e6f",
+    "agentId": "019a0000-0000-7000-8000-000000000001",
+    "actor": {
+      "kind": "user",
+      "id": "019a0000-0000-7000-8000-000000000031"
+    },
+    "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "type": "deployment.stateChanged",
+    "occurredAt": "2026-10-01T12:00:00.000Z",
+    "payload": {
+      "from": "pending",
+      "to": "active",
+      "generation": 1
+    }
+  }
+}

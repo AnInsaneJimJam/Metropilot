@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "deployment/1",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "strategyRevisionId": "019a0000-0000-7000-8000-000000000002",
+  "mode": "live",
+  "networkRef": "monad-mainnet",
+  "connectorSelections": [
+    {
+      "ref": "monad.uniswap",
+      "version": "1.0.0",
+      "capabilities": [
+        "price.read",
+        "swap.exactInput"
+      ]
+    }
+  ],
+  "modelProfiles": [
+    {
+      "ref": "kimi.k2-bounded",
+      "version": "1.0.0"
+    }
+  ],
+  "resourceProfileRef": "hosted-small-v1",
+  "budgetVersion": 1,
+  "policyVersion": 1,
+  "estimateId": "019a0000-0000-7000-8000-000000000003",
+  "stepUpApprovalId": "019a0000-0000-7000-8000-000000000004"
+}

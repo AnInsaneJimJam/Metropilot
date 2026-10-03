@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/error-1.schema.json",
+  "title": "ErrorBody",
+  "description": "API error body for api/1 (docs/specs/api-and-data.md section 6). Versioned by the /v1 route, so it has no schemaVersion field. details must already be safe: no secrets, signing bytes, raw prompts or other tenants' data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message", "requestId", "retryable"],
+  "properties": {
+    "code": { "$ref": "#/$defs/errorCode" },
+    "message": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "requestId": { "$ref": "common.schema.json#/$defs/uuidv7" },
+    "nodeId": { "$ref": "common.schema.json#/$defs/identifier" },
+    "fieldPath": {
+      "description": "RFC 6901 JSON Pointer into the submitted document; empty string is the document root.",
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(/([^~/]|~[01])*)*$"
+    },
+    "retryable": {
+      "description": "Never permits a client to issue a new financial idempotency key.",
+      "type": "boolean"
+    },
+    "details": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "$ref": "common.schema.json#/$defs/identifier" },
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string", "maxLength": 500 },
+          { "type": "boolean" },
+          { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "errorCode": {
+      "title": "ErrorCode",
+      "enum": [
+        "UNAUTHENTICATED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "MALFORMED_REQUEST",
+        "REVISION_CONFLICT",
+        "IDEMPOTENCY_CONFLICT",
+        "SCHEMA_INVALID",
+        "CAPABILITY_DISABLED",
+        "ESTIMATE_EXPIRED",
+        "FUNDING_PENDING",
+        "INSUFFICIENT_BUDGET",
+        "POLICY_DENIED",
+        "STALE_OBSERVATION",
+        "RATE_LIMITED",
+        "PROVIDER_UNAVAILABLE",
+        "RECONCILIATION_REQUIRED",
+        "UNKNOWN_BLOCK",
+        "TYPE_MISMATCH",
+        "UNKNOWN_REFERENCE",
+        "UNSUPPORTED_CAPABILITY",
+        "LIMIT_EXCEEDED",
+        "STALE_DATA",
+        "INVALID_AMOUNT",
+        "MODEL_OUTPUT_INVALID",
+        "MODEL_UNAVAILABLE",
+        "BUDGET_EXHAUSTED",
+        "EFFECT_PENDING"
+      ]
+    }
+  }
+}

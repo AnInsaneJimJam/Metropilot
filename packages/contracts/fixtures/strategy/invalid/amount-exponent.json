@@ -1,0 +1,52 @@
+{
+  "description": "atomic amount in exponent notation",
+  "expect": {
+    "fieldPath": "/triggers/0/body/0/amount/atomic",
+    "keyword": "pattern"
+  },
+  "document": {
+    "schemaVersion": "strategy/1",
+    "id": "threshold_sale",
+    "name": "Paper threshold partial sale",
+    "triggers": [
+      {
+        "id": "crossing",
+        "type": "price.crossesAbove",
+        "feedRef": "paper.weth-usd",
+        "threshold": {
+          "baseAssetRef": "paper.WETH",
+          "quoteUnit": "USD",
+          "decimal": "2500"
+        },
+        "maxAgeSeconds": 30,
+        "cooldownSeconds": 3600,
+        "body": [
+          {
+            "id": "sell_tenth",
+            "type": "swap.exactInput",
+            "connectorRef": "paper.uniswap",
+            "tokenInRef": "paper.WETH",
+            "tokenOutRef": "paper.USD",
+            "amount": {
+              "kind": "fixed",
+              "atomic": "1e18"
+            },
+            "maxSlippageBps": 50
+          },
+          {
+            "id": "record_result",
+            "type": "notify",
+            "message": "Threshold sale settled in paper mode.",
+            "inputs": {}
+          }
+        ]
+      }
+    ],
+    "limits": {
+      "maxStepsPerRun": 100,
+      "maxAiCallsPerRun": 1,
+      "maxIntentsPerRun": 1,
+      "maxActiveSecondsPerRun": 60
+    }
+  }
+}

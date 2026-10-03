@@ -1,0 +1,14 @@
+{
+  "description": "symbol is display metadata, not identity",
+  "expect": {
+    "fieldPath": "/symbol",
+    "keyword": "additionalProperties"
+  },
+  "document": {
+    "kind": "erc20",
+    "networkRef": "monad-testnet",
+    "chainId": 10143,
+    "contractAddress": "0x1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+    "symbol": "USDC"
+  }
+}

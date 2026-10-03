@@ -1,0 +1,13 @@
+{
+  "description": "paper assets never claim a chain",
+  "expect": {
+    "fieldPath": "/chainId",
+    "keyword": "additionalProperties"
+  },
+  "document": {
+    "kind": "paper",
+    "networkRef": "paper-monad",
+    "assetRef": "paper.WETH",
+    "chainId": 10143
+  }
+}

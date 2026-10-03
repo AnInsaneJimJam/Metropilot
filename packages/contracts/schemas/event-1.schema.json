@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/event-1.schema.json",
+  "title": "SourceEvent",
+  "description": "Normalized source event envelope, event/1 (docs/specs/api-and-data.md section 6). source is the catalog connector or feed that produced the event. sourceKey is the canonical dedup identity. observedAt is source time and gives market meaning; receivedAt is platform receipt time for processing order only and is never a dedup key. provenanceHash is SHA-256 over the JCS-canonical raw source record. payload is untrusted data typed by payloadType; its connector-specific schema is validated separately (CON-4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "source",
+    "sourceKey",
+    "networkRef",
+    "observedAt",
+    "receivedAt",
+    "payloadType",
+    "payload",
+    "provenanceHash"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "event/1"
+    },
+    "source": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "sourceKey": {
+      "$ref": "#/$defs/sourceKey"
+    },
+    "networkRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "observedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "receivedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "sequence": {
+      "description": "Provider sequence number when the source supplies one.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$"
+    },
+    "payloadType": {
+      "$ref": "common.schema.json#/$defs/capabilityId"
+    },
+    "payload": {
+      "type": "object",
+      "maxProperties": 64
+    },
+    "provenanceHash": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    }
+  },
+  "$defs": {
+    "sourceKey": {
+      "title": "SourceKey",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/chainLogSourceKey"
+        },
+        {
+          "$ref": "#/$defs/providerDeliverySourceKey"
+        },
+        {
+          "$ref": "#/$defs/providerDigestSourceKey"
+        },
+        {
+          "$ref": "#/$defs/scheduleSourceKey"
+        }
+      ]
+    },
+    "chainLogSourceKey": {
+      "title": "ChainLogSourceKey",
+      "description": "Dedup identity (chainId, blockHash, txHash, logIndex) plus canonicality; blockNumber is a coordinate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "chainId",
+        "blockNumber",
+        "blockHash",
+        "txHash",
+        "logIndex",
+        "finality"
+      ],
+      "properties": {
+        "kind": {
+          "const": "chainLog"
+        },
+        "chainId": {
+          "$ref": "common.schema.json#/$defs/chainId"
+        },
+        "blockNumber": {
+          "$ref": "common.schema.json#/$defs/blockHeight"
+        },
+        "blockHash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "txHash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "logIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "finality": {
+          "description": "Provisional events never credit balances or trigger v1 financial execution.",
+          "enum": [
+            "provisional",
+            "finalized"
+          ]
+        }
+      }
+    },
+    "providerDeliverySourceKey": {
+      "title": "ProviderDeliverySourceKey",
+      "description": "Dedup identity (provider, subscription, deliveryEventId) when the provider's event ID is stable.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "subscription",
+        "deliveryEventId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "providerDelivery"
+        },
+        "provider": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "subscription": {
+          "type": "string",
+          "pattern": "^[!-~]{1,128}$"
+        },
+        "deliveryEventId": {
+          "type": "string",
+          "pattern": "^[!-~]{1,256}$"
+        }
+      }
+    },
+    "providerDigestSourceKey": {
+      "title": "ProviderDigestSourceKey",
+      "description": "Dedup identity (provider, subscription, contentDigest, envelope observedAt) when no stable event ID exists.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "subscription",
+        "contentDigest"
+      ],
+      "properties": {
+        "kind": {
+          "const": "providerDigest"
+        },
+        "provider": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "subscription": {
+          "type": "string",
+          "pattern": "^[!-~]{1,128}$"
+        },
+        "contentDigest": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        }
+      }
+    },
+    "scheduleSourceKey": {
+      "title": "ScheduleSourceKey",
+      "description": "Dedup identity (deployment, trigger, slot).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "deploymentId",
+        "triggerId",
+        "slot"
+      ],
+      "properties": {
+        "kind": {
+          "const": "schedule"
+        },
+        "deploymentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "triggerId": {
+          "$ref": "common.schema.json#/$defs/identifier"
+        },
+        "slot": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

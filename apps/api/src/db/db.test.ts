@@ -1,0 +1,215 @@
+// G1 database checks against a real Postgres: migrations, paper seed data for the spec examples,
+// tenant-scoped references and immutability. Each run uses a throwaway database.
+// Skips when DATABASE_URL is unset or unreachable, unless REQUIRE_DB=1 (CI and `pnpm bootstrap`).
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, before, describe, test } from 'node:test';
+import pg from 'pg';
+import { contentHash, validate } from '@monad-hack/contracts';
+import { migrate, readMigrations } from './migrate.ts';
+import { paperSeed, seedPaper, seedTenantId } from './seed.ts';
+
+const required = process.env['REQUIRE_DB'] === '1';
+let skip: string | false = false;
+let admin: pg.Client | undefined;
+if (!process.env['DATABASE_URL']) skip = 'DATABASE_URL is not set';
+else {
+  admin = new pg.Client({ connectionString: process.env['DATABASE_URL'], connectionTimeoutMillis: 3000 });
+  try {
+    await admin.connect();
+  } catch (error) {
+    if (required) throw error;
+    skip = `database unreachable (${(error as Error).message})`;
+    admin = undefined;
+  }
+}
+if (skip && required) throw new Error(`REQUIRE_DB=1 but ${skip}`);
+
+const scratchDatabases: string[] = [];
+async function scratchClient(): Promise<pg.Client> {
+  const name = `g1_test_${randomBytes(6).toString('hex')}`;
+  await admin!.query(`create database ${name}`);
+  scratchDatabases.push(name);
+  const url = new URL(process.env['DATABASE_URL']!);
+  url.pathname = `/${name}`;
+  const client = new pg.Client({ connectionString: url.toString() });
+  await client.connect();
+  return client;
+}
+const clients: pg.Client[] = [];
+async function freshClient(): Promise<pg.Client> {
+  const client = await scratchClient();
+  clients.push(client);
+  return client;
+}
+
+async function rejects(promise: Promise<unknown>, code: string): Promise<void> {
+  await assert.rejects(promise, (error: { code?: string }) => {
+    assert.equal(error.code, code);
+    return true;
+  });
+}
+
+describe('database', { skip }, () => {
+  let db: pg.Client;
+  before(async () => {
+    db = await freshClient();
+  });
+  after(async () => {
+    for (const client of clients) await client.end();
+    for (const name of scratchDatabases) await admin!.query(`drop database if exists ${name} with (force)`);
+    await admin!.end();
+  });
+
+  test('migrations apply once and re-running applies nothing', async () => {
+    assert.deepEqual(await migrate(db), ['0001_g1_baseline.sql']);
+    assert.deepEqual(await migrate(db), []);
+  });
+
+  test('an edited applied migration is refused', async () => {
+    const edited = readMigrations().map((m) => ({ ...m, checksum: m.checksum.replace(/^./, (c) => (c === '0' ? '1' : '0')) }));
+    await assert.rejects(migrate(db, edited), /was edited/);
+  });
+
+  test('concurrent runners apply each migration exactly once', async () => {
+    const [a, b] = [await freshClient(), await freshClient()];
+    // Same database for both runners.
+    const { rows } = await a.query<{ db: string }>('select current_database() as db');
+    const url = new URL(process.env['DATABASE_URL']!);
+    url.pathname = `/${rows[0]!.db}`;
+    await b.end();
+    const second = new pg.Client({ connectionString: url.toString() });
+    await second.connect();
+    clients.push(second);
+    const results = await Promise.all([migrate(a), migrate(second)]);
+    assert.deepEqual(results.flat(), ['0001_g1_baseline.sql']);
+  });
+
+  test('migration files are numbered without gaps', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'migrations-'));
+    writeFileSync(join(dir, '0001_a.sql'), 'select 1;');
+    writeFileSync(join(dir, '0003_c.sql'), 'select 1;');
+    assert.throws(() => readMigrations(dir), /without gaps/);
+  });
+
+  test('paper seed is idempotent', async () => {
+    await seedPaper(db);
+    await seedPaper(db);
+    const { rows } = await db.query<{ count: string }>('select count(*) from catalog_versions');
+    assert.equal(rows[0]!.count, String(paperSeed().catalog.length));
+  });
+
+  test('every row and catalog entry the deployment/1 example references exists for one tenant', async () => {
+    const { request } = paperSeed();
+    const one = async (sql: string, params: unknown[]) => (await db.query(sql, params)).rowCount;
+    assert.equal(await one('select 1 from agents where tenant_id = $1 and id = $2 and budget_version = $3', [seedTenantId, request.agentId, request.budgetVersion]), 1);
+    assert.equal(await one('select 1 from strategy_revisions where tenant_id = $1 and agent_id = $2 and id = $3', [seedTenantId, request.agentId, request.strategyRevisionId]), 1);
+    assert.equal(await one('select 1 from estimates where tenant_id = $1 and agent_id = $2 and id = $3 and strategy_revision_id = $4', [seedTenantId, request.agentId, request.estimateId, request.strategyRevisionId]), 1);
+    assert.equal(await one('select 1 from policies where tenant_id = $1 and agent_id = $2 and version = $3', [seedTenantId, request.agentId, request.policyVersion]), 1);
+    assert.equal(await one(`select 1 from catalog_versions where kind = 'network' and ref = $1 and $2 = any(modes)`, [request.networkRef, request.mode]), 1);
+    assert.equal(await one(`select 1 from catalog_versions where kind = 'resourceProfile' and ref = $1 and $2 = any(modes)`, [request.resourceProfileRef, request.mode]), 1);
+    for (const selection of request.connectorSelections) {
+      const { rows } = await db.query<{ definition: { capabilities: string[] } }>(
+        `select definition from catalog_versions where kind = 'connector' and ref = $1 and version = $2`,
+        [selection.ref, selection.version],
+      );
+      for (const capability of selection.capabilities) assert.ok(rows[0]?.definition.capabilities.includes(capability), capability);
+    }
+  });
+
+  test('every catalog ref in the strategy/1 example resolves', async () => {
+    const { strategy } = paperSeed();
+    const refs = new Set<string>();
+    for (const trigger of strategy.triggers) {
+      if ('feedRef' in trigger) refs.add(trigger.feedRef).add(trigger.threshold.baseAssetRef);
+      for (const statement of trigger.body) {
+        if (statement.type === 'swap.exactInput') refs.add(statement.connectorRef).add(statement.tokenInRef).add(statement.tokenOutRef);
+      }
+    }
+    const { rows } = await db.query<{ ref: string }>('select ref from catalog_versions where ref = any($1)', [[...refs]]);
+    assert.deepEqual(rows.map((row) => row.ref).sort(), [...refs].sort());
+  });
+
+  test('stored revision AST is schema-valid and its hash is the JCS SHA-256', async () => {
+    const { rows } = await db.query<{ ast: unknown; content_hash: string }>('select ast, content_hash from strategy_revisions');
+    assert.equal(rows.length, 1);
+    assert.ok(validate('strategy', rows[0]!.ast).ok);
+    assert.equal(rows[0]!.content_hash, await contentHash(rows[0]!.ast));
+  });
+
+  test('paper asset identities are valid contract shapes', async () => {
+    const { rows } = await db.query<{ definition: { identity: unknown } }>(`select definition from catalog_versions where kind = 'asset'`);
+    for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok);
+  });
+
+  describe('tenant-scoped references', () => {
+    const otherTenant = '019a0000-0000-7000-8000-0000000000aa';
+    const otherAgent = '019a0000-0000-7000-8000-0000000000ab';
+    before(async () => {
+      await db.query(`insert into tenants (id, auth_subject) values ($1, 'synthetic|other')`, [otherTenant]);
+      await db.query(`insert into agents (tenant_id, id, name) values ($1, $2, 'Other agent')`, [otherTenant, otherAgent]);
+    });
+
+    test('a revision cannot attach to another tenant’s agent', async () => {
+      const { request, strategy } = paperSeed();
+      await rejects(
+        db.query(
+          `insert into strategy_revisions (tenant_id, id, agent_id, language_version, content_hash, ast, validation)
+           values ($1, '019a0000-0000-7000-8000-0000000000ac', $2, 'strategy/1', $3, $4, '{}')`,
+          [otherTenant, request.agentId, '0x' + 'ab'.repeat(32), strategy],
+        ),
+        '23503',
+      );
+    });
+
+    test('an estimate cannot reference a revision of a different agent', async () => {
+      const { request } = paperSeed();
+      await db.query(`insert into agents (tenant_id, id, name) values ($1, '019a0000-0000-7000-8000-0000000000ad', 'Second agent')`, [seedTenantId]);
+      await rejects(
+        db.query(
+          `insert into estimates (tenant_id, id, agent_id, strategy_revision_id, assumptions, created_at, expires_at)
+           values ($1, '019a0000-0000-7000-8000-0000000000ae', '019a0000-0000-7000-8000-0000000000ad', $2, '{}', now(), now() + interval '5 minutes')`,
+          [seedTenantId, request.strategyRevisionId],
+        ),
+        '23503',
+      );
+    });
+
+    test('a policy cannot be created for another tenant’s agent', async () => {
+      await rejects(db.query(`insert into policies (tenant_id, agent_id, version, limits) values ($1, $2, 1, '{}')`, [seedTenantId, otherAgent]), '23503');
+    });
+
+    test('IDs must be UUIDv7', async () => {
+      await rejects(db.query(`insert into tenants (id, auth_subject) values ('3f2b8c1e-9d4a-4f6b-8e2c-1a2b3c4d5e6f', 'synthetic|v4')`), '23514');
+    });
+  });
+
+  describe('immutability', () => {
+    test('strategy revisions cannot be updated or deleted', async () => {
+      await rejects(db.query(`update strategy_revisions set validation = '{}'`), 'P0001');
+      await rejects(db.query('delete from strategy_revisions'), 'P0001');
+    });
+
+    test('policies and estimates cannot be updated', async () => {
+      await rejects(db.query(`update policies set limits = '{}'`), 'P0001');
+      await rejects(db.query(`update estimates set expires_at = expires_at + interval '1 day'`), 'P0001');
+    });
+
+    test('catalog versions are immutable except for being disabled', async () => {
+      await rejects(db.query(`update catalog_versions set definition = '{}' where ref = 'paper.uniswap'`), 'P0001');
+      await rejects(db.query(`delete from catalog_versions where ref = 'paper.uniswap'`), 'P0001');
+      const { rowCount } = await db.query(`update catalog_versions set disabled_reason = 'test withdrawal' where ref = 'paper.USD'`);
+      assert.equal(rowCount, 1);
+    });
+
+    test('catalog modes are limited to paper and live', async () => {
+      await rejects(
+        db.query(`insert into catalog_versions (kind, ref, version, modes, content_hash, definition) values ('network', 'x', '1.0.0', '{mainnet}', $1, '{}')`, ['0x' + 'ab'.repeat(32)]),
+        '23514',
+      );
+    });
+  });
+});

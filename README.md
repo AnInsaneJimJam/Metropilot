@@ -2,7 +2,7 @@
 
 A managed platform for retail traders to configure, test, and run trading agents on Monad without setting up servers, model accounts, protocol integrations, or a programming environment.
 
-**Status: workspace skeleton and first local strategy-language core.** Strategy schemas, generated types, AST validation and resumable synthetic execution exist. The Blockly editor, hosted application, deployed infrastructure and production wallet remain pending. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
+**Status: G1 contracts and development baseline (pending a hosted CI run), strategy-language core and Blockly editor in progress.** Versioned JSON Schemas, generated types, fixtures, local Postgres migrations with synthetic paper seed data, secret checks, CI, AST validation and resumable synthetic execution exist. The hosted application, deployed infrastructure and production wallet remain pending. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
 
 ## The product
 
@@ -60,14 +60,26 @@ Read the root and nearest scoped `AGENTS.md`. Claim a workstream in `plan.md` be
 
 ## Development setup
 
-The G1 workspace skeleton and first local language core exist. There are no migrations or hosted application yet. Requirements: pnpm 12.8.1 (the `packageManager` pin), and Docker only for the local database. `pnpm install` downloads the exact Node 24.21.0 runtime declared in `devEngines.runtime`; project scripts use that local runtime even if your shell has another Node version. `.node-version` also pins CI. See [pnpm runtime management](https://pnpm.io/package_json#devenginesruntime).
+G1 provides the contracts, a local database with migrations and synthetic paper seed data, and checks; no hosted application process exists yet. Requirements: pnpm 12.8.1 (the `packageManager` pin) and a running Docker daemon. `pnpm install` downloads the exact Node 24.21.0 runtime declared in `devEngines.runtime`; project scripts use that local runtime even if your shell has another Node version. `.node-version` also pins CI. See [pnpm runtime management](https://pnpm.io/package_json#devenginesruntime).
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm check                 # generate schema types, strict typecheck + node:test
+cp .env.example .env       # then set a new POSTGRES_PASSWORD and the same value in DATABASE_URL
+pnpm bootstrap             # install, preflight, start Postgres, migrate, seed, full checks
 pnpm strategy:demo         # synthetic threshold-sale execution; no network or wallet
-cp .env.example .env       # then change POSTGRES_PASSWORD
-pnpm db:up                 # local Postgres 17 on 127.0.0.1; pnpm db:down stops it
+pnpm web:dev               # Blockly strategy editor
 ```
+
+`pnpm bootstrap` stops at the first failing step. Preflight explains each `.env` mistake without printing secret values. The same steps are available one at a time:
+
+| Command | Effect |
+| --- | --- |
+| `pnpm db:preflight` | Checks the Node version, `.env`, and the local-only `DATABASE_URL` |
+| `pnpm db:up` / `pnpm db:down` | Starts or stops local Postgres 17 on 127.0.0.1 |
+| `pnpm db:migrate` | Applies new files from `apps/api/migrations/`; already-applied files are skipped |
+| `pnpm db:seed` | Loads the synthetic paper rows used by the spec examples; refuses non-local databases |
+| `pnpm check` | Regenerates schema types, strict typecheck and every node:test suite. Database tests skip without a reachable database unless `REQUIRE_DB=1` |
+| `pnpm db:reset` | Deletes the local database volume; run `pnpm bootstrap` again afterwards |
+
+Secrets: only `.env` (git-ignored) holds local credentials. `pnpm check` scans tracked and new files for credential-shaped content; committed files only ever hold documented placeholders.
 
 Language entry points and implemented semantics: [strategy specification](docs/specs/strategy-language.md#9-first-local-implementation-2026-10-02).

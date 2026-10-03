@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "event/1",
+  "source": "platform.scheduler",
+  "networkRef": "paper-monad",
+  "sourceKey": {
+    "kind": "schedule",
+    "deploymentId": "019a0000-0000-7000-8000-000000000020",
+    "triggerId": "hourly",
+    "slot": "2026-10-01T12:00:00.000Z"
+  },
+  "observedAt": "2026-10-01T12:00:00.000Z",
+  "receivedAt": "2026-10-01T12:00:01.250Z",
+  "payloadType": "schedule.slot",
+  "payload": {},
+  "provenanceHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

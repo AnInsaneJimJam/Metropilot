@@ -1,0 +1,33 @@
+{
+  "description": "trigger body needs a statement",
+  "expect": {
+    "fieldPath": "/triggers/0/body",
+    "keyword": "minItems"
+  },
+  "document": {
+    "schemaVersion": "strategy/1",
+    "id": "threshold_sale",
+    "name": "Paper threshold partial sale",
+    "triggers": [
+      {
+        "id": "crossing",
+        "type": "price.crossesAbove",
+        "feedRef": "paper.weth-usd",
+        "threshold": {
+          "baseAssetRef": "paper.WETH",
+          "quoteUnit": "USD",
+          "decimal": "2500"
+        },
+        "maxAgeSeconds": 30,
+        "cooldownSeconds": 3600,
+        "body": []
+      }
+    ],
+    "limits": {
+      "maxStepsPerRun": 100,
+      "maxAiCallsPerRun": 1,
+      "maxIntentsPerRun": 1,
+      "maxActiveSecondsPerRun": 60
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "event/1",
+  "source": "paper.weth-usd",
+  "networkRef": "paper-monad",
+  "sourceKey": {
+    "kind": "providerDigest",
+    "provider": "paper.prices",
+    "subscription": "weth-usd",
+    "contentDigest": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "observedAt": "2026-10-01T12:00:00.000Z",
+  "receivedAt": "2026-10-01T12:00:01.250Z",
+  "payloadType": "price.observation",
+  "payload": {
+    "decimal": "2499"
+  },
+  "provenanceHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

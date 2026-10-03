@@ -1,0 +1,6 @@
+{
+  "kind": "erc20",
+  "networkRef": "monad-testnet",
+  "chainId": 10143,
+  "contractAddress": "0x1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
+}

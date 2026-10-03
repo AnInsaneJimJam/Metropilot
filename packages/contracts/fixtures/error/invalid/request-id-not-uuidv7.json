@@ -1,0 +1,19 @@
+{
+  "description": "requestId is a UUIDv7",
+  "expect": {
+    "fieldPath": "/requestId",
+    "keyword": "pattern"
+  },
+  "document": {
+    "code": "TYPE_MISMATCH",
+    "message": "Compare needs two prices in the same quote unit.",
+    "requestId": "req-123",
+    "nodeId": "gate",
+    "fieldPath": "/triggers/0/body/2/condition",
+    "retryable": false,
+    "details": {
+      "expected": "Price",
+      "actual": "Decimal"
+    }
+  }
+}

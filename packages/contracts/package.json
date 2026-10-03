@@ -4,9 +4,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./schemas/*.json": "./schemas/*.json",
+    "./fixtures/*.json": "./fixtures/*.json",
+    "./package.json": "./package.json"
   },
   "dependencies": {
-    "ajv": "8.20.0"
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   }
 }

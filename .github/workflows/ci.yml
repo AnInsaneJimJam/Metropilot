@@ -16,6 +16,25 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    services:
+      # Same pinned image as infra/compose.yaml; synthetic credentials for this job only.
+      postgres:
+        image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_USER: monad
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: monad_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U monad -d monad_dev"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://monad:ci-only-not-a-secret@localhost:5432/monad_dev
+      # Database tests fail instead of skipping.
+      REQUIRE_DB: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,6 +46,8 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Apply migrations twice (second run must be a no-op) and load paper seed data
+        run: pnpm db:migrate && pnpm db:migrate && pnpm db:seed
       - run: pnpm check
       - name: Validate local Compose file
         run: docker compose --project-directory . -f infra/compose.yaml config --quiet

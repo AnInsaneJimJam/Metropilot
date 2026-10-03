@@ -1,6 +1,6 @@
 # API, configuration, and data contracts
 
-Version: `api/1`, `deployment/1`, `event/1`. Owner: `packages/contracts`, with API/data-owner approval. This is a normative contract design; schemas, migrations, endpoints and generated types are future implementation.
+Version: `api/1`, `deployment/1`, `event/1`, `audit-event/1`. Owner: `packages/contracts`, with API/data-owner approval. JSON Schemas and generated types for the DeploymentRequest, error body, source event, audit event and asset identity exist in [`packages/contracts/schemas`](../../packages/contracts/schemas); the DeploymentManifest schema, migrations and endpoints are future implementation. Section 9 records the choices the schemas made where this document was silent.
 
 ## 1. Wire conventions
 
@@ -161,3 +161,18 @@ Use indexes on ready jobs `(status,availableAt)`, tenant/agent time lists, event
 Atomic units: deployment + job; event acceptance + trigger state + run/job; ledger journal + balance updates + reservation settlement + audit; policy update + revocation generation; intent creation + holds + notional counters; nonce ownership + prepared attempt. External network calls occur after commit and have their own durable dispatch/recovery state.
 
 Schema migrations are versioned and forward-only in production with tested recovery. Changing a language interpretation requires a new language version; existing deployments keep their interpreter image/version until explicit migration. Unknown versions fail rather than guessing. Example records are test fixtures to be validated at G1, not live environment values.
+
+## 9. Schema decisions recorded at G1 (CON-1/CON-3)
+
+These resolve gaps in sections 1–6 with the smallest choice; the schema files are authoritative for exact patterns and bounds.
+
+| Topic | Decision |
+| --- | --- |
+| Identifiers | UUIDv7 is lower-case with the RFC 9562 variant. Catalog references match `^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9][A-Za-z0-9_-]*)*$` (≤128 characters), so they cannot be URLs or addresses. Capability and event type IDs are dotted (`price.read`). Catalog versions are exact `MAJOR.MINOR.PATCH`. Provider IDs are `namespace:opaque`. |
+| Numbers | Block heights and stream sequences are decimal strings. Chain IDs, record versions (`budgetVersion`, `policyVersion` ≥ 1), and log indexes are bounded JSON integers. Atomic amounts are checked against uint256 by a named `uint256` format. Trace IDs use the W3C 32-hex form. |
+| DeploymentRequest | A live request carries `stepUpApprovalId` (UUIDv7); a paper request must not. `modelProfiles` items are pinned `{ref, version}` objects like connector selections. Bounds: at most 16 connector selections, 1–32 unique capabilities each, at most 8 model profiles. `tenantId`/owner fields are rejected as unknown fields. |
+| Asset identity | A tagged object: `erc20` (`networkRef`, `chainId`, `contractAddress`), `native` (`networkRef`, `chainId`), or `paper` (`networkRef`, `assetRef`; no chain ID or address). Documents carry the normalized lower-case address. The API verifies the EIP-55 checksum of mixed-case input before normalizing it. |
+| Error body | Route-versioned (`/v1`), so it has no `schemaVersion`. `requestId` is a UUIDv7, `fieldPath` is an RFC 6901 JSON Pointer, and `details` holds at most 16 scalar entries. `NOT_FOUND` (404) and `MALFORMED_REQUEST` (400 syntax) join the code list, which also includes the language codes. |
+| Source event `event/1` | Fields: `source` (catalog ref), `sourceKey`, `networkRef`, `observedAt`, `receivedAt`, optional `sequence`, `payloadType`, `payload` (object, ≤64 fields), and `provenanceHash` (SHA-256 of the JCS-canonical raw record). `sourceKey` kinds: `chainLog` (with `blockNumber` and `finality: provisional/finalized`), `providerDelivery`, `providerDigest` (with `observedAt` as the time component), and `schedule`. |
+| Audit event `audit-event/1` | A separate version from `event/1`. Fields: `sequence`, `tenantId`, optional `agentId`/`runId`/`intentId`, `actor`, `traceId`, `type`, `occurredAt`, and redacted `payload`. Actor kinds are `user`/`operator` (with account `id`) and `controlPlane`/`runtime`/`executor`/`system` (without one). Types: `deployment.stateChanged`, `observation.accepted`, `observation.skipped`, `run.step`, `model.usage`, `policy.denied`, `reservation.changed`, `transaction.stateChanged`, `ledger.settled`, `resource.health`. |
+| Byte ceilings | `parse()` checks these before JSON parsing: strategy 256 KiB, DeploymentRequest 1 MiB, source/audit event 64 KiB, error body 16 KiB, asset identity 4 KiB. |

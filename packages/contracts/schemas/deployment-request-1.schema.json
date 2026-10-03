@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/deployment-request-1.schema.json",
+  "title": "DeploymentRequest",
+  "description": "Client DeploymentRequest, deployment/1 (docs/specs/api-and-data.md section 3). References saved immutable records and catalog versions; tenant and owner come from authentication, never from the body. Existence and ownership of referenced IDs is checked server-side. stepUpApprovalId references a current step-up approval: required for live, forbidden for paper.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "agentId",
+    "strategyRevisionId",
+    "mode",
+    "networkRef",
+    "connectorSelections",
+    "modelProfiles",
+    "resourceProfileRef",
+    "budgetVersion",
+    "policyVersion",
+    "estimateId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "deployment/1"
+    },
+    "agentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "strategyRevisionId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "mode": {
+      "$ref": "common.schema.json#/$defs/mode"
+    },
+    "networkRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "connectorSelections": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/connectorSelection"
+      }
+    },
+    "modelProfiles": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/modelProfileSelection"
+      }
+    },
+    "resourceProfileRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "budgetVersion": {
+      "$ref": "common.schema.json#/$defs/recordVersion"
+    },
+    "policyVersion": {
+      "$ref": "common.schema.json#/$defs/recordVersion"
+    },
+    "estimateId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "stepUpApprovalId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "mode": {
+        "const": "live"
+      }
+    },
+    "required": [
+      "mode"
+    ]
+  },
+  "then": {
+    "required": [
+      "stepUpApprovalId"
+    ]
+  },
+  "else": {
+    "not": {
+      "required": [
+        "stepUpApprovalId"
+      ]
+    }
+  },
+  "$defs": {
+    "connectorSelection": {
+      "title": "ConnectorSelection",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "version",
+        "capabilities"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/semver"
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/capabilityId"
+          }
+        }
+      }
+    },
+    "modelProfileSelection": {
+      "title": "ModelProfileSelection",
+      "description": "Pinned model profile catalog version, resolved server-side to provider/model/rate card.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "version"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/semver"
+        }
+      }
+    }
+  }
+}

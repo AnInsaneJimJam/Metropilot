@@ -1,0 +1,29 @@
+{
+  "description": "revision reference is not a UUID",
+  "expect": {
+    "fieldPath": "/strategyRevisionId",
+    "keyword": "pattern"
+  },
+  "document": {
+    "schemaVersion": "deployment/1",
+    "agentId": "019a0000-0000-7000-8000-000000000001",
+    "strategyRevisionId": "rev-1",
+    "mode": "paper",
+    "networkRef": "paper-monad",
+    "connectorSelections": [
+      {
+        "ref": "paper.uniswap",
+        "version": "1.0.0",
+        "capabilities": [
+          "price.read",
+          "swap.exactInput"
+        ]
+      }
+    ],
+    "modelProfiles": [],
+    "resourceProfileRef": "paper-small-v1",
+    "budgetVersion": 1,
+    "policyVersion": 1,
+    "estimateId": "019a0000-0000-7000-8000-000000000003"
+  }
+}

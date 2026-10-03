@@ -1,0 +1,18 @@
+{
+  "description": "retryable is required",
+  "expect": {
+    "fieldPath": "/retryable",
+    "keyword": "required"
+  },
+  "document": {
+    "code": "TYPE_MISMATCH",
+    "message": "Compare needs two prices in the same quote unit.",
+    "requestId": "019a0000-0000-7000-8000-000000000010",
+    "nodeId": "gate",
+    "fieldPath": "/triggers/0/body/2/condition",
+    "details": {
+      "expected": "Price",
+      "actual": "Decimal"
+    }
+  }
+}

@@ -59,6 +59,8 @@ Made by the editor owner (TathagatGupta98); see the [plan claim](../plan.md#acti
 | E08 | Whether “Morpheus” means Morpho or another product | Product owner / optional connector work | Leave it out of enabled catalog; no effect on first slice |
 | E09 | Exact compatible package versions/licenses, generated schema/type tool and SDK capability tests | Contract/integration / G1 | Pin compatible stable releases; update baseline only with evidence |
 
+E09 G1 portion verified 2026-10-03: exact pins ajv 8.20.0, ajv-formats 3.0.1, json-schema-to-typescript 16.0.0 (dev), pg 8.23.1, @types/pg 8.23.1 (all MIT), typescript 7.0.2 (Apache-2.0), @types/node 24.19.0 (MIT); compatibility proven by `pnpm bootstrap` (Node 24.21.0, pnpm 12.8.1, Postgres 17.11) → 244/244 node:test pass, 0 skipped. SDK capability tests (Fastify, viem, wallet provider) stay with their gates.
+
 These gates need evidence, not a new major architecture exercise. They are intentionally not filled with guessed chain addresses, model IDs, credit balances or invented deadlines. Record the verified values, source/date and passing probe when closing them.
 
 ## Changing a decision

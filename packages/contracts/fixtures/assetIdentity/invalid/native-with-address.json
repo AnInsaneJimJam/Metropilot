@@ -1,0 +1,13 @@
+{
+  "description": "native assets have no contract address",
+  "expect": {
+    "fieldPath": "/contractAddress",
+    "keyword": "additionalProperties"
+  },
+  "document": {
+    "kind": "native",
+    "networkRef": "monad-testnet",
+    "chainId": 10143,
+    "contractAddress": "0x0000000000000000000000000000000000000000"
+  }
+}

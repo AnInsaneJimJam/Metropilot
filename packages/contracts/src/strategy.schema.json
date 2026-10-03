@@ -87,7 +87,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 100,
-          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{0,17}[1-9])?$"
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{0,17}[1-9])?$"
         }
       },
       "required": [
@@ -110,7 +110,8 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 78,
-          "pattern": "^(0|[1-9][0-9]*)$"
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "format": "uint256"
         }
       },
       "required": [
@@ -131,7 +132,8 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]*)$"
+              "pattern": "^[1-9][0-9]*$",
+              "format": "uint256"
             }
           },
           "required": [

@@ -9,7 +9,7 @@ Runtime gets no signing/model/cloud secrets or DB role; allow only internal gate
 ## Checklist
 
 - [ ] INF-1 / G1,G4: define local paper environment and reproducible pinned process/image builds.
-  - Progress 2026-10-02 (`master`): [compose.yaml](compose.yaml) runs local-only Postgres 17.11, pinned by digest, bound to 127.0.0.1, with a healthcheck and the password required from `.env`. `docker compose config` passes, and fails when no password is set. Node 24.21.0 is pinned in `.node-version`/`engines`. Not yet observed: `pnpm db:up` against a running daemon. Remaining: pinned runtime/API/executor process images (G4).
+  - Progress 2026-10-02 (`master`): [compose.yaml](compose.yaml) runs local-only Postgres 17.11, pinned by digest, bound to 127.0.0.1, with a healthcheck and the password required from `.env`. `docker compose config` passes, and fails when no password is set. Node 24.21.0 is pinned in `.node-version`/`engines`. `pnpm db:up` observed 2026-10-02 on Docker 29.6.1 (container healthy) as part of `pnpm bootstrap`. Remaining: pinned runtime/API/executor process images (G4).
 - [ ] INF-2 / G4: verify selected cloud account/region/credits/quotas and complete cost estimate.
 - [ ] INF-3 / G4: implement isolated tasks, IAM/secret separation, network restrictions and resource teardown.
 - [ ] INF-4 / G4,G6: implement global admission limits, usage tags, expiry enforcement and leak detection.
