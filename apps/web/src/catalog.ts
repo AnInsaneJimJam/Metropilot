@@ -1,4 +1,4 @@
-import { syntheticCatalog, priceUnitKey } from '@monad-hack/strategy';
+import { syntheticCatalog, priceUnitKey, OUTPUT_SCHEMAS } from '@monad-hack/strategy';
 import type { Catalog } from '@monad-hack/strategy';
 // The single adapter from catalog records to editor dropdowns. Paper catalog only until G3 serves a live one.
 export const editorCatalog: Catalog = syntheticCatalog;
@@ -27,6 +27,22 @@ export function priceUnitOptions(): Option[] {
   const seen = new Map<string, string>();
   for (const f of Object.values(editorCatalog.feeds)) seen.set(priceUnitKey(f.baseAssetRef, f.quoteUnit), `${f.quoteUnit} per ${assetSymbol(f.baseAssetRef)}`);
   return orNone([...seen].map(([key, label]) => [label, key]));
+}
+/** Read operations some connector allows, and the connectors that offer reads. */
+export function readOperationOptions(): Option[] {
+  const operations = new Set(Object.values(editorCatalog.reads).flatMap(r => Object.keys(r)));
+  return orNone([...operations].map(op => [op === 'price.read' ? 'price (30 s TWAP)' : op, op]));
+}
+export function readConnectorOptions(): Option[] {
+  return orNone(Object.keys(editorCatalog.reads).filter(ref => Object.hasOwn(editorCatalog.connectors, ref)).map(ref => [venueLabel(ref), ref]));
+}
+export function modelOptions(): Option[] {
+  return orNone(Object.entries(editorCatalog.modelProfiles).map(([ref, m]) => [`${m.modelId}${m.provider === 'synthetic' ? ' (synthetic)' : ''}`, ref]));
+}
+/** Every field a read result or AI output schema can bind, for the field block. */
+export function recordFieldOptions(): Option[] {
+  const fields = new Set([...Object.values(editorCatalog.reads).flatMap(r => Object.values(r).flatMap(spec => Object.keys(spec.result))), ...Object.values(OUTPUT_SCHEMAS).flatMap(Object.keys)]);
+  return orNone([...fields].map(f => [f, f]));
 }
 export function feedQuoteLabel(feedRef: string): string {
   const feed = Object.hasOwn(editorCatalog.feeds, feedRef) ? editorCatalog.feeds[feedRef] : undefined;

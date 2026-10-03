@@ -1,10 +1,10 @@
 import * as Blockly from 'blockly/core';
 import { BLOCK, CHECK, FIELD, INPUT, AMOUNT_KIND, DEFAULTS, NUMERIC_TYPES, VALUE_TYPES, literalBlock, toAtomic, percentToBps, LanguageError } from '@monad-hack/strategy';
 import type { ValueType } from '@monad-hack/strategy';
-import { asset, assetOptions, assetSymbol, connectorOptions, feedOptions, feedQuoteLabel, priceUnitOptions } from '../catalog.ts';
+import { asset, assetOptions, assetSymbol, connectorOptions, feedOptions, feedQuoteLabel, modelOptions, priceUnitOptions, readConnectorOptions, readOperationOptions, recordFieldOptions } from '../catalog.ts';
 import { bindName, currentMinute, humanAmount, humanDecimal, humanPrice, text, utcTimestamp } from './fields.ts';
 
-export const COLOUR = { root: 260, trigger: 30, action: 210, logic: 120, value: 160, soon: '#8a8d93' } as const;
+export const COLOUR = { root: 260, trigger: 30, action: 210, logic: 120, value: 160, data: 300 } as const;
 /** Warning ID for checks the block can make on its own fields. Live compiler errors use COMPILER_WARNING. */
 export const LOCAL_WARNING = 'local';
 export const COMPILER_WARNING = 'compiler';
@@ -33,12 +33,39 @@ const value = (block: Block, output: string | readonly string[], tooltip: string
   block.setColour(COLOUR.value); block.setTooltip(tooltip);
 };
 /** Named value inputs (notify/ai.decide `inputs`) kept in extraState so imported documents round-trip. */
+type Named = Block & { inputNames?: string[] };
+const MAX_NAMED_INPUTS = 16;
+function setNamedInputs(block: Named, names: readonly string[]): void {
+  for (const old of block.inputNames ?? []) if (!names.includes(old)) block.removeInput(INPUT.notifyInput(old));
+  for (const name of names) if (!block.getInput(INPUT.notifyInput(name))) block.appendValueInput(INPUT.notifyInput(name)).setAlign(Blockly.inputs.Align.RIGHT).appendField(name);
+  block.inputNames = [...names];
+}
 const namedInputs = {
-  saveExtraState(this: Block & { inputNames?: string[] }) { return this.inputNames?.length ? { inputs: [...this.inputNames] } : null; },
-  loadExtraState(this: Block & { inputNames?: string[] }, state: { inputs?: unknown }) {
-    const names = Array.isArray(state.inputs) ? state.inputs.filter((n): n is string => typeof n === 'string' && bindName(n) === n) : [];
-    this.inputNames = names;
-    for (const name of names) this.appendValueInput(INPUT.notifyInput(name)).setAlign(Blockly.inputs.Align.RIGHT).appendField(name);
+  saveExtraState(this: Named) { return this.inputNames?.length ? { inputs: [...this.inputNames] } : null; },
+  loadExtraState(this: Named, state: { inputs?: unknown }) {
+    setNamedInputs(this, Array.isArray(state.inputs) ? state.inputs.filter((n): n is string => typeof n === 'string' && bindName(n) === n).slice(0, MAX_NAMED_INPUTS) : []);
+  },
+  // Right-click to add or remove an input. One undoable change; removing an input deletes the value plugged into it.
+  customContextMenu(this: Named, options: (Blockly.ContextMenuRegistry.ContextMenuOption | Blockly.ContextMenuRegistry.LegacyContextMenuOption)[]) {
+    if (this.isInFlyout || !this.isEditable()) return;
+    const names = this.inputNames ?? [];
+    const change = (next: readonly string[]) => {
+      Blockly.Events.setGroup(true);
+      try {
+        const before = Blockly.Events.BlockChange.getExtraBlockState_(this);
+        for (const gone of names.filter(n => !next.includes(n))) this.getInput(INPUT.notifyInput(gone))?.connection?.targetBlock()?.dispose(false);
+        setNamedInputs(this, next);
+        Blockly.Events.fire(new Blockly.Events.BlockChange(this, 'mutation', null, before, Blockly.Events.BlockChange.getExtraBlockState_(this)));
+      } finally { Blockly.Events.setGroup(false); }
+    };
+    options.push({
+      text: 'Add named input…', enabled: names.length < MAX_NAMED_INPUTS,
+      callback: () => Blockly.dialog.prompt('Input name (a letter, then letters, digits, _ or -):', names.includes('price') ? '' : 'price', value => {
+        const name = value === null ? null : bindName(value);
+        if (name && !names.includes(name)) change([...names, name]);
+      }),
+    });
+    for (const name of names) options.push({ text: `Remove input ${name}`, enabled: true, callback: () => change(names.filter(n => n !== name)) });
   },
 };
 
@@ -137,19 +164,20 @@ const blocks: Record<string, object> = {
   },
   [BLOCK.read]: {
     init(this: Block) {
-      this.appendDummyInput().appendField('read').appendField(new Blockly.FieldDropdown([['price', 'price.read']]), FIELD.operation)
-        .appendField('from').appendField(new Blockly.FieldDropdown(() => connectorOptions('price.read')), FIELD.connector)
-        .appendField('as').appendField(new Blockly.FieldTextInput('price', bindName), FIELD.bind);
-      statement(this, COLOUR.soon, 'Coming soon: reads a curated value and names it for later blocks.');
+      this.appendDummyInput().appendField('read').appendField(new Blockly.FieldDropdown(readOperationOptions), FIELD.operation)
+        .appendField('from').appendField(new Blockly.FieldDropdown(readConnectorOptions), FIELD.connector)
+        .appendField('as').appendField(new Blockly.FieldTextInput('market', bindName), FIELD.bind);
+      statement(this, COLOUR.data, 'Reads a curated value (the venue\'s 30 s TWAP and when it was observed) and names it. Later blocks use its fields, e.g. market.price. Too-old data stops the run.');
     },
   },
   [BLOCK.aiDecide]: {
     init(this: Block) {
       this.appendDummyInput().appendField('ask AI').appendField(new Blockly.FieldTextInput('Should I buy now?', text(4000)), FIELD.prompt);
+      this.appendDummyInput().appendField('model').appendField(new Blockly.FieldDropdown(modelOptions), FIELD.model);
       this.appendDummyInput().appendField('answer as').appendField(new Blockly.FieldDropdown([['allow/skip decision', 'decision/1'], ['summary', 'summary/1']]), FIELD.outputSchema)
-        .appendField('named').appendField(new Blockly.FieldTextInput('decision', bindName), FIELD.bind);
-      this.appendDummyInput().appendField('timeout').appendField(num(20, 1, 60), FIELD.timeout).appendField('s, max tokens').appendField(num(512, 1, 8192), FIELD.maxOutputTokens);
-      statement(this, COLOUR.soon, 'Coming soon: a bounded, metered AI call whose answer is validated before use.');
+        .appendField('named').appendField(new Blockly.FieldTextInput('answer', bindName), FIELD.bind);
+      this.appendDummyInput().appendField('timeout').appendField(num(DEFAULTS.ai.timeoutSeconds, 1, 60), FIELD.timeout).appendField('s, max tokens').appendField(num(DEFAULTS.ai.maxOutputTokens, 1, 8192), FIELD.maxOutputTokens);
+      statement(this, COLOUR.data, 'One bounded, metered AI call. Its answer is checked against the schema; a bad answer or timeout stops the run without trading. Use the decision in an if block. Right-click to add or remove inputs.');
     },
     ...namedInputs,
   },
@@ -185,6 +213,14 @@ const blocks: Record<string, object> = {
     init(this: Block) {
       this.appendValueInput(INPUT.operand(0)).setCheck('Boolean').appendField('not');
       value(this, 'Boolean', 'True when the condition is false.'); this.setColour(COLOUR.logic);
+    },
+  },
+  [BLOCK.field]: {
+    init(this: Block) {
+      this.appendDummyInput().appendField(new Blockly.FieldTextInput('market', bindName), FIELD.binding).appendField('.')
+        .appendField(new Blockly.FieldDropdown(recordFieldOptions), FIELD.recordField);
+      this.setOutput(true, null); this.setColour(COLOUR.data);
+      this.setTooltip('A field of a value named by an earlier read or ask-AI block in the same or an enclosing stack.');
     },
   },
   [BLOCK.arithmetic]: {

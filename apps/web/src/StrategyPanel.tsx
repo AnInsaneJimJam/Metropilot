@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { PROFILE_LIMITS } from '@monad-hack/strategy';
 import type { Experience } from '@monad-hack/strategy';
 import type { Validation } from './validation.ts';
-import { COMING_SOON_PRESETS, PRESETS } from './presets/index.ts';
+import { PRESETS } from './presets/index.ts';
 import type { Preset } from './presets/index.ts';
 import { Tutorial } from './presets/Tutorial.tsx';
 
@@ -85,7 +85,6 @@ export function StrategyPanel({ experience, onExperience, validation, onFocusBlo
           Start from
           <select value={presetId} onChange={e => setPresetId(e.target.value)}>
             {PRESETS.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-            {COMING_SOON_PRESETS.map(p => <option key={p.title} disabled>{p.title} (coming soon)</option>)}
           </select>
         </label>
         {preset && <p className="muted">{preset.summary}</p>}

@@ -17,6 +17,8 @@ export const BLOCK = {
   logical: 'logical',
   not: 'logical.not',
   arithmetic: 'arithmetic',
+  /** A field of a record named by an earlier read or ai.decide block, e.g. market.price. */
+  field: 'field',
 } as const;
 export const VALUE_TYPES = ['Boolean', 'Integer', 'Decimal', 'Money', 'Price', 'Timestamp', 'Enum'] as const;
 export type ValueType = typeof VALUE_TYPES[number];
@@ -31,12 +33,15 @@ export const FIELD = {
   count: 'COUNT',
   connector: 'CONNECTOR', tokenIn: 'TOKEN_IN', tokenOut: 'TOKEN_OUT', amountKind: 'AMOUNT_KIND', amount: 'AMOUNT', slippage: 'SLIPPAGE',
   message: 'MESSAGE', reason: 'REASON',
-  operation: 'OPERATION', bind: 'BIND', prompt: 'PROMPT', outputSchema: 'OUTPUT_SCHEMA', timeout: 'TIMEOUT', maxOutputTokens: 'MAX_OUTPUT_TOKENS',
+  operation: 'OPERATION', bind: 'BIND', prompt: 'PROMPT', outputSchema: 'OUTPUT_SCHEMA', timeout: 'TIMEOUT', maxOutputTokens: 'MAX_OUTPUT_TOKENS', model: 'MODEL',
+  binding: 'BINDING', recordField: 'RECORD_FIELD',
   operator: 'OP', value: 'VALUE', asset: 'ASSET', priceUnit: 'UNIT',
 } as const;
 export const INPUT = {
   triggers: 'TRIGGERS', body: 'BODY', condition: 'CONDITION', then: 'THEN', else: 'ELSE',
-  left: 'LEFT', right: 'RIGHT', operand: (i: number): string => `OPERAND${i}`, notifyInput: (name: string): string => `INPUT_${name}`,
+  left: 'LEFT', right: 'RIGHT', operand: (i: number): string => `OPERAND${i}`,
+  /** Named value inputs of notify and ai.decide blocks. */
+  notifyInput: (name: string): string => `INPUT_${name}`,
 } as const;
 /** Swap amount modes: a fixed human amount of tokenIn, or a percentage of the available position. */
 export const AMOUNT_KIND = { fixed: 'fixed', percent: 'positionPercent' } as const;
@@ -46,6 +51,7 @@ export const DEFAULTS = {
   scheduleSeconds: 60,
   maxAgeSeconds: 30,
   cooldownSeconds: 3600,
+  ai: { timeoutSeconds: 20, maxOutputTokens: 256 },
 } as const;
 /** Price units travel through one dropdown as `baseAssetRef/quoteUnit`; neither grammar allows '/'. */
 export const priceUnitKey = (baseAssetRef: string, quoteUnit: string): string => `${baseAssetRef}/${quoteUnit}`;

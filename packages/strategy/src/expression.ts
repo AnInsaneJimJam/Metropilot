@@ -1,6 +1,19 @@
 import type { Expression } from '@monad-hack/contracts';
 import { LanguageError } from './errors.ts';
 export type Value = Extract<Expression, { kind: 'literal' }>;
+/** Bounded text that only a recorded host result (an AI summary) can produce. It can be shown or passed on, never compared. */
+export interface TextValue { kind: 'literal'; valueType: 'Text'; value: string }
+export type BoundValue = Value | TextValue;
+/** Declared type of one field of a bound record (catalog read results, AI output schemas). */
+export type FieldType =
+  | { readonly valueType: 'Price'; readonly baseAssetRef: string; readonly quoteUnit: string }
+  | { readonly valueType: 'Money'; readonly assetRef: string }
+  | { readonly valueType: 'Boolean' | 'Integer' | 'Decimal' | 'Timestamp' | 'Enum' | 'Text' };
+export type RecordType = Readonly<Record<string, FieldType>>;
+/** Lexical scope at compile time (name → record type) and at run time (name → recorded values). */
+export type TypeScope = (name: string) => RecordType | undefined;
+export type ValueScope = (name: string) => Readonly<Record<string, BoundValue>> | undefined;
+const MAX_TEXT = 500;
 const SCALE = 10n ** 18n;
 const UINT256 = (1n << 256n) - 1n;
 export function atomic(text: string): bigint {
@@ -21,8 +34,9 @@ function formatDecimal(n: bigint): string {
   const result = sign + (positive / SCALE).toString() + (fraction ? '.' + fraction : '');
   decimal(result); return result;
 }
-export function validateLiteral(value: Value): void {
+export function validateLiteral(value: BoundValue): void {
   switch (value.valueType) {
+    case 'Text': if (typeof value.value !== 'string' || value.value.length < 1 || value.value.length > MAX_TEXT || !value.value.isWellFormed()) throw new LanguageError('TYPE_MISMATCH', `Text must be 1–${MAX_TEXT} characters.`); break;
     case 'Decimal': decimal(value.value); break;
     case 'Money': atomic(value.value.atomic); break;
     case 'Price': if (decimal(value.value.decimal) <= 0n) throw new LanguageError('TYPE_MISMATCH', 'Price must be positive.'); break;
@@ -66,51 +80,65 @@ function numeric(a: Value): bigint {
   if (a.valueType === 'Integer') return BigInt(a.value);
   const n = scalar(a); if (typeof n !== 'bigint') throw new LanguageError('TYPE_MISMATCH', 'Arithmetic needs a numeric value.'); return n;
 }
-function unit(expr: Expression): string {
+export const fieldUnit = (type: FieldType): string =>
+  type.valueType === 'Money' ? 'Money:' + type.assetRef : type.valueType === 'Price' ? 'Price:' + JSON.stringify([type.baseAssetRef, type.quoteUnit]) : type.valueType;
+const noScope = (): undefined => undefined;
+/** Bindings hold records; `ref` names a whole record, so only `field` can read a value out of one. */
+function lookupField<T>(expr: Extract<Expression, { kind: 'ref' | 'field' }>, record: Readonly<Record<string, T>> | undefined): T {
+  if (!record) throw new LanguageError('UNKNOWN_REFERENCE', `No earlier read or AI block named ${expr.name} is in scope here.`);
+  if (expr.kind === 'ref') throw new LanguageError('TYPE_MISMATCH', `${expr.name} is a record; choose one of its fields: ${Object.keys(record).join(', ')}.`);
+  if (!Object.hasOwn(record, expr.field)) throw new LanguageError('UNKNOWN_REFERENCE', `${expr.name} has no field ${expr.field}; choose one of: ${Object.keys(record).join(', ')}.`);
+  return record[expr.field]!;
+}
+/** Type plus unit (asset, price pair) of an expression, e.g. `Price:["paper.WETH","USD"]`. */
+export function unit(expr: Expression, scope: TypeScope = noScope): string {
   if (expr.kind === 'literal') {
     if (expr.valueType === 'Money') return 'Money:' + expr.value.assetRef;
     if (expr.valueType === 'Price') return 'Price:' + JSON.stringify([expr.value.baseAssetRef, expr.value.quoteUnit]);
     return expr.valueType;
   }
-  return expr.kind === 'arithmetic' ? unit(expr.left) : expressionType(expr);
+  if (expr.kind === 'ref' || expr.kind === 'field') return fieldUnit(lookupField(expr, scope(expr.name)));
+  return expr.kind === 'arithmetic' ? unit(expr.left, scope) : expressionType(expr, scope);
 }
-export function expressionType(expr: Expression): Value['valueType'] {
+export function expressionType(expr: Expression, scope: TypeScope = noScope): BoundValue['valueType'] {
   if (expr.kind === 'literal') { validateLiteral(expr); return expr.valueType; }
-  if (expr.kind === 'ref' || expr.kind === 'field') throw new LanguageError('UNKNOWN_REFERENCE', `No binding named ${expr.name}.`);
+  if (expr.kind === 'ref' || expr.kind === 'field') return lookupField(expr, scope(expr.name)).valueType;
   if (expr.kind === 'logical') {
     if ((expr.operator === 'not' && expr.operands.length !== 1) || (expr.operator !== 'not' && expr.operands.length < 2)) throw new LanguageError('TYPE_MISMATCH', 'not needs one operand; and/or need 2–8.');
-    for (const operand of expr.operands) if (expressionType(operand) !== 'Boolean') throw new LanguageError('TYPE_MISMATCH', 'Logical operands must be Boolean.');
+    for (const operand of expr.operands) if (expressionType(operand, scope) !== 'Boolean') throw new LanguageError('TYPE_MISMATCH', 'Logical operands must be Boolean.');
     return 'Boolean';
   }
-  const left = expressionType(expr.left); const right = expressionType(expr.right);
+  const left = expressionType(expr.left, scope); const right = expressionType(expr.right, scope);
   if (expr.kind === 'compare') {
+    if (left === 'Text' || right === 'Text') throw new LanguageError('TYPE_MISMATCH', 'Text cannot be compared; branch on an AI decision instead.');
     if (left !== right || ((left === 'Boolean' || left === 'Enum') && !['eq', 'ne'].includes(expr.operator))) throw new LanguageError('TYPE_MISMATCH', 'Comparison types or operator are incompatible.');
     // Unit compatibility is checked on exact pure values below, including unreachable branches.
-    if (unit(expr.left) !== unit(expr.right)) throw new LanguageError('TYPE_MISMATCH', 'Comparison units differ.');
+    if (unit(expr.left, scope) !== unit(expr.right, scope)) throw new LanguageError('TYPE_MISMATCH', 'Comparison units differ.');
     return 'Boolean';
   }
   if (!['Integer','Decimal','Money','Price'].includes(left)) throw new LanguageError('TYPE_MISMATCH', 'Arithmetic needs numeric operands.');
   if (expr.operator === 'add' || expr.operator === 'subtract') {
-    if (left !== right || unit(expr.left) !== unit(expr.right)) throw new LanguageError('TYPE_MISMATCH', 'Arithmetic units differ.');
+    if (left !== right || unit(expr.left, scope) !== unit(expr.right, scope)) throw new LanguageError('TYPE_MISMATCH', 'Arithmetic units differ.');
   } else if (right !== 'Decimal') throw new LanguageError('TYPE_MISMATCH', 'Scaling requires a dimensionless Decimal on the right.');
   return left;
 }
-export function evaluateExpression(expr: Expression, visit: () => void = () => {}): Value {
+export function evaluateExpression(expr: Expression, visit: () => void = () => {}, scope: ValueScope = noScope): BoundValue {
   visit();
   if (expr.kind === 'literal') { validateLiteral(expr); return expr; }
-  if (expr.kind === 'ref' || expr.kind === 'field') throw new LanguageError('UNKNOWN_REFERENCE', `No binding named ${expr.name}.`);
+  if (expr.kind === 'ref' || expr.kind === 'field') { const value = lookupField(expr, scope(expr.name)); validateLiteral(value); return value; }
   if (expr.kind === 'logical') {
     if ((expr.operator === 'not' && expr.operands.length !== 1) || (expr.operator !== 'not' && expr.operands.length < 2)) throw new LanguageError('TYPE_MISMATCH', 'Invalid logical arity.');
     let result = expr.operator === 'and';
     for (const operand of expr.operands) {
-      const value = evaluateExpression(operand, visit);
+      const value = evaluateExpression(operand, visit, scope);
       if (value.valueType !== 'Boolean') throw new LanguageError('TYPE_MISMATCH', 'Logical operands must be Boolean.');
       if (expr.operator === 'not') result = !value.value;
       else { result = value.value; if ((expr.operator === 'and' && !result) || (expr.operator === 'or' && result)) break; }
     }
     return { kind: 'literal', valueType: 'Boolean', value: result };
   }
-  const left = evaluateExpression(expr.left, visit); const right = evaluateExpression(expr.right, visit);
+  const left = evaluateExpression(expr.left, visit, scope); const right = evaluateExpression(expr.right, visit, scope);
+  if (left.valueType === 'Text' || right.valueType === 'Text') throw new LanguageError('TYPE_MISMATCH', 'Text cannot be compared or used in arithmetic.');
   if (expr.kind === 'compare') {
     if (!compatible(left, right) || ((left.valueType === 'Boolean' || left.valueType === 'Enum') && !['eq','ne'].includes(expr.operator))) throw new LanguageError('TYPE_MISMATCH', 'Comparison units or operator are incompatible.');
     const a = scalar(left); const b = scalar(right);

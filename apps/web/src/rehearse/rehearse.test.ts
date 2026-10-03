@@ -50,3 +50,27 @@ test('rehearsal is deterministic', async () => {
   const p = await program('threshold_sale');
   assert.deepEqual(await rehearse(p, syntheticCatalog, 'oscillates'), await rehearse(p, syntheticCatalog, 'oscillates'));
 });
+
+test('observe and explain reads the TWAP, records a scripted summary and never trades', async () => {
+  const r = await rehearse(await program('observe_explain'), syntheticCatalog, 'crossesOnce');
+  assert.equal(kinds(r, 'completed').length, 3);
+  assert.ok(r.events.some(e => e.text.startsWith('Read price.read: TWAP 2500') && e.nodeIds.includes('read_market')));
+  assert.ok(r.events.some(e => e.text.includes('no model called') && e.nodeIds.includes('explain')));
+  assert.equal(kinds(r, 'settled').length, 0);
+  assert.equal(r.holdings['paper.USD'], '2500 USD');
+});
+
+test('AI-gated purchase buys only on a scripted allow; skip, bad output and timeouts never trade', async () => {
+  const p = await program('ai_gated_purchase');
+  const allow = await rehearse(p, syntheticCatalog, 'crossesOnce', 'allow');
+  assert.equal(kinds(allow, 'settled').length, 3); assert.equal(allow.holdings['paper.USD'], '2425 USD');
+  const skip = await rehearse(p, syntheticCatalog, 'crossesOnce', 'skip');
+  assert.equal(kinds(skip, 'settled').length, 0); assert.equal(kinds(skip, 'completed').length, 3);
+  assert.ok(skip.events.some(e => e.kind === 'command' && e.nodeIds.includes('record_skip')));
+  for (const script of ['invalid', 'timeout'] as const) {
+    const r = await rehearse(p, syntheticCatalog, 'crossesOnce', script);
+    assert.equal(kinds(r, 'settled').length, 0, script); assert.equal(r.holdings['paper.USD'], '2500 USD', script);
+    assert.equal(kinds(r, 'failed').length, 3, script);
+    assert.ok(kinds(r, 'failed').every(e => e.text.includes('MODEL_OUTPUT_INVALID') && e.nodeIds.includes('gate')), script);
+  }
+});

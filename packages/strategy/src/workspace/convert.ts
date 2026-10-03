@@ -24,7 +24,7 @@ const ROLE: Readonly<Record<string, Role>> = {
   [BLOCK.schedule]: 'trigger', [BLOCK.crossesAbove]: 'trigger', [BLOCK.crossesBelow]: 'trigger',
   [BLOCK.if]: 'statement', [BLOCK.repeat]: 'statement', [BLOCK.swap]: 'statement', [BLOCK.notify]: 'statement', [BLOCK.stop]: 'statement',
   [BLOCK.read]: 'statement', [BLOCK.aiDecide]: 'statement',
-  [BLOCK.compare]: 'expression', [BLOCK.logical]: 'expression', [BLOCK.not]: 'expression', [BLOCK.arithmetic]: 'expression',
+  [BLOCK.compare]: 'expression', [BLOCK.logical]: 'expression', [BLOCK.not]: 'expression', [BLOCK.arithmetic]: 'expression', [BLOCK.field]: 'expression',
   ...Object.fromEntries(VALUE_TYPES.map(type => [literalBlock(type), 'expression'])),
 };
 const WHERE: Readonly<Record<Role, string>> = { root: 'the canvas', trigger: 'a trigger slot', statement: 'an action slot', expression: 'a value slot' };
@@ -36,8 +36,9 @@ const FIELDS: Readonly<Record<string, readonly string[]>> = {
   [BLOCK.swap]: [FIELD.amount, FIELD.amountKind, FIELD.tokenIn, FIELD.tokenOut, FIELD.connector, FIELD.slippage],
   [BLOCK.notify]: [FIELD.message], [BLOCK.stop]: [FIELD.reason],
   [BLOCK.read]: [FIELD.operation, FIELD.connector, FIELD.bind],
-  [BLOCK.aiDecide]: [FIELD.prompt, FIELD.outputSchema, FIELD.bind, FIELD.timeout, FIELD.maxOutputTokens],
+  [BLOCK.aiDecide]: [FIELD.prompt, FIELD.model, FIELD.outputSchema, FIELD.bind, FIELD.timeout, FIELD.maxOutputTokens],
   [BLOCK.compare]: [FIELD.operator], [BLOCK.logical]: [FIELD.operator], [BLOCK.not]: [], [BLOCK.arithmetic]: [FIELD.operator],
+  [BLOCK.field]: [FIELD.binding, FIELD.recordField],
   ...Object.fromEntries(VALUE_TYPES.map(type => [literalBlock(type), type === 'Money' ? [FIELD.value, FIELD.asset] : type === 'Price' ? [FIELD.value, FIELD.priceUnit] : [FIELD.value]])),
 };
 const BLOCK_KEYS = new Set(['type', 'id', 'x', 'y', 'collapsed', 'deletable', 'movable', 'editable', 'enabled', 'disabledReasons', 'inline', 'data', 'extraState', 'icons', 'fields', 'inputs', 'next']);
@@ -116,7 +117,7 @@ class Walker {
       if (connection === undefined) continue;
       if (!isObject(connection) || connection.shadow !== undefined || Object.keys(connection).some(k => k !== 'block')) fail('SCHEMA_INVALID', 'Shadow or malformed connections are not supported.', id, pointer);
     }
-    if (raw.extraState !== undefined && type !== BLOCK.logical && type !== BLOCK.notify) fail('SCHEMA_INVALID', 'Unexpected block state.', id, pointer);
+    if (raw.extraState !== undefined && type !== BLOCK.logical && type !== BLOCK.notify && type !== BLOCK.aiDecide) fail('SCHEMA_INVALID', 'Unexpected block state.', id, pointer);
     this.map[pointer] = id;
     return { type, id, pointer, fields: fields as Record<string, unknown>, inputs: inputs as Record<string, Connection>, next: raw.next as Connection | undefined, extraState: raw.extraState };
   }
@@ -209,13 +210,25 @@ class Walker {
         this.inputs(b, []);
         if (b.next) fail('SCHEMA_INVALID', 'Nothing can follow a stop block.', b.id, b.pointer);
         return { id: b.id, type: 'stop', reason: this.text(b, FIELD.reason) };
-      default: // read, ai.decide
-        return fail('UNSUPPORTED_CAPABILITY', 'This block is coming soon and cannot be used yet.', b.id, b.pointer);
+      case BLOCK.read:
+        this.inputs(b, []); // catalog reads with arguments have no block form yet; the compiler reports a missing argument
+        return { id: b.id, type: 'read', connectorRef: this.text(b, FIELD.connector), operation: this.text(b, FIELD.operation), arguments: {}, bind: this.text(b, FIELD.bind) };
+      default: { // ai.decide
+        const names = this.extraNames(b);
+        this.inputs(b, names.map(INPUT.notifyInput));
+        const outputSchemaRef = this.text(b, FIELD.outputSchema);
+        if (outputSchemaRef !== 'decision/1' && outputSchemaRef !== 'summary/1') fail('SCHEMA_INVALID', 'Choose an allow/skip decision or a summary.', b.id, b.pointer);
+        return {
+          id: b.id, type: 'ai.decide', modelProfileRef: this.text(b, FIELD.model), prompt: this.text(b, FIELD.prompt),
+          inputs: Object.fromEntries(names.map(n => [n, this.value(b, INPUT.notifyInput(n), `inputs/${n}`)])),
+          outputSchemaRef: outputSchemaRef as 'decision/1' | 'summary/1', timeoutSeconds: this.integer(b, FIELD.timeout), maxOutputTokens: this.integer(b, FIELD.maxOutputTokens), bind: this.text(b, FIELD.bind),
+        };
+      }
     }
   }
   private extraNames(b: BlockState): string[] {
     if (b.extraState === undefined) return [];
-    const names = isObject(b.extraState) && Array.isArray(b.extraState.inputs) ? b.extraState.inputs : fail('SCHEMA_INVALID', 'Malformed notify inputs.', b.id, b.pointer);
+    const names = isObject(b.extraState) && Array.isArray(b.extraState.inputs) ? b.extraState.inputs : fail('SCHEMA_INVALID', 'Malformed named inputs.', b.id, b.pointer);
     if (names.some(n => typeof n !== 'string' || !NODE_ID.test(n)) || new Set(names).size !== names.length) fail('SCHEMA_INVALID', 'Input names must be unique legal names.', b.id, b.pointer);
     return names as string[];
   }
@@ -242,6 +255,9 @@ class Walker {
       case BLOCK.not:
         this.inputs(b, [INPUT.operand(0)]);
         return { kind: 'logical', operator: 'not', operands: [this.value(b, INPUT.operand(0), 'operands/0')] };
+      case BLOCK.field:
+        this.inputs(b, []);
+        return { kind: 'field', name: this.text(b, FIELD.binding), field: this.text(b, FIELD.recordField) };
     }
     this.inputs(b, []);
     const type = b.type.slice('literal.'.length) as ValueType;
@@ -335,8 +351,13 @@ export function workspaceFromStrategy(strategy: Strategy, catalog: Catalog): Wor
         if (e.operator === 'not') return block(BLOCK.not, id, {}, inputs);
         return block(BLOCK.logical, id, { [FIELD.operator]: e.operator }, inputs, e.operands.length > 2 ? { operands: e.operands.length } : undefined);
       }
-      default: return fail('UNSUPPORTED_CAPABILITY', 'Named values arrive with read and AI blocks; this strategy cannot be shown as blocks yet.');
+      case 'field': return block(BLOCK.field, id, { [FIELD.binding]: e.name, [FIELD.recordField]: e.field });
+      default: return fail('TYPE_MISMATCH', `${e.name} is a record; use one of its fields instead.`);
     }
+  };
+  const named = (inputs: Record<string, Expression>) => {
+    const names = Object.keys(inputs);
+    return { inputs: Object.fromEntries(names.map(n => [INPUT.notifyInput(n), { block: expression(inputs[n]!) }])), extraState: names.length ? { inputs: names } : undefined };
   };
   const statement = (s: Statement): Saved => {
     switch (s.type) {
@@ -348,11 +369,20 @@ export function workspaceFromStrategy(strategy: Strategy, catalog: Catalog): Wor
         [FIELD.tokenIn]: s.tokenInRef, [FIELD.tokenOut]: s.tokenOutRef, [FIELD.connector]: s.connectorRef, [FIELD.slippage]: s.maxSlippageBps,
       });
       case 'notify': {
-        const names = Object.keys(s.inputs);
-        return block(BLOCK.notify, s.id, { [FIELD.message]: s.message }, Object.fromEntries(names.map(n => [INPUT.notifyInput(n), { block: expression(s.inputs[n]!) }])), names.length ? { inputs: names } : undefined);
+        const { inputs, extraState } = named(s.inputs);
+        return block(BLOCK.notify, s.id, { [FIELD.message]: s.message }, inputs, extraState);
       }
       case 'stop': return block(BLOCK.stop, s.id, { [FIELD.reason]: s.reason });
-      default: return fail('UNSUPPORTED_CAPABILITY', 'Read and AI blocks are coming soon; this strategy cannot be shown as blocks yet.', s.id);
+      case 'read':
+        if (Object.keys(s.arguments).length) return fail('UNSUPPORTED_CAPABILITY', 'Reads with arguments cannot be shown as blocks yet.', s.id);
+        return block(BLOCK.read, s.id, { [FIELD.operation]: s.operation, [FIELD.connector]: s.connectorRef, [FIELD.bind]: s.bind });
+      case 'ai.decide': {
+        const { inputs, extraState } = named(s.inputs);
+        return block(BLOCK.aiDecide, s.id, {
+          [FIELD.prompt]: s.prompt, [FIELD.model]: s.modelProfileRef, [FIELD.outputSchema]: s.outputSchemaRef, [FIELD.bind]: s.bind,
+          [FIELD.timeout]: s.timeoutSeconds, [FIELD.maxOutputTokens]: s.maxOutputTokens,
+        }, inputs, extraState);
+      }
     }
   };
   const trigger = (t: Trigger): Saved => {

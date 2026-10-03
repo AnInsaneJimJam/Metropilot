@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type * as Blockly from 'blockly/core';
 import type { CompiledStrategy } from '@monad-hack/strategy';
 import { editorCatalog } from '../catalog.ts';
-import { rehearse, SCENARIOS, START_HOLDINGS } from './simulate.ts';
-import type { Rehearsal, ScenarioId } from './simulate.ts';
+import { AI_SCRIPTS, rehearse, SCENARIOS, START_HOLDINGS } from './simulate.ts';
+import type { AiScript, Rehearsal, ScenarioId } from './simulate.ts';
 
 const SPEEDS = [10, 50] as const;
 const FRAME_MS = 50;
@@ -17,7 +17,9 @@ interface Props {
 
 export function RehearsePanel({ workspace, program }: Props) {
   const [scenario, setScenario] = useState<ScenarioId>('crossesOnce');
+  const [aiScript, setAiScript] = useState<AiScript>('allow');
   const [result, setResult] = useState<{ hash: string; scenario: ScenarioId; rehearsal: Rehearsal } | { error: string }>();
+  const usesAi = program?.canonicalJson.includes('"type":"ai.decide"') ?? false;
   const [block, setBlock] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(10);
@@ -27,11 +29,11 @@ export function RehearsePanel({ workspace, program }: Props) {
     setPlaying(false); setBlock(0); setResult(undefined);
     if (!program) return;
     let current = true;
-    rehearse(program, editorCatalog, scenario).then(
+    rehearse(program, editorCatalog, scenario, aiScript).then(
       rehearsal => { if (current) setResult({ hash: program.hash, scenario, rehearsal }); },
       (error: unknown) => { if (current) setResult({ error: error instanceof Error ? error.message : String(error) }); });
     return () => { current = false; };
-  }, [program, scenario]);
+  }, [program, scenario, aiScript]);
 
   const rehearsal = result && 'rehearsal' in result ? result.rehearsal : undefined;
   const lastBlock = rehearsal ? Math.max(rehearsal.ticks.at(-1)?.block ?? 0, rehearsal.events.at(-1)?.block ?? 0) : 0;
@@ -73,6 +75,14 @@ export function RehearsePanel({ workspace, program }: Props) {
             </select>
           </label>
           <p className="muted">{SCENARIOS.find(s => s.id === scenario)?.summary}</p>
+          {usesAi && (
+            <label className="stacked">
+              Scripted AI answer (no model is called)
+              <select value={aiScript} onChange={e => setAiScript(e.target.value as AiScript)}>
+                {AI_SCRIPTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+            </label>
+          )}
           <div className="rehearse-controls">
             <button type="button" disabled={!rehearsal || done} onClick={() => setPlaying(p => !p)}>{playing ? 'Pause' : block ? 'Resume' : 'Play'}</button>
             <button type="button" disabled={!rehearsal || done} onClick={() => { setPlaying(false); setBlock(lastBlock); }}>Skip to end</button>

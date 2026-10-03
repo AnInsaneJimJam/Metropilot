@@ -149,8 +149,8 @@ test('loose, disabled, unknown, misplaced and malformed blocks are errors on the
   await rejectsWith(extraField, 'SCHEMA_INVALID', 'sell_tenth');
   const badId = blocksOf(); firstStatement(badId).id = '!#$%';
   await rejectsWith(badId, 'SCHEMA_INVALID');
-  const comingSoon = blocksOf(); Object.assign(firstStatement(comingSoon), { type: 'read', fields: { OPERATION: 'price.read', CONNECTOR: 'paper.uniswap', BIND: 'price' } });
-  await rejectsWith(comingSoon, 'UNSUPPORTED_CAPABILITY', 'sell_tenth');
+  const badRead = blocksOf(); Object.assign(firstStatement(badRead), { type: 'read', fields: { OPERATION: 'balance.read', CONNECTOR: 'paper.uniswap', BIND: 'price' } });
+  await rejectsWith(badRead, 'UNSUPPORTED_CAPABILITY', 'sell_tenth');
   const missingValue = blocksOf(everyValueBlock()); delete firstStatement(missingValue).inputs.CONDITION;
   await rejectsWith(missingValue, 'SCHEMA_INVALID', 'check');
   for (const envelope of [{}, { editorFormat: 'blocks/2', blockly: {} }, { editorFormat: 'blocks/1', blockly: { blocks: { languageVersion: 0, blocks: [] } } }, '{"editorFormat":']) await rejectsWith(envelope, 'SCHEMA_INVALID');
@@ -190,7 +190,7 @@ const withSchedule = (intervalSeconds: number): Strategy => {
 };
 
 test('every preset converts to blocks and compiles through the same core, within rookie limits', async () => {
-  assert.deepEqual(PRESETS.map(p => p.id), ['threshold_sale', 'scheduled_purchase']);
+  assert.deepEqual(PRESETS.map(p => p.id), ['threshold_sale', 'scheduled_purchase', 'observe_explain', 'ai_gated_purchase']);
   for (const preset of PRESETS) {
     const workspace = workspaceFromStrategy(preset.strategy, catalog);
     const { strategy } = compileWorkspace(workspace, catalog);
@@ -230,4 +230,24 @@ test('rookie limits slippage, AI calls, trades and live mode; the platform caps 
     ['POLICY_DENIED', 'nested_swap', '/triggers/0/body/0/then/1/maxSlippageBps'],
     ['POLICY_DENIED', 'sell_tenth', '/triggers/0/body/1/maxSlippageBps'],
   ]);
+});
+
+test('read, ai.decide and field blocks round-trip; scope errors highlight the statement using them', async () => {
+  const gated = PRESETS.find(p => p.id === 'ai_gated_purchase')!.strategy;
+  const workspace = blocksOf(gated);
+  const ask = firstStatement(workspace).next.block;
+  assert.equal(ask.type, 'ai.decide'); assert.deepEqual(ask.extraState, { inputs: ['price', 'observedAt'] });
+  assert.equal(ask.inputs.INPUT_price.block.type, 'field'); assert.deepEqual(ask.inputs.INPUT_price.block.fields, { BINDING: 'market', RECORD_FIELD: 'price' });
+  const moved = blocksOf(gated); rootOf(moved).x = 900; rootOf(moved).y = -40;
+  assert.equal(await hashOf(moved), await hashOf(workspace));
+  // A field of a name that is not in scope: the error lands on the statement using it, like other expression errors.
+  const typo = blocksOf(gated); const priceInput = firstStatement(typo).next.block.inputs.INPUT_price.block;
+  priceInput.fields.BINDING = 'markets';
+  await rejectsWith(typo, 'UNKNOWN_REFERENCE', 'gate');
+  const noInputs = blocksOf(gated); const gate = firstStatement(noInputs).next.block; delete gate.extraState; delete gate.inputs;
+  await rejectsWith(noInputs, 'SCHEMA_INVALID', 'gate'); // ai.decide needs at least one input
+  const badSchema = blocksOf(gated); firstStatement(badSchema).next.block.fields.OUTPUT_SCHEMA = 'free-text';
+  await rejectsWith(badSchema, 'SCHEMA_INVALID', 'gate');
+  const ref = structuredClone(gated); (ref.triggers[0]!.body[1] as { inputs: Record<string, unknown> }).inputs.price = { kind: 'ref', name: 'market' };
+  assert.throws(() => workspaceFromStrategy(ref, catalog), code('TYPE_MISMATCH'));
 });

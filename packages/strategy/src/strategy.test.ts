@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fixture from './threshold-sale.json' with { type: 'json' };
 import type { Strategy, Expression, Statement, RunCheckpoint } from '@monad-hack/contracts';
-import { compileStrategy, syntheticCatalog, evaluateExpression, transitionPrice, scheduleSlot, startRun, advanceRun, LanguageError } from './index.ts';
-import type { CrossingState } from './index.ts';
+import { compileStrategy, syntheticCatalog, evaluateExpression, transitionPrice, scheduleSlot, startRun, advanceRun, LanguageError, PRESETS } from './index.ts';
+import type { CrossingState, CompiledStrategy, HostResponse, AdvanceResult } from './index.ts';
 const source = () => JSON.stringify(fixture);
 const copy = () => structuredClone(fixture) as Strategy;
 const compile = (value: unknown) => compileStrategy(JSON.stringify(value), syntheticCatalog);
@@ -164,9 +164,7 @@ test('checkpoint shape, version, hash, legal nesting and waiting identity are va
   await assert.rejects(startRun({ ...program }, context), /Compile and validate/);
 });
 
-test('read, AI and connector event features fail explicitly until their host/catalog milestone', async () => {
-  const read = copy(); read.triggers[0]!.body = [{ id: 'read', type: 'read', connectorRef: 'paper.uniswap', operation: 'price.read', arguments: {}, bind: 'observed' }]; await rejects(read, 'UNSUPPORTED_CAPABILITY');
-  const ai = copy(); ai.triggers[0]!.body = [{ id: 'ai', type: 'ai.decide', modelProfileRef: 'paper.model', prompt: 'Evaluate authored condition.', inputs: { price: dec('2500') }, outputSchemaRef: 'decision/1', timeoutSeconds: 10, maxOutputTokens: 100, bind: 'decision' }]; await rejects(ai, 'UNSUPPORTED_CAPABILITY');
+test('connector event triggers still fail explicitly until their catalog milestone', async () => {
   const event = copy(); event.triggers = [{ id: 'event', type: 'connector.event', connectorRef: 'paper.uniswap', eventType: 'swap', filters: {}, body: [{ id: 'note', type: 'notify', message: 'event', inputs: {} }] }]; await rejects(event, 'UNSUPPORTED_CAPABILITY');
 });
 
@@ -206,4 +204,126 @@ test('native MON gas guard rejects a 100% position sale but allows partial or no
   assert.equal((await compile(sale('paper.WETH', 'paper.USD', 10000))).bounds.intents, 1);
   const fixedMon = copy(); fixedMon.triggers[0]!.body[0] = { ...swap(), tokenInRef: 'paper.MON', amount: { kind: 'fixed', atomic: '1000000000000000000' } };
   assert.equal((await compile(fixedMon)).bounds.intents, 1);
+});
+
+// ── named values, read and ai.decide (editor plan Phase 8) ─────────────────────────────────────────
+const field = (name: string, f: string): Expression => ({ kind: 'field', name, field: f });
+const read = (id = 'look', bind = 'market'): Statement => ({ id, type: 'read', connectorRef: 'paper.uniswap', operation: 'price.read', arguments: {}, bind });
+const ai = (id = 'ask', bind = 'gate', inputs: Record<string, Expression> = { price: field('market', 'price') }): Extract<Statement, { type: 'ai.decide' }> =>
+  ({ id, type: 'ai.decide', modelProfileRef: 'paper.kimi', prompt: 'Allow or skip?', inputs, outputSchemaRef: 'decision/1', timeoutSeconds: 20, maxOutputTokens: 256, bind });
+const note = (id: string, inputs: Record<string, Expression> = {}): Statement => ({ id, type: 'notify', message: id, inputs });
+const withBody = (...body: Statement[]) => { const value = copy(); value.triggers[0]!.body = body; return value; };
+const gated = () => structuredClone(PRESETS.find(p => p.id === 'ai_gated_purchase')!.strategy);
+const gatedContext = { deploymentRevision: 'paper-test/1', triggerId: 'daily', sourceEventKey: 'slot-1' };
+const observation = (decimal = '2501', observedAt = now(0)) => ({ price: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal }, observedAt });
+const recorded = (step: AdvanceResult, result: unknown, receivedAt?: string): HostResponse => ({ key: step.command!.key, outcome: 'recorded', result, ...(receivedAt ? { receivedAt } : {}) });
+/** Runs the AI-gated preset: read (fresh, at t+5 s) → the given AI answer → whatever follows. */
+async function gate(program: CompiledStrategy, answer: unknown) {
+  const reading = await advanceRun(program, await startRun(program, gatedContext));
+  const asking = await advanceRun(program, reading.checkpoint, recorded(reading, observation(), now(5)));
+  return { reading, asking, decided: await advanceRun(program, asking.checkpoint, recorded(asking, answer)) };
+}
+
+test('read and ai.decide compile with typed fields, counted AI calls and catalog-checked models', async () => {
+  const program = await compile(gated());
+  assert.deepEqual(program.bounds, { steps: 12, intents: 1, aiCalls: 1 });
+  assert.deepEqual(Object.keys(program.bindings), ['read_market', 'gate']);
+  assert.equal(program.bindings.read_market!.maxAgeSeconds, 30);
+  await rejects(withBody(read('a'), ai('one', 'g1'), ai('two', 'g2')), 'LIMIT_EXCEEDED'); // 2 AI calls, limit 1
+  const twice = withBody(read('a'), { id: 'loop', type: 'repeat', count: 2, body: [ai()] }); twice.limits.maxAiCallsPerRun = 3;
+  assert.equal((await compile(twice)).bounds.aiCalls, 2);
+  const either = withBody(read('a'), { id: 'pick', type: 'if', condition: bool(true), then: [ai('yes', 'g1')], else: [ai('no', 'g2')] });
+  assert.equal((await compile(either)).bounds.aiCalls, 1);
+  await rejects(withBody(read('a'), { ...ai(), modelProfileRef: 'paper.unknown' }), 'UNKNOWN_REFERENCE');
+  await rejects(withBody(read('a'), { ...ai(), timeoutSeconds: 31 }), 'LIMIT_EXCEEDED');
+  await rejects(withBody(read('a'), { ...ai(), maxOutputTokens: 2000 }), 'LIMIT_EXCEEDED');
+  await rejects(withBody({ ...read(), operation: 'balance.read' } as Statement), 'UNSUPPORTED_CAPABILITY');
+  await rejects(withBody({ ...read(), connectorRef: 'paper.unknown' } as Statement), 'UNKNOWN_REFERENCE');
+  await rejects(withBody({ ...read(), arguments: { pool: dec('1') } } as Statement), 'SCHEMA_INVALID');
+});
+
+test('named values are lexical: in order, no escape from branches, no duplicates or shadowing, fields only', async () => {
+  const price = field('market', 'price');
+  const above = (left: Expression): Expression => ({ kind: 'compare', operator: 'gt', left, right: { kind: 'literal', valueType: 'Price', value: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal: '2500' } } });
+  assert.equal((await compile(withBody(read(), { id: 'cmp', type: 'if', condition: above(price), then: [note('hi', { price })], else: [] }))).bounds.aiCalls, 0);
+  await assert.rejects(compile(withBody(note('early', { price }), read())), (e: unknown) => e instanceof LanguageError && e.code === 'UNKNOWN_REFERENCE' && e.nodeId === 'early');
+  await rejects(withBody({ id: 'branch', type: 'if', condition: bool(true), then: [read()], else: [] }, note('after', { price })), 'UNKNOWN_REFERENCE');
+  await rejects(withBody({ id: 'loop', type: 'repeat', count: 2, body: [read()] }, note('after', { price })), 'UNKNOWN_REFERENCE');
+  await assert.rejects(compile(withBody(read('a'), read('b'))), (e: unknown) => e instanceof LanguageError && e.code === 'SCHEMA_INVALID' && e.nodeId === 'b' && e.fieldPath === '/nodes/b/bind');
+  await rejects(withBody(read('a'), { id: 'branch', type: 'if', condition: bool(true), then: [read('b')], else: [] }), 'SCHEMA_INVALID'); // shadowing
+  assert.equal((await compile(withBody({ id: 'branch', type: 'if', condition: bool(true), then: [read('a')], else: [read('b')] }))).bounds.intents, 0); // sibling scopes
+  await rejects(withBody(read(), note('whole', { market: { kind: 'ref', name: 'market' } })), 'TYPE_MISMATCH');
+  await rejects(withBody(read(), note('typo', { p: field('market', 'prize') })), 'UNKNOWN_REFERENCE');
+  await rejects(withBody(read(), { id: 'cmp', type: 'if', condition: above(field('market', 'observedAt')), then: [], else: [] }), 'TYPE_MISMATCH');
+  const textCompare: Expression = { kind: 'compare', operator: 'eq', left: field('gate', 'summary'), right: field('gate', 'summary') };
+  await rejects(withBody(read(), ai(), { id: 'cmp', type: 'if', condition: textCompare, then: [], else: [] }), 'TYPE_MISMATCH');
+});
+
+test('AI-gated run: read, decide allow → one intent; skip → no intent; replay reuses recorded results', async () => {
+  const program = await compile(gated());
+  const allow = await gate(program, { decision: 'allow', summary: 'Fits the plan.' });
+  assert.equal(allow.reading.command?.kind, 'read'); assert.equal(allow.reading.checkpoint.waiting?.kind, 'read');
+  assert.equal(allow.asking.command?.kind, 'ai.decide');
+  if (allow.asking.command?.kind !== 'ai.decide') throw new Error('expected AI command');
+  assert.deepEqual(allow.asking.command.inputs.price, { kind: 'literal', valueType: 'Price', value: observation().price });
+  assert.equal(allow.asking.checkpoint.aiCalls, 1);
+  assert.equal(allow.decided.command?.kind, 'swap.exactInput'); assert.equal(allow.decided.checkpoint.intents, 1);
+  const settled = await advanceRun(program, allow.decided.checkpoint, { key: allow.decided.command!.key, outcome: 'settled' });
+  if (settled.command?.kind !== 'notify') throw new Error('expected notify');
+  assert.deepEqual(settled.command.inputs.reason, { kind: 'literal', valueType: 'Text', value: 'Fits the plan.' });
+  const skip = await gate(program, { decision: 'skip', summary: 'Unsure.' });
+  assert.equal(skip.decided.command?.kind, 'notify'); assert.equal(skip.decided.command?.nodeId, 'record_skip'); assert.equal(skip.decided.checkpoint.intents, 0);
+  // Replay: the same checkpoints and recorded responses give identical results, also after a JSON save/reload.
+  assert.deepEqual(await gate(program, { decision: 'allow', summary: 'Fits the plan.' }), allow);
+  const reloaded: RunCheckpoint = JSON.parse(JSON.stringify(allow.asking.checkpoint));
+  assert.deepEqual(await advanceRun(program, reloaded, recorded(allow.asking, { summary: 'Fits the plan.', decision: 'allow' })), allow.decided);
+});
+
+test('stale, future or missing reads and invalid, timed-out or refused AI output stop the run with no intents', async () => {
+  const program = await compile(gated());
+  const reading = await advanceRun(program, await startRun(program, gatedContext));
+  const stopped = async (response: HostResponse, code: string, nodeId: string, from = reading) => {
+    const result = await advanceRun(program, from.checkpoint, response);
+    assert.equal(result.checkpoint.status, 'failed'); assert.equal(result.checkpoint.error?.code, code); assert.equal(result.checkpoint.error?.nodeId, nodeId);
+    assert.equal(result.command, undefined); assert.equal(result.checkpoint.intents, 0); assert.deepEqual(result.checkpoint.bindings, []);
+  };
+  await stopped(recorded(reading, observation('2501', now(0)), now(31)), 'STALE_DATA', 'read_market');
+  assert.equal((await advanceRun(program, reading.checkpoint, recorded(reading, observation('2501', now(0)), now(30)))).command?.kind, 'ai.decide'); // exactly at the limit is fresh
+  await stopped(recorded(reading, observation('2501', now(10)), now(5)), 'STALE_DATA', 'read_market');
+  await stopped({ key: reading.command!.key, outcome: 'failed' }, 'STALE_DATA', 'read_market');
+  await stopped(recorded(reading, { price: { baseAssetRef: 'paper.WETH', quoteUnit: 'EUR', decimal: '1' }, observedAt: now(0) }, now(1)), 'STALE_DATA', 'read_market');
+  await stopped(recorded(reading, { ...observation(), extra: 1 }, now(1)), 'STALE_DATA', 'read_market');
+  await assert.rejects(advanceRun(program, reading.checkpoint, recorded(reading, observation())), /receivedAt/);
+  const asking = await advanceRun(program, reading.checkpoint, recorded(reading, observation(), now(5)));
+  for (const bad of [{ decision: 'buy', summary: 'x' }, { decision: 'allow' }, { decision: 'allow', summary: '' }, { decision: 'allow', summary: 'x'.repeat(501) }, { decision: 'allow', summary: 'x', size: 10 }, 'allow', null]) {
+    await stopped(recorded(asking, bad), 'MODEL_OUTPUT_INVALID', 'gate', asking);
+  }
+  await stopped({ key: asking.command!.key, outcome: 'timeout' }, 'MODEL_OUTPUT_INVALID', 'gate', asking);
+  await stopped({ key: asking.command!.key, outcome: 'refused' }, 'MODEL_OUTPUT_INVALID', 'gate', asking);
+  await stopped({ key: asking.command!.key, outcome: 'failed' }, 'MODEL_UNAVAILABLE', 'gate', asking);
+  await assert.rejects(advanceRun(program, asking.checkpoint, { key: asking.command!.key, outcome: 'settled' }), /incompatible/);
+});
+
+test('checkpoints keep only in-scope bindings, reset them per repeat iteration and reject forged values', async () => {
+  const looped = withBody({ id: 'loop', type: 'repeat', count: 2, body: [read(), note('seen', { price: field('market', 'price') })] }, note('done'));
+  const program = await compile(looped);
+  const first = await advanceRun(program, await startRun(program, context));
+  const told = await advanceRun(program, first.checkpoint, recorded(first, observation('2501'), now(1)));
+  assert.equal(told.checkpoint.bindings.length, 1); assert.deepEqual(told.checkpoint.bindings[0]!.iterationPath, [0]);
+  const second = await advanceRun(program, told.checkpoint, { key: told.command!.key, outcome: 'acknowledged' });
+  assert.equal(second.command?.kind, 'read'); assert.deepEqual(second.command?.iterationPath, [1]);
+  assert.deepEqual(second.checkpoint.bindings, []); // iteration 0's value is out of scope in iteration 1
+  const told2 = await advanceRun(program, second.checkpoint, recorded(second, observation('2600'), now(2)));
+  if (told2.command?.kind !== 'notify') throw new Error('expected notify');
+  assert.equal(told2.command.inputs.price!.valueType === 'Price' && told2.command.inputs.price!.value.decimal, '2600');
+  const after = await advanceRun(program, told2.checkpoint, { key: told2.command.key, outcome: 'acknowledged' });
+  assert.equal(after.command?.nodeId, 'done'); assert.deepEqual(after.checkpoint.bindings, []);
+  const forged = structuredClone(told.checkpoint); (forged.bindings[0]!.value.price as { value: { decimal: string } }).value.decimal = '0'; // schema-shaped, but not a positive price
+  await assert.rejects(advanceRun(program, forged), /binding value/);
+  const renamed = structuredClone(told.checkpoint); renamed.bindings[0]!.name = 'other';
+  await assert.rejects(advanceRun(program, renamed), /binding/);
+  const extra = structuredClone(told.checkpoint); extra.bindings.push({ ...extra.bindings[0]!, iterationPath: [1] });
+  await assert.rejects(advanceRun(program, extra), /in scope/);
+  const overspent = structuredClone(told.checkpoint); overspent.aiCalls = 2;
+  await assert.rejects(advanceRun(program, overspent), /counters/);
 });

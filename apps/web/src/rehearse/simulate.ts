@@ -4,6 +4,7 @@ import type { RunCheckpoint, Trigger } from '@monad-hack/contracts';
 
 // Synthetic rehearsal: finalized-block pool prices at the catalog's block cadence, a 30 s-style TWAP over them,
 // and the real engine (transitionPrice, scheduleSlot, startRun, advanceRun) driven by a synthetic paper host.
+// Reads return the latest synthetic TWAP; AI blocks get a scripted answer and no model is called.
 // Nothing here is a paper or live fill. Pure and deterministic, so the same inputs give the same trace.
 
 export type ScenarioId = 'crossesOnce' | 'oscillates' | 'staleGap' | 'pendingFill';
@@ -12,6 +13,15 @@ export const SCENARIOS: readonly { readonly id: ScenarioId; readonly label: stri
   { id: 'oscillates', label: 'Oscillates', summary: 'Pool price swings 2 either side of the threshold every 40 s.' },
   { id: 'staleGap', label: 'Stale gap', summary: 'Finalized blocks stop arriving for 45 s while the price crosses.' },
   { id: 'pendingFill', label: 'Pending fill', summary: 'Crosses once, but the synthetic fill stays pending for 20 s.' },
+];
+
+/** Scripted answer every ai.decide block receives during a rehearsal. */
+export type AiScript = 'allow' | 'skip' | 'invalid' | 'timeout';
+export const AI_SCRIPTS: readonly { readonly id: AiScript; readonly label: string }[] = [
+  { id: 'allow', label: 'AI answers allow' },
+  { id: 'skip', label: 'AI answers skip' },
+  { id: 'invalid', label: 'AI answers out of schema' },
+  { id: 'timeout', label: 'AI times out' },
 ];
 
 export type EventKind = 'info' | 'non-action' | 'fire' | 'command' | 'pending' | 'settled' | 'completed' | 'failed';
@@ -68,7 +78,7 @@ function spotPath(trigger: PriceTrigger, scenario: ScenarioId, blockMillis: numb
 
 interface Run { checkpoint: RunCheckpoint; command?: HostCommand; pendingUntil?: number }
 
-export async function rehearse(program: CompiledStrategy, catalog: Catalog, scenario: ScenarioId): Promise<Rehearsal> {
+export async function rehearse(program: CompiledStrategy, catalog: Catalog, scenario: ScenarioId, aiScript: AiScript = 'allow'): Promise<Rehearsal> {
   const events: TraceEvent[] = []; const ticks: Tick[] = [];
   const triggers = program.strategy.triggers;
   const priceTriggers = triggers.filter((t): t is PriceTrigger => t.type === 'price.crossesAbove' || t.type === 'price.crossesBelow');
@@ -85,6 +95,28 @@ export async function rehearse(program: CompiledStrategy, catalog: Catalog, scen
   }
   const human = (ref: string, atomicValue: bigint): string => `${fromAtomic(atomicValue.toString(), catalog.assets[ref]?.decimals ?? 18)} ${symbol(ref)}`;
   const latestTwap = new Map<string, bigint>();
+  const latestObservedAt = new Map<string, number>();
+  let clock = START; // synthetic evaluation time of the block being played
+
+  // Synthetic data host: a read returns the newest TWAP of the feed on that venue, as observed; staleness is the engine's call.
+  const readPrice = (command: Extract<HostCommand, { kind: 'read' }>): { response: Omit<HostResponse, 'key'>; text: string } => {
+    const feed = Object.entries(catalog.feeds).find(([, f]) => f.connectorRef === command.connectorRef);
+    const twap = feed ? latestTwap.get(feed[0]) : undefined; const observedAt = feed ? latestObservedAt.get(feed[0]) : undefined;
+    if (!feed || twap === undefined || observedAt === undefined) return { response: { outcome: 'failed' }, text: `Read ${command.operation}: no synthetic TWAP yet, so there is nothing to return.` };
+    return {
+      response: { outcome: 'recorded', receivedAt: iso(clock), result: { price: { baseAssetRef: feed[1].baseAssetRef, quoteUnit: feed[1].quoteUnit, decimal: canonical(twap) }, observedAt: iso(observedAt) } },
+      text: `Read ${command.operation}: TWAP ${canonical(twap)} observed ${((clock - observedAt) / 1000).toFixed(1)} s ago, named ${program.bindings[command.nodeId]?.name ?? command.nodeId}.`,
+    };
+  };
+  // Scripted AI: the same answer for every call, so a rehearsal never calls or pays for a model.
+  const answer = (command: Extract<HostCommand, { kind: 'ai.decide' }>): { response: Omit<HostResponse, 'key'>; text: string } => {
+    const note = 'scripted, no model called';
+    if (aiScript === 'timeout') return { response: { outcome: 'timeout' }, text: `AI (${note}): timed out.` };
+    if (aiScript === 'invalid') return { response: { outcome: 'recorded', result: { decision: 'maybe' } }, text: `AI (${note}): answered outside the ${command.outputSchemaRef} schema.` };
+    const summary = `Scripted synthetic answer for inputs ${Object.keys(command.inputs).join(', ')}.`;
+    if (command.outputSchemaRef === 'summary/1') return { response: { outcome: 'recorded', result: { summary } }, text: `AI (${note}): summary recorded.` };
+    return { response: { outcome: 'recorded', result: { decision: aiScript, summary } }, text: `AI (${note}): ${aiScript}.` };
+  };
 
   // Synthetic paper host: fills at the latest TWAP moved against the user by the full allowed slippage.
   const fill = (command: Extract<HostCommand, { kind: 'swap.exactInput' }>): { ok: true; text: string } | { ok: false; text: string } => {
@@ -120,6 +152,11 @@ export async function rehearse(program: CompiledStrategy, catalog: Catalog, scen
         run = undefined; return;
       }
       const command = result.command; run.command = command;
+      if (command.kind === 'read' || command.kind === 'ai.decide') {
+        const host = command.kind === 'read' ? readPrice(command) : answer(command);
+        events.push({ block, kind: 'command', nodeIds: activeIds(run), text: host.text });
+        response = { key: command.key, ...host.response }; continue;
+      }
       if (command.kind === 'notify') {
         events.push({ block, kind: 'command', nodeIds: activeIds(run), text: `Notify: "${command.message}" (synthetic, acknowledged).` });
         response = { key: command.key, outcome: 'acknowledged' }; continue;
@@ -151,13 +188,15 @@ export async function rehearse(program: CompiledStrategy, catalog: Catalog, scen
     // Schedule-only strategies: jump the clock slot to slot instead of playing every block.
     if (schedules.length === 0) events.push({ block: 0, kind: 'info', nodeIds: [], text: 'No price or schedule trigger to rehearse.' });
     for (const feedRef of Object.keys(catalog.feeds)) latestTwap.set(feedRef, scaled(REFERENCE_TWAP));
-    events.push({ block: 0, kind: 'info', nodeIds: [], text: `No price trigger, so fills use a flat synthetic TWAP of ${REFERENCE_TWAP} and only Pending fill changes anything. Skipping ahead ${SCHEDULE_SLOTS} schedule slots.` });
+    events.push({ block: 0, kind: 'info', nodeIds: [], text: `No price trigger, so reads and fills use a flat synthetic TWAP of ${REFERENCE_TWAP} and only Pending fill changes the scenario. Skipping ahead ${SCHEDULE_SLOTS} schedule slots.` });
     const first = Math.min(...schedules.map(t => Date.parse(t.anchorAt)));
     const step = Math.min(...schedules.map(t => t.intervalSeconds)) * 1000;
     const last = new Map<string, string>();
     for (let slot = 0; slot < SCHEDULE_SLOTS && schedules.length; slot++) {
       const now = first + slot * step; const block = slot * Math.ceil(step / blockMillis);
       ticks.push({ block, timeMs: now - first });
+      clock = now;
+      for (const feedRef of Object.keys(catalog.feeds)) latestObservedAt.set(feedRef, now);
       for (const t of schedules) {
         const accepted = scheduleSlot(t, iso(now), last.get(t.id));
         if (!accepted) continue;
@@ -181,7 +220,7 @@ export async function rehearse(program: CompiledStrategy, catalog: Catalog, scen
   events.push({ block: 0, kind: 'info', nodeIds: [], text: `Synthetic finalized blocks every ${blockMillis} ms, finalized ${finalityBlocks} blocks later. Triggers need a full TWAP window first.` });
 
   for (let block = finalityBlocks; block < total; block++) {
-    const now = START + block * blockMillis;
+    const now = START + block * blockMillis; clock = now;
     const finalized = block - finalityBlocks; // the newest block that is final at `now`
     const tick: { block: number; timeMs: number; spot?: string; twap?: string } = { block, timeMs: block * blockMillis };
     await resumePending(block);
@@ -197,7 +236,7 @@ export async function rehearse(program: CompiledStrategy, catalog: Catalog, scen
       let sum = 0n;
       for (let b = observedBlock - window + 1; b <= observedBlock; b++) sum += path.spot(Math.min(b, path.blocks - 1));
       const twap = sum / BigInt(window);
-      latestTwap.set(feedRef, twap); tick.twap = canonical(twap);
+      latestTwap.set(feedRef, twap); latestObservedAt.set(feedRef, START + observedBlock * blockMillis); tick.twap = canonical(twap);
       for (const t of priceTriggers.filter(p => p.feedRef === feedRef)) {
         const observation = { sourceEventKey: `synthetic:${feedRef}:${observedBlock}`, feedRef, price: { ...t.threshold, decimal: canonical(twap) }, observedAt: iso(START + observedBlock * blockMillis), receivedAt: iso(now) };
         const decision = transitionPrice(t, states.get(t.id) ?? {}, observation, iso(now));

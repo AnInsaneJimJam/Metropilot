@@ -1,11 +1,11 @@
-export { compileStrategy, syntheticCatalog } from './compile.ts';
-export type { CompiledStrategy, Catalog, Bounds } from './compile.ts';
+export { compileStrategy, syntheticCatalog, OUTPUT_SCHEMAS } from './compile.ts';
+export type { CompiledStrategy, Catalog, Bounds, BindingSpec } from './compile.ts';
 export { evaluateExpression } from './expression.ts';
-export type { Value } from './expression.ts';
+export type { Value, BoundValue, TextValue, FieldType, RecordType } from './expression.ts';
 export { transitionPrice, scheduleSlot } from './triggers.ts';
 export type { PriceObservation, CrossingState, TriggerDecision } from './triggers.ts';
 export { startRun, advanceRun } from './interpreter.ts';
-export type { HostCommand, HostResponse, AdvanceResult } from './interpreter.ts';
+export type { HostCommand, HostResponse, AdvanceResult, SwapCommand, NotifyCommand, ReadCommand, AiCommand } from './interpreter.ts';
 export { LanguageError } from './errors.ts';
 export { normalizeHuman, fractionDigits, toAtomic, fromAtomic, toPriceDecimal, toLanguageDecimal, percentToBps, bpsToPercent } from './workspace/units.ts';
 export { EDITOR_FORMAT, BLOCK, VALUE_TYPES, NUMERIC_TYPES, literalBlock, CHECK, FIELD, INPUT, AMOUNT_KIND, DEFAULTS, priceUnitKey, parsePriceUnitKey, NODE_ID, newNodeId } from './workspace/vocabulary.ts';

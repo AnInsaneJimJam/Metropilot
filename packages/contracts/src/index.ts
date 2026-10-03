@@ -10,7 +10,7 @@ import event from '../schemas/event-1.schema.json' with { type: 'json' };
 import auditEvent from '../schemas/audit-event-1.schema.json' with { type: 'json' };
 import type { Strategy } from './generated.ts';
 import type { ErrorCode, GeneratedContractMap } from './generated-contracts.ts';
-export type { Strategy, Expression, Statement, Trigger, Price, Money, Amount, RunCheckpoint, Frame, Waiting } from './generated.ts';
+export type { Strategy, Expression, Statement, Trigger, Price, Money, Amount, RunCheckpoint, Frame, Waiting, Binding, TextValue } from './generated.ts';
 export type * from './generated-contracts.ts';
 export { schema as strategySchema };
 export { canonicalize, contentHash } from './canonical.ts';

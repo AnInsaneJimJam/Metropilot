@@ -1038,7 +1038,9 @@
         "kind": {
           "enum": [
             "swap.exactInput",
-            "notify"
+            "notify",
+            "read",
+            "ai.decide"
           ]
         }
       },
@@ -1054,7 +1056,7 @@
       "type": "object",
       "properties": {
         "schemaVersion": {
-          "const": "strategy-run/1"
+          "const": "strategy-run/2"
         },
         "strategyHash": {
           "type": "string",
@@ -1098,10 +1100,22 @@
           "minimum": 0,
           "maximum": 3
         },
+        "aiCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
         "activeMillis": {
           "type": "integer",
           "minimum": 0,
           "maximum": 60000
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Binding"
+          },
+          "maxItems": 100
         },
         "status": {
           "enum": [
@@ -1151,8 +1165,82 @@
         "frames",
         "steps",
         "intents",
+        "aiCalls",
         "activeMillis",
+        "bindings",
         "status"
+      ],
+      "additionalProperties": false
+    },
+    "TextValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "literal"
+        },
+        "valueType": {
+          "const": "Text"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "kind",
+        "valueType",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Binding": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "maxLength": 64
+        },
+        "iterationPath": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          },
+          "maxItems": 2
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "maxLength": 64
+        },
+        "value": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+            "maxLength": 64
+          },
+          "maxProperties": 16,
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Expression"
+              },
+              {
+                "$ref": "#/$defs/TextValue"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "nodeId",
+        "iterationPath",
+        "name",
+        "value"
       ],
       "additionalProperties": false
     }

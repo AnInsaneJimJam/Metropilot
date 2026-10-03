@@ -5,4 +5,4 @@ The synthetic Rehearse panel (editor plan Phase 7). Follow [web source AGENTS](.
 Everything here is labelled **"Synthetic rehearsal — not a paper or live fill"**. Never present it as a paper fill or an on-chain transaction, and never hard-code block time or finality.
 
 - [x] Phase 7: scenarios crosses once / oscillates / stale gap / pending fill; block highlighting; non-actions shown; evidence: `rehearse.test.ts` (6 tests) under `pnpm check`, web `typecheck` and `build` green.
-- [ ] Phase 8: rehearse read/ai.decide with scripted AI answers.
+- [x] Phase 8: reads return the latest synthetic TWAP; AI blocks get a scripted answer (allow / skip / out-of-schema / timeout) and no model is called; evidence: `rehearse.test.ts` (8 tests) under `pnpm check`.
