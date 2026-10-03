@@ -7,6 +7,7 @@ Start with one verified Uniswap exact-input route and paper fixtures. Separate r
 ## Checklist
 
 - [ ] CNR-1 / G1,G4: define capability manifests, synthetic paper registry and observation schemas.
+  - G1 portion done 2026-10-03 (commit `5d94ea3`, green hosted CI): observation envelope [event-1](../contracts/schemas/event-1.schema.json) and the synthetic paper registry (seeded `catalog_versions`, `syntheticCatalog` in `packages/strategy`). Remaining (G4): connector capability manifests in this package.
 - [ ] CNR-2 / G4,G8: implement authenticated/deduplicated event ingestion/backfill and bounded reads.
 - [ ] CNR-3 / G8: verify one mainnet/test target route, addresses, decimals, liquidity and reference price.
 - [ ] CNR-4 / G8: build/decode quote, exact allowance, swap and finalized receipt interpretation.

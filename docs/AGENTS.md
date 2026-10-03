@@ -6,7 +6,8 @@ Keep one authoritative place for each rule. Link rather than copying limits or s
 
 ## Checklist
 
-- [ ] DOC-1 / G1: connect executable schema fixtures/checks to normative examples.
+- [x] DOC-1 / G1: connect executable schema fixtures/checks to normative examples.
+  - Done 2026-10-03: the JSON examples in [strategy-language.md](specs/strategy-language.md) and [api-and-data.md](specs/api-and-data.md) must equal their `spec-*.json` fixtures and validate ([contracts.test.ts](../packages/contracts/src/contracts.test.ts)); their referenced rows exist in the paper seed ([db.test.ts](../apps/api/src/db/db.test.ts)). Evidence: commit `5d94ea3`, green hosted CI.
 - [ ] DOC-2 / G2–G8: keep contracts and decisions synchronized with implemented behavior.
 - [ ] DOC-3 / G9: verify links, navigation, source dates and accurate implementation status.
 - [ ] DOC-4 / G10: finalize custody/operations disclosures with responsible owners.

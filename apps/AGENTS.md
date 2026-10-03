@@ -10,6 +10,7 @@ Scope: independently started processes and website builds. Read [architecture](.
   - Progress 2026-10-02 (`master`): private ESM stub manifests for all five apps, covered by the root `pnpm check`. They have no scripts yet because no app has an entry point. Remaining: per-app start/build/test entries once each app has source.
   - Progress 2026-10-03 (`master`, G2 editor Phase 2): `apps/web` has Vite/React `dev`, `build`, `typecheck` and `test:e2e` (Playwright, `*.spec.ts`) scripts; root `pnpm check` typechecks it and `pnpm web:dev` starts it. Remaining: api, runtime, executor and docs entries.
   - Progress 2026-10-03: `apps/api` has its first source (config, migration runner, paper seed, DB tests), run through root `pnpm db:*`/`pnpm check`; still no server start entry (G3).
+  - G1 portion done 2026-10-03 (commit `5d94ea3`, green hosted CI): entries exist for every app with source (`apps/web` scripts; `apps/api` via root `pnpm db:*`). Remaining: start entries for api, runtime, executor and docs as each gets source.
 - [ ] APPS-2 / G4: prove process credentials/network access match architecture.
 - [ ] APPS-3 / G7–G8: verify the end-to-end contracts across apps without private source imports.
 

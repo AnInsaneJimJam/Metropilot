@@ -7,6 +7,7 @@ Cite direct official sources near factual claims. Distinguish event sponsor list
 ## Checklist
 
 - [ ] RES-1 / G1,G6: recheck selected package/model/provider capabilities and current pricing.
+  - G1 portion done 2026-10-03 (commit `5d94ea3`, green hosted CI): package pins and licenses rechecked ([decisions E09](../decisions.md)). Remaining (G6): model/provider capabilities and pricing.
 - [ ] RES-2 / G4: confirm cloud credits, region, quotas and expiry for the actual account.
 - [ ] RES-3 / G8: record exact chain/address/ABI/signer/RPC probe evidence.
 - [ ] RES-4 / G9: capture authenticated event deadline/timezone and bounty rules.

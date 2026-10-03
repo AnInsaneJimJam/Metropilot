@@ -22,7 +22,7 @@ This repository currently contains a documentation scaffold only. During the sca
 
 ## Integration checklist
 
-- [ ] ROOT-1 / G1: establish pinned workspace tooling and authoritative schemas with passing fixture checks.
+- [x] ROOT-1 / G1: establish pinned workspace tooling and authoritative schemas with passing fixture checks. Evidence 2026-10-03: commit `5d94ea3`; [hosted CI run](https://github.com/AnInsaneJimJam/monad-hack/actions/runs/37137630518/job/111245284126) green (frozen install, migrations twice on a fresh Postgres 17.11 service, seed, `REQUIRE_DB=1 pnpm check`); local clean-clone re-run on a fresh database 2026-10-03 → 244/244 node:test pass, 0 skipped.
 - [ ] ROOT-2 / G2–G7: integrate the paper-agent vertical slice and verify consumer/producer contracts.
 - [ ] ROOT-3 / G8–G9: verify capped live evidence and current sponsor requirements before submission.
 - [ ] ROOT-4 / G10: close public-custody release gates with named operational owners.
