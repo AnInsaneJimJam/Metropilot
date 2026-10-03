@@ -5,9 +5,9 @@ import { parseSource } from './json.ts';
 import { LanguageError } from './errors.ts';
 import { atomic, decimal, expressionType, timestamp } from './expression.ts';
 export interface Catalog {
-  readonly assets: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live' }>>;
-  readonly feeds: Readonly<Record<string, { readonly baseAssetRef: string; readonly quoteUnit: string }>>;
-  readonly connectors: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live'; readonly actions: readonly string[] }>>;
+  readonly assets: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live'; readonly decimals: number; readonly native?: true }>>;
+  readonly feeds: Readonly<Record<string, { readonly baseAssetRef: string; readonly quoteUnit: string; readonly source: 'poolTwap'; readonly connectorRef: string; readonly windowSeconds: number; readonly finality: 'finalized' }>>;
+  readonly connectors: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live'; readonly version: string; readonly venue: 'uniswap-v3' | 'kuru'; readonly actions: readonly string[] }>>;
 }
 export interface Bounds { steps: number; intents: number; aiCalls: number }
 export interface CompiledStrategy { readonly strategy: Strategy; readonly canonicalJson: string; readonly hash: string; readonly bounds: Readonly<Bounds> }
@@ -77,6 +77,7 @@ export async function compileStrategy(source: string, catalog: Catalog): Promise
             if (!connector.actions.includes('swap.exactInput')) throw new LanguageError('UNSUPPORTED_CAPABILITY', 'Connector does not support exact-input swaps.');
             if (node.tokenInRef === node.tokenOutRef || a.networkRef !== b.networkRef || a.mode !== b.mode || connector.networkRef !== a.networkRef || connector.mode !== a.mode) throw new LanguageError('TYPE_MISMATCH', 'Swap assets and connector must share network/mode and have distinct assets.');
             if (node.amount.kind === 'fixed' && atomic(node.amount.atomic) === 0n) throw new LanguageError('INVALID_AMOUNT', 'Swap amount must be positive.');
+            if (a.native && node.amount.kind === 'positionBps' && node.amount.bps === 10000) throw new LanguageError('POLICY_DENIED', 'Keep some native MON for gas; sell less than 100%.');
             bound.intents = 1; break;
           }
           case 'notify': for (const e of Object.values(node.inputs)) bound.steps += expression(e, depth + 1); break;
@@ -94,6 +95,7 @@ export async function compileStrategy(source: string, catalog: Catalog): Promise
   const bounds: Bounds = { steps: 0, intents: 0, aiCalls: 0 };
   for (const trigger of strategy.triggers) {
     count(1); identify(trigger.id);
+    if (trigger.body.length === 0) throw new LanguageError('SCHEMA_INVALID', 'Add at least one action to the trigger body.', trigger.id, `/nodes/${trigger.id}/body`);
     if (trigger.type === 'connector.event') throw new LanguageError('UNSUPPORTED_CAPABILITY', 'Connector events require the next catalog/host milestone.', trigger.id);
     if (trigger.type === 'schedule') timestamp(trigger.anchorAt);
     else {
@@ -109,8 +111,18 @@ export async function compileStrategy(source: string, catalog: Catalog): Promise
   const result = freeze({ strategy, canonicalJson, hash: await sha256(canonicalJson), bounds });
   compiled.add(result); return result;
 }
-export const syntheticCatalog: Catalog = Object.freeze({
-  assets: Object.freeze({ 'paper.WETH': Object.freeze({ networkRef: 'paper-monad', mode: 'paper' }), 'paper.USD': Object.freeze({ networkRef: 'paper-monad', mode: 'paper' }) }),
-  feeds: Object.freeze({ 'paper.weth-usd': Object.freeze({ baseAssetRef: 'paper.WETH', quoteUnit: 'USD' }) }),
-  connectors: Object.freeze({ 'paper.uniswap': Object.freeze({ networkRef: 'paper-monad', mode: 'paper', actions: Object.freeze(['swap.exactInput']) }) }),
-});
+export const syntheticCatalog: Catalog = freeze({
+  assets: {
+    'paper.MON': { networkRef: 'paper-monad', mode: 'paper', decimals: 18, native: true },
+    'paper.WETH': { networkRef: 'paper-monad', mode: 'paper', decimals: 18 },
+    'paper.USD': { networkRef: 'paper-monad', mode: 'paper', decimals: 6 },
+  },
+  feeds: {
+    'paper.weth-usd': { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', source: 'poolTwap', connectorRef: 'paper.uniswap', windowSeconds: 30, finality: 'finalized' },
+    'paper.weth-usd-kuru': { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', source: 'poolTwap', connectorRef: 'paper.kuru', windowSeconds: 30, finality: 'finalized' },
+  },
+  connectors: {
+    'paper.uniswap': { networkRef: 'paper-monad', mode: 'paper', version: 'paper-uniswap-v3/1', venue: 'uniswap-v3', actions: ['swap.exactInput', 'price.read'] },
+    'paper.kuru': { networkRef: 'paper-monad', mode: 'paper', version: 'paper-kuru/1', venue: 'kuru', actions: ['swap.exactInput', 'price.read'] },
+  },
+} satisfies Catalog);

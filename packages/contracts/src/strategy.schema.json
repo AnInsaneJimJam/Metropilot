@@ -790,7 +790,7 @@
             },
             "intervalSeconds": {
               "type": "integer",
-              "minimum": 60,
+              "minimum": 10,
               "maximum": 31536000
             },
             "anchorAt": {
@@ -804,7 +804,7 @@
               "items": {
                 "$ref": "#/$defs/Statement"
               },
-              "minItems": 0,
+              "minItems": 1,
               "maxItems": 100
             }
           },
@@ -853,7 +853,7 @@
               "items": {
                 "$ref": "#/$defs/Statement"
               },
-              "minItems": 0,
+              "minItems": 1,
               "maxItems": 100
             }
           },
@@ -904,7 +904,7 @@
               "items": {
                 "$ref": "#/$defs/Statement"
               },
-              "minItems": 0,
+              "minItems": 1,
               "maxItems": 100
             }
           },
@@ -961,7 +961,7 @@
               "items": {
                 "$ref": "#/$defs/Statement"
               },
-              "minItems": 0,
+              "minItems": 1,
               "maxItems": 100
             }
           },

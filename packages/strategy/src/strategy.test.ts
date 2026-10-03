@@ -10,7 +10,7 @@ const compile = (value: unknown) => compileStrategy(JSON.stringify(value), synth
 const rejects = async (value: unknown, code: string) => assert.rejects(compile(value), (e: unknown) => e instanceof LanguageError && e.code === code);
 const dec = (value: string): Expression => ({ kind: 'literal', valueType: 'Decimal', value });
 const bool = (value: boolean): Expression => ({ kind: 'literal', valueType: 'Boolean', value });
-const swap = (): Statement => ({ id: 'sale', type: 'swap.exactInput', connectorRef: 'paper.uniswap', tokenInRef: 'paper.WETH', tokenOutRef: 'paper.USD', amount: { kind: 'positionBps', bps: 1000 }, maxSlippageBps: 50 });
+const swap = (): Extract<Statement, { type: 'swap.exactInput' }> => ({ id: 'sale', type: 'swap.exactInput', connectorRef: 'paper.uniswap', tokenInRef: 'paper.WETH', tokenOutRef: 'paper.USD', amount: { kind: 'positionBps', bps: 1000 }, maxSlippageBps: 50 });
 const now = (s: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, s)).toISOString();
 const context = { deploymentRevision: 'paper-test/1', triggerId: 'crossing', sourceEventKey: 'event-1' };
 
@@ -167,7 +167,7 @@ test('checkpoint shape, version, hash, legal nesting and waiting identity are va
 test('read, AI and connector event features fail explicitly until their host/catalog milestone', async () => {
   const read = copy(); read.triggers[0]!.body = [{ id: 'read', type: 'read', connectorRef: 'paper.uniswap', operation: 'price.read', arguments: {}, bind: 'observed' }]; await rejects(read, 'UNSUPPORTED_CAPABILITY');
   const ai = copy(); ai.triggers[0]!.body = [{ id: 'ai', type: 'ai.decide', modelProfileRef: 'paper.model', prompt: 'Evaluate authored condition.', inputs: { price: dec('2500') }, outputSchemaRef: 'decision/1', timeoutSeconds: 10, maxOutputTokens: 100, bind: 'decision' }]; await rejects(ai, 'UNSUPPORTED_CAPABILITY');
-  const event = copy(); event.triggers = [{ id: 'event', type: 'connector.event', connectorRef: 'paper.uniswap', eventType: 'swap', filters: {}, body: [] }]; await rejects(event, 'UNSUPPORTED_CAPABILITY');
+  const event = copy(); event.triggers = [{ id: 'event', type: 'connector.event', connectorRef: 'paper.uniswap', eventType: 'swap', filters: {}, body: [{ id: 'note', type: 'notify', message: 'event', inputs: {} }] }]; await rejects(event, 'UNSUPPORTED_CAPABILITY');
 });
 
 test('checkpoint rejects altered branch choice and schema diagnostics locate the offending node', async () => {
@@ -177,4 +177,33 @@ test('checkpoint rejects altered branch choice and schema diagnostics locate the
   await assert.rejects(advanceRun(program, altered), /branch disagrees/);
   const bad = copy(); const sale = bad.triggers[0]!.body[0]!; if (sale.type === 'swap.exactInput') sale.amount = { kind: 'positionBps', bps: -1 };
   await assert.rejects(compile(bad), (error: unknown) => error instanceof LanguageError && error.nodeId === 'sell_tenth' && error.fieldPath.includes('/amount/bps'));
+});
+
+test('editor catalog declares decimals, native MON, both paper venues and finalized TWAP feeds', async () => {
+  assert.deepEqual(Object.fromEntries(Object.entries(syntheticCatalog.assets).map(([ref, a]) => [ref, [a.decimals, a.native ?? false]])), { 'paper.MON': [18, true], 'paper.WETH': [18, false], 'paper.USD': [6, false] });
+  assert.deepEqual(Object.values(syntheticCatalog.connectors).map(c => [c.venue, c.actions]), [['uniswap-v3', ['swap.exactInput', 'price.read']], ['kuru', ['swap.exactInput', 'price.read']]]);
+  for (const feed of Object.values(syntheticCatalog.feeds)) { assert.equal(feed.source, 'poolTwap'); assert.equal(feed.windowSeconds, 30); assert.equal(feed.finality, 'finalized'); assert.ok(Object.hasOwn(syntheticCatalog.connectors, feed.connectorRef)); }
+  assert.throws(() => { (syntheticCatalog.assets['paper.MON'] as { decimals: number }).decimals = 6; }, TypeError);
+  const kuru = copy(); const trigger = kuru.triggers[0]!; const sale = trigger.body[0]!;
+  if (trigger.type === 'price.crossesAbove') trigger.feedRef = 'paper.weth-usd-kuru';
+  if (sale.type === 'swap.exactInput') sale.connectorRef = 'paper.kuru';
+  assert.equal((await compile(kuru)).bounds.intents, 1);
+});
+
+test('schedule floor is 10 s and trigger bodies need at least one statement', async () => {
+  const timer = (intervalSeconds: number) => ({ ...fixture, triggers: [{ id: 'timer', type: 'schedule', intervalSeconds, anchorAt: now(0), body: [swap()] }] });
+  assert.equal((await compile(timer(10))).strategy.triggers[0]!.type, 'schedule');
+  await rejects(timer(9), 'SCHEMA_INVALID');
+  const empty = copy(); empty.triggers[0]!.body = [];
+  await assert.rejects(compile(empty), (e: unknown) => e instanceof LanguageError && e.code === 'SCHEMA_INVALID' && e.nodeId === 'crossing' && e.fieldPath.endsWith('/body'));
+  await rejects({ ...timer(60), triggers: [{ ...timer(60).triggers[0]!, body: [] }] }, 'SCHEMA_INVALID');
+});
+
+test('native MON gas guard rejects a 100% position sale but allows partial or non-native sales', async () => {
+  const sale = (tokenInRef: string, tokenOutRef: string, bps: number) => { const value = copy(); value.triggers[0]!.body[0] = { ...swap(), tokenInRef, tokenOutRef, amount: { kind: 'positionBps', bps } }; return value; };
+  await assert.rejects(compile(sale('paper.MON', 'paper.USD', 10000)), (e: unknown) => e instanceof LanguageError && e.code === 'POLICY_DENIED' && e.nodeId === 'sale');
+  assert.equal((await compile(sale('paper.MON', 'paper.USD', 9999))).bounds.intents, 1);
+  assert.equal((await compile(sale('paper.WETH', 'paper.USD', 10000))).bounds.intents, 1);
+  const fixedMon = copy(); fixedMon.triggers[0]!.body[0] = { ...swap(), tokenInRef: 'paper.MON', amount: { kind: 'fixed', atomic: '1000000000000000000' } };
+  assert.equal((await compile(fixedMon)).bounds.intents, 1);
 });
