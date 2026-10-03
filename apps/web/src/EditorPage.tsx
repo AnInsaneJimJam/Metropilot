@@ -2,15 +2,17 @@ import { useEffect, useRef } from 'react';
 import * as Blockly from 'blockly/core';
 import * as En from 'blockly/msg/en';
 import { syntheticCatalog } from '@monad-hack/strategy';
+import { ensureRoot, injectOptions, setUpBlockly } from './blocks/index.ts';
 
 Blockly.setLocale(En as unknown as Record<string, string>);
+setUpBlockly();
 
 export function EditorPage() {
   const canvas = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!canvas.current) return;
-    // Blocks and toolbox arrive in Phase 3; this proves the canvas mounts and disposes cleanly.
-    const workspace = Blockly.inject(canvas.current, { trashcan: true, zoom: { controls: true }, move: { scrollbars: true, drag: true, wheel: true } });
+    const workspace = Blockly.inject(canvas.current, injectOptions);
+    ensureRoot(workspace);
     return () => workspace.dispose();
   }, []);
   return (

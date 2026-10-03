@@ -7,3 +7,6 @@ export type { PriceObservation, CrossingState, TriggerDecision } from './trigger
 export { startRun, advanceRun } from './interpreter.ts';
 export type { HostCommand, HostResponse, AdvanceResult } from './interpreter.ts';
 export { LanguageError } from './errors.ts';
+export { normalizeHuman, fractionDigits, toAtomic, fromAtomic, toPriceDecimal, toLanguageDecimal, percentToBps, bpsToPercent } from './workspace/units.ts';
+export { EDITOR_FORMAT, BLOCK, VALUE_TYPES, NUMERIC_TYPES, literalBlock, CHECK, FIELD, INPUT, AMOUNT_KIND, DEFAULTS, priceUnitKey, parsePriceUnitKey, NODE_ID, newNodeId } from './workspace/vocabulary.ts';
+export type { ValueType } from './workspace/vocabulary.ts';
