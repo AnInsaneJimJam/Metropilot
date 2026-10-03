@@ -5,13 +5,18 @@ import { asset, assetOptions, assetSymbol, connectorOptions, feedOptions, feedQu
 import { bindName, currentMinute, humanAmount, humanDecimal, humanPrice, text, utcTimestamp } from './fields.ts';
 
 export const COLOUR = { root: 260, trigger: 30, action: 210, logic: 120, value: 160, soon: '#8a8d93' } as const;
-/** Warning ID for checks the block can make on its own fields. Phase 5 adds compiler errors under another ID. */
+/** Warning ID for checks the block can make on its own fields. Live compiler errors use COMPILER_WARNING. */
 export const LOCAL_WARNING = 'local';
+export const COMPILER_WARNING = 'compiler';
+const localWarnings = new WeakMap<Blockly.Block, string>();
+/** The block's own field warning, so live validation does not repeat the same text under a second ID. */
+export const localWarning = (block: Blockly.Block): string | undefined => localWarnings.get(block);
 type Block = Blockly.BlockSvg;
 const num = (value: number, min: number, max: number) => new Blockly.FieldNumber(value, min, max, 1);
 const message = (error: unknown) => error instanceof LanguageError ? error.message : String(error);
 function warnLocally(block: Block, warning: string | null): void {
   if (block.isInFlyout || block.isDeadOrDying()) return;
+  if (warning) localWarnings.set(block, warning); else localWarnings.delete(block);
   block.setWarningText(warning, LOCAL_WARNING);
 }
 const statement = (block: Block, colour: number | string, tooltip: string): void => {
@@ -45,7 +50,7 @@ function swapWarning(block: Block): string | null {
   try {
     if (kind === AMOUNT_KIND.fixed) {
       if (input && toAtomic(amount, input.decimals) === '0') return 'Amount must be more than 0.';
-    } else if (percentToBps(amount) === 10000 && input?.native) return `Keep some ${assetSymbol(tokenIn)} for gas: sell less than 100%.`;
+    } else if (percentToBps(amount) === 10000 && input?.native) return 'Keep some native MON for gas; sell less than 100%.'; // the compiler's text
   } catch (error) { return message(error); }
   if (Number(block.getFieldValue(FIELD.slippage)) > 100) return 'The platform allows at most 100 bps (1%) slippage.';
   if (input?.native) return `${assetSymbol(tokenIn)} pays network gas; the executor keeps a reserve back.`;

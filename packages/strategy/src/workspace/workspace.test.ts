@@ -175,3 +175,59 @@ test('compiler errors are mapped back to the block to highlight', async () => {
   const limits = blocksOf(); rootOf(limits).fields.MAX_STEPS = 5000;
   await rejectsWith(limits, 'SCHEMA_INVALID', 'threshold_sale');
 });
+
+// ── deployment-profile limits and presets (editor Phases 5–6) ───────────────────────────────────────
+import { profileIssues, PRESETS } from '../index.ts';
+import type { DeploymentProfile } from '../index.ts';
+const rookie: DeploymentProfile = { experience: 'rookie', mode: 'paper' };
+const advanced: DeploymentProfile = { experience: 'advanced', mode: 'paper' };
+const live: DeploymentProfile = { experience: 'advanced', mode: 'live' };
+const issuesOf = (s: Strategy, profile: DeploymentProfile) => profileIssues(s, profile).map(e => [e.code, e.nodeId, e.fieldPath]);
+const withSchedule = (intervalSeconds: number): Strategy => {
+  const s = strategyOf();
+  s.triggers.push({ id: 'tick', type: 'schedule', intervalSeconds, anchorAt: '2026-01-01T00:00:00.000Z', body: [{ id: 'hello', type: 'notify', message: 'tick', inputs: {} }] });
+  return s;
+};
+
+test('every preset converts to blocks and compiles through the same core, within rookie limits', async () => {
+  assert.deepEqual(PRESETS.map(p => p.id), ['threshold_sale', 'scheduled_purchase']);
+  for (const preset of PRESETS) {
+    const workspace = workspaceFromStrategy(preset.strategy, catalog);
+    const { strategy } = compileWorkspace(workspace, catalog);
+    assert.deepEqual(strategy, preset.strategy, preset.id);
+    assert.equal(await hashOf(workspace), (await compileStrategy(JSON.stringify(preset.strategy), catalog)).hash, preset.id);
+    assert.equal(await hashOf(JSON.parse(JSON.stringify(workspace))), await hashOf(workspace), preset.id);
+    assert.deepEqual(profileIssues(preset.strategy, rookie), [], preset.id);
+  }
+  assert.deepEqual(PRESETS[0]!.strategy, fixture);
+  const purchase = PRESETS[1]!.strategy.triggers[0]!.body[0] as Extract<Strategy['triggers'][0]['body'][0], { type: 'swap.exactInput' }>;
+  assert.equal(fromAtomic((purchase.amount as { atomic: string }).atomic, catalog.assets['paper.USD']!.decimals), '25');
+});
+
+test('schedule floors: 10 s only for paper advanced; rookie and live need 60 s; under 10 s fails the schema', async () => {
+  assert.deepEqual(issuesOf(withSchedule(10), advanced), []);
+  assert.deepEqual(issuesOf(withSchedule(30), rookie), [['POLICY_DENIED', 'tick', '/triggers/1/intervalSeconds']]);
+  assert.deepEqual(issuesOf(withSchedule(30), live), [['POLICY_DENIED', 'tick', '/triggers/1/intervalSeconds']]);
+  assert.deepEqual(issuesOf(withSchedule(60), rookie), []);
+  await assert.rejects(compileStrategy(JSON.stringify(withSchedule(5)), catalog), code('SCHEMA_INVALID'));
+});
+
+test('rookie limits slippage, AI calls, trades and live mode; the platform caps slippage at 100 bps', () => {
+  const s = everyValueBlock();
+  const swap = s.triggers[0]!.body[1] as Extract<Strategy['triggers'][0]['body'][0], { type: 'swap.exactInput' }>;
+  assert.deepEqual(issuesOf(s, rookie), []);
+  swap.maxSlippageBps = 51;
+  assert.deepEqual(issuesOf(s, rookie), [['POLICY_DENIED', 'sell_tenth', '/triggers/0/body/1/maxSlippageBps']]);
+  assert.deepEqual(issuesOf(s, advanced), []);
+  swap.maxSlippageBps = 101;
+  assert.deepEqual(issuesOf(s, advanced), [['POLICY_DENIED', 'sell_tenth', '/triggers/0/body/1/maxSlippageBps']]);
+  (s.triggers[0]!.body[0] as Extract<Strategy['triggers'][0]['body'][0], { type: 'if' }>).then.push({ id: 'nested_swap', type: 'swap.exactInput', connectorRef: 'paper.kuru', tokenInRef: 'paper.WETH', tokenOutRef: 'paper.USD', amount: { kind: 'positionBps', bps: 100 }, maxSlippageBps: 80 });
+  Object.assign(s.limits, { maxAiCallsPerRun: 2, maxIntentsPerRun: 2 });
+  assert.deepEqual(issuesOf(s, { experience: 'rookie', mode: 'live' }), [
+    ['POLICY_DENIED', 'threshold_sale', ''],
+    ['POLICY_DENIED', 'threshold_sale', '/limits/maxAiCallsPerRun'],
+    ['POLICY_DENIED', 'threshold_sale', '/limits/maxIntentsPerRun'],
+    ['POLICY_DENIED', 'nested_swap', '/triggers/0/body/0/then/1/maxSlippageBps'],
+    ['POLICY_DENIED', 'sell_tenth', '/triggers/0/body/1/maxSlippageBps'],
+  ]);
+});

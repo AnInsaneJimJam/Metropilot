@@ -12,3 +12,7 @@ export { EDITOR_FORMAT, BLOCK, VALUE_TYPES, NUMERIC_TYPES, literalBlock, CHECK, 
 export type { ValueType } from './workspace/vocabulary.ts';
 export { compileWorkspace, compileWorkspaceProgram, workspaceFromStrategy, locateBlock, MAX_WORKSPACE_BYTES } from './workspace/convert.ts';
 export type { WorkspaceEnvelope, WorkspaceConversion, SourceMap } from './workspace/convert.ts';
+export { profileIssues, PROFILE_LIMITS } from './workspace/modes.ts';
+export type { Experience, ExecutionMode, DeploymentProfile } from './workspace/modes.ts';
+export { PRESETS } from './workspace/presets.ts';
+export type { Preset } from './workspace/presets.ts';

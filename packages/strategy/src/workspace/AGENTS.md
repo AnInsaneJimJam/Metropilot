@@ -4,3 +4,4 @@ Blockly workspace ↔ strategy conversion shared by the web editor, API and runt
 
 - [x] Phase 3: exact human-unit conversion (`units.ts`) and the shared block/field vocabulary (`vocabulary.ts`); evidence: `workspace.test.ts` under `pnpm check`.
 - [x] Phase 4: `compileWorkspace` / `compileWorkspaceProgram` / `workspaceFromStrategy` with source map (`convert.ts`); evidence: round-trip hash, ordering, loose/disabled/unknown block, MON, empty-body and 1 MiB tests in `workspace.test.ts`, plus a real-Blockly load → save → same-hash browser check on 2026-10-03.
+- [x] Phases 5–6: deployment-profile limits (`modes.ts`, `profileIssues`) and preset documents (`presets.ts`); evidence: preset round-trip/hash and schedule/slippage/rookie tests in `workspace.test.ts` (35 tests green under `pnpm check`).
