@@ -7,7 +7,8 @@ import { loadPreset, PRESETS } from './presets/index.ts';
 import type { Preset } from './presets/index.ts';
 import { RehearsePanel } from './rehearse/RehearsePanel.tsx';
 import { StrategyPanel } from './StrategyPanel.tsx';
-import { focusBlock, useLiveValidation } from './useLiveValidation.ts';
+import { Outline } from './Outline.tsx';
+import { useLiveValidation } from './useLiveValidation.ts';
 
 Blockly.setLocale(En as unknown as Record<string, string>);
 setUpBlockly();
@@ -27,7 +28,14 @@ export function EditorPage() {
     return () => { setWorkspace(undefined); ws.dispose(); };
   }, []);
 
-  const onFocusBlock = useCallback((id: string) => { if (workspace) focusBlock(workspace, id); }, [workspace]);
+  const [selected, setSelected] = useState<string>();
+  const [focusRequest, setFocusRequest] = useState<{ field: string | undefined }>();
+  // Picking a block (outline or problem link) shows it on the canvas; a problem link also moves focus into its form.
+  const onSelect = useCallback((id: string) => {
+    setSelected(id);
+    if (workspace?.getBlockById(id)) { workspace.centerOnBlock(id); (workspace.getBlockById(id) as Blockly.BlockSvg).select(); }
+  }, [workspace]);
+  const onFocusBlock = useCallback((id: string, field: string | undefined) => { onSelect(id); setFocusRequest({ field }); }, [onSelect]);
   const onLoadPreset = useCallback((preset: Preset) => { if (workspace) loadPreset(workspace, preset); }, [workspace]);
   const onStartTutorial = useCallback(() => {
     setExperience('rookie');
@@ -39,7 +47,8 @@ export function EditorPage() {
     <main className="editor">
       <div ref={canvas} className="editor-canvas" role="region" aria-label="Strategy blocks canvas" />
       <StrategyPanel experience={experience} onExperience={setExperience} validation={validation}
-        onFocusBlock={onFocusBlock} onLoadPreset={onLoadPreset} onStartTutorial={onStartTutorial}>
+        onFocusBlock={onFocusBlock} onLoadPreset={onLoadPreset} onStartTutorial={onStartTutorial}
+        outline={<Outline workspace={workspace} selected={selected} onSelect={onSelect} focusRequest={focusRequest} />}>
         <RehearsePanel workspace={workspace} program={validation?.program} />
       </StrategyPanel>
     </main>

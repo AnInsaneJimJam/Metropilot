@@ -1,8 +1,15 @@
 import { normalizeHuman, toPriceDecimal, toLanguageDecimal, NODE_ID } from '@monad-hack/strategy';
 // Field validators. Returning null rejects the edit; returning a string stores that (canonical) text.
 // These guide typing only; the converter and compiler stay authoritative.
-const attempt = (convert: (text: string) => string) => (text: string): string | null => {
-  try { return convert(text); } catch { return null; }
+// Blockly calls a field validator with the field as `this`; the reason for the latest refusal is kept per field
+// so keyboard forms can say why an edit was not accepted.
+const rejections = new WeakMap<object, string>();
+export const rejectionReason = (field: object): string | undefined => rejections.get(field);
+const attempt = (convert: (text: string) => string) => function (this: object | undefined, text: string): string | null {
+  try { const value = convert(text); if (this) rejections.delete(this); return value; } catch (error) {
+    if (this) rejections.set(this, error instanceof Error ? error.message : String(error));
+    return null;
+  }
 };
 export const humanAmount = attempt(normalizeHuman);
 export const humanPrice = attempt(toPriceDecimal);

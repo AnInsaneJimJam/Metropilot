@@ -61,3 +61,8 @@ button.link { display: inline; background: none; border: 0; padding: 0; margin: 
   .editor { flex-direction: column; }
   .editor-panel { width: auto; border-left: 0; border-top: 1px solid var(--border); }
 }
+.outline, .outline ul { list-style: none; padding-left: 14px; margin: 2px 0; }
+.outline { padding-left: 0; }
+.outline button[aria-current] { font-weight: 700; }
+.editor-panel input { font: inherit; width: 100%; box-sizing: border-box; margin-top: 2px; }
+.editor-panel .experience input { width: auto; }

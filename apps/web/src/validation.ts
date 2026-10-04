@@ -1,4 +1,4 @@
-import { compileStrategy, compileWorkspace, locateBlock, profileIssues, LanguageError } from '@monad-hack/strategy';
+import { compileStrategy, compileWorkspace, locateBlock, profileIssues, FIELD, LanguageError } from '@monad-hack/strategy';
 import type { CompiledStrategy, DeploymentProfile, WorkspaceEnvelope } from '@monad-hack/strategy';
 import type { Strategy } from '@monad-hack/contracts';
 import { editorCatalog } from './catalog.ts';
@@ -6,7 +6,11 @@ import { editorCatalog } from './catalog.ts';
 // Browser-side validation: the same converter, compiler and profile checks the server reruns (D14, D17).
 // It guides the user; the backend stays authoritative.
 
-export interface Problem { readonly code: string; readonly message: string; readonly blockId: string | undefined }
+export interface Problem {
+  readonly code: string; readonly message: string; readonly blockId: string | undefined;
+  /** The block field to focus, when the error names one the editor shows as a field. */
+  readonly field: string | undefined;
+}
 export interface Validation {
   readonly problems: readonly Problem[];
   /** The converted document, when the blocks convert at all (shown even if it does not compile). */
@@ -29,9 +33,19 @@ function plain(error: LanguageError): string {
   const label = FIELD_LABEL[segments.at(-1) ?? ''] ?? 'This value';
   return `${label} ${error.message.replace('>=', 'at least').replace('<=', 'at most')}.`;
 }
+/** Strategy document keys → the block field that edits them, so a problem link can focus the right input. */
+const FIELD_OF_KEY: Readonly<Record<string, string>> = {
+  name: FIELD.name, maxStepsPerRun: FIELD.maxSteps, maxAiCallsPerRun: FIELD.maxAiCalls, maxIntentsPerRun: FIELD.maxIntents, maxActiveSecondsPerRun: FIELD.maxActiveSeconds,
+  intervalSeconds: FIELD.interval, anchorAt: FIELD.anchor, feedRef: FIELD.feed, threshold: FIELD.threshold, decimal: FIELD.threshold,
+  maxAgeSeconds: FIELD.maxAge, cooldownSeconds: FIELD.cooldown, count: FIELD.count, connectorRef: FIELD.connector,
+  tokenInRef: FIELD.tokenIn, tokenOutRef: FIELD.tokenOut, amount: FIELD.amount, atomic: FIELD.amount, bps: FIELD.amount,
+  maxSlippageBps: FIELD.slippage, message: FIELD.message, reason: FIELD.reason,
+};
+const fieldOf = (fieldPath: string): string | undefined =>
+  fieldPath.split('/').reverse().map(key => Object.hasOwn(FIELD_OF_KEY, key) ? FIELD_OF_KEY[key] : undefined).find(Boolean);
 const problem = (error: unknown, blockId: string | undefined): Problem => error instanceof LanguageError
-  ? { code: error.code, message: plain(error), blockId }
-  : { code: 'INTERNAL', message: `Validation failed unexpectedly: ${String(error)}`, blockId };
+  ? { code: error.code, message: plain(error), blockId, field: fieldOf(error.fieldPath) }
+  : { code: 'INTERNAL', message: `Validation failed unexpectedly: ${String(error)}`, blockId, field: undefined };
 
 export async function validateWorkspace(envelope: WorkspaceEnvelope, profile: DeploymentProfile): Promise<Validation> {
   let converted;

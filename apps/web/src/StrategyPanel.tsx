@@ -11,10 +11,12 @@ interface Props {
   readonly experience: Experience;
   readonly onExperience: (experience: Experience) => void;
   readonly validation: Validation | undefined;
-  readonly onFocusBlock: (blockId: string) => void;
+  readonly onFocusBlock: (blockId: string, field: string | undefined) => void;
   readonly onLoadPreset: (preset: Preset) => void;
   readonly onStartTutorial: () => void;
-  /** The rehearse section, shown under the checks. */
+  /** The keyboard outline, shown right under the checks so problem links lead into it. */
+  readonly outline?: ReactNode;
+  /** The rehearse section, shown under the worst-case bounds. */
   readonly children?: ReactNode;
 }
 
@@ -25,7 +27,7 @@ function Status({ validation, experience }: Pick<Props, 'validation' | 'experien
   return <p className="status-error">{count === 1 ? '1 problem' : `${count} problems`} to fix{validation.program ? ` (it compiles, but not within ${experience} limits)` : ''}.</p>;
 }
 
-export function StrategyPanel({ experience, onExperience, validation, onFocusBlock, onLoadPreset, onStartTutorial, children }: Props) {
+export function StrategyPanel({ experience, onExperience, validation, onFocusBlock, onLoadPreset, onStartTutorial, outline, children }: Props) {
   const [presetId, setPresetId] = useState(PRESETS[0]?.id ?? '');
   const preset = PRESETS.find(p => p.id === presetId);
   const limits = validation?.strategy?.limits;
@@ -55,14 +57,16 @@ export function StrategyPanel({ experience, onExperience, validation, onFocusBlo
             {validation.problems.map((p, i) => (
               <li key={`${p.blockId ?? ''}-${i}`}>
                 {p.blockId
-                  ? <button type="button" className="link" onClick={() => onFocusBlock(p.blockId!)}>{p.message}</button>
+                  ? <button type="button" className="link" onClick={() => onFocusBlock(p.blockId!, p.field)}>{p.message}</button>
                   : p.message}
               </li>
             ))}
           </ul>
         )}
-        <p className="muted">The server reruns these checks on save; they guide you here.</p>
+        <p className="muted">The server reruns these checks on save; they guide you here. Choose a problem to edit its block.</p>
       </section>
+
+      {outline}
 
       <section aria-labelledby="bounds-heading">
         <h2 id="bounds-heading">Worst case per run</h2>

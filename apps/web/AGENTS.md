@@ -9,7 +9,7 @@ Coordinate editor file ownership with the strategy contributor through [plan](..
 ## Checklist
 
 - [ ] WEB-1 / G3: implement authenticated draft creation, save/reload and revision conflicts.
-- [ ] WEB-2 / G2,G7: integrate Blockly domain blocks, tutorial, preset editing and server-mapped validation errors.
+- [x] WEB-2 / G2,G7: integrate Blockly domain blocks, tutorial, preset editing and server-mapped validation errors. Errors come from the same converter/compiler the server reruns and map to blocks; the save endpoint itself is WEB-1/G3. A keyboard outline edits every field; the [keyboard-only browser test](e2e/editor.spec.ts) loads a preset, sees and fixes errors and rehearses. Evidence 2026-10-04: Playwright 1/1, `pnpm check` 252/252, web `build` green.
 - [ ] WEB-3 / G7: implement capability selection and supported AI profile controls.
 - [ ] WEB-4 / G7: show budget allocations, MON reserve, rate assumptions, expiring estimate and live consent.
 - [ ] WEB-5 / G7: launch and show lifecycle, history, costs, policy denials, pause/stop and pending effects.

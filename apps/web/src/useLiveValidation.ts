@@ -26,14 +26,6 @@ function markBlocks(workspace: Blockly.WorkspaceSvg, problems: readonly Problem[
   return new Set(byBlock.keys());
 }
 
-/** Scrolls to a block and moves keyboard focus onto it. */
-export function focusBlock(workspace: Blockly.WorkspaceSvg, id: string): void {
-  const block = workspace.getBlockById(id);
-  if (!block) return;
-  workspace.centerOnBlock(id);
-  Blockly.getFocusManager().focusNode(block);
-}
-
 /**
  * Revalidates the workspace after every non-UI change (debounced) and whenever the profile changes.
  * A run that finishes after a newer one started is discarded, so the panel never shows stale results.
