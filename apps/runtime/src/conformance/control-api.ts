@@ -29,7 +29,8 @@ const throwsCode = async (promise: Promise<unknown>, code: string): Promise<void
 export function controlApiConformance(name: string, makeHarness: () => Promise<ControlApiHarness>): void {
   const poll = async (h: ControlApiHarness): Promise<RuntimeAssignment> => {
     const offer = await h.api.poll({ schemaVersion: 'assignment-poll/1', runtimeId: 'conformance', state: 'ready', waitSeconds: 0 });
-    assert.ok(validate('assignmentOffer', offer).ok, 'offer must be a closed assignment-offer/1');
+    assert.ok(validate('assignmentOffer2', offer).ok, 'offer must be a closed assignment-offer/2');
+    assert.ok(offer.capability, 'an assignment arrives with its capability');
     assert.equal(offer.disposition, 'assigned');
     return offer.assignment!;
   };

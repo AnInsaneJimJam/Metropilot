@@ -33,8 +33,5 @@ export class Ids {
   }
 }
 
-/** The interpreter's run identity: SHA-256 over the UTF-8 JSON tuple (strategy-language.md section 9). */
-export async function runIdFor(deploymentRevision: string, triggerId: string, sourceEventKey: string): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([deploymentRevision, triggerId, sourceEventKey])));
-  return '0x' + Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
-}
+/** The interpreter's run identity, re-exported so local code never re-derives the formula. */
+export { runIdentity as runIdFor } from '@monad-hack/strategy';

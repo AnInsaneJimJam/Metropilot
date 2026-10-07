@@ -227,7 +227,9 @@ describe('schema hygiene', () => {
       versioned.map((schema) => ((schema['properties'] as Node)['schemaVersion'] as Node)['const']).sort(),
       [
         'action-intent/1',
+        'artifact/1',
         'assignment-offer/1',
+        'assignment-offer/2',
         'assignment-poll/1',
         'audit-event/1',
         'broker-request/1',
@@ -242,6 +244,8 @@ describe('schema hygiene', () => {
         'run-state/1',
         'run-wait/1',
         'runtime-assignment/1',
+        'runtime-heartbeat/1',
+        'runtime-lease/1',
         'strategy-run/2',
         'strategy/1',
         'timeline-entry/1',

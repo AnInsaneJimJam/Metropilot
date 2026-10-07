@@ -210,17 +210,17 @@ Routes below are the proposed `agent-runtime/1` interface. They become implement
 | Operation | Purpose | Required behavior |
 | --- | --- | --- |
 | `GET /internal/v1/runtime/assignments/{assignmentId}` | Redeem bootstrap and load assignment | Single-use or safely replayable for same workload; never return broader credentials |
-| `POST /internal/v1/runtime/assignments:poll` | Warm task long-polls for its next assignment (`assignment-poll/1` → `assignment-offer/1`, [D33](../decisions.md)) | At most one assignment per lease; `drain` tells the process to stop taking work |
+| `POST /internal/v1/runtime/assignments:poll` | Warm task long-polls for its next assignment (`assignment-poll/1` → `assignment-offer/2` with the assignment's bearer capability, [D33](../decisions.md)) | Workload-authenticated; at most one assignment per lease; `drain` tells the process to stop taking work |
 | `GET /internal/v1/runs/{runId}` | Load the accepted checkpoint, the recorded result of its waiting operation and the run's observation refs (`run-state/1`) | Fenced by assignment and token; a brand-new run has no checkpoint |
 | `GET /internal/v1/runtime/artifacts/{artifactRef}` | Fetch immutable manifest/strategy/checkpoint | Verify caller scope; return content hash and version |
 | `POST /internal/v1/runs/{runId}/wait` | Persist checkpoint and pending command before dispatch (`run-wait/1`) | Transactionally deduplicate logical command and compare lease/fencing token |
 | `POST /internal/v1/runs/{runId}/results` | Record a definitive or pending host result reference (`run-result/1`) | Idempotent by command key; conflicting result is rejected |
 | `POST /internal/v1/runs/{runId}/complete` | Commit completed/failed interpreter outcome (`run-complete/1`) | Conditional on current checkpoint/fencing token |
 | `POST /internal/v1/runs/{runId}/timeline` | Append a bounded user-safe runtime event (`timeline-entry/1`) | Idempotent and redacted; not an authority or result store |
-| `POST /internal/v1/runtime/heartbeat` | Renew assignment lease and report health | Reject stale fencing token; cannot revive a revoked generation |
-| `POST /internal/v1/runtime/capabilities:refresh` | Obtain narrowed fresh service capabilities | Recheck desired state, generation and run |
+| `POST /internal/v1/runtime/heartbeat` | Renew assignment lease and report health (`runtime-heartbeat/1` → `runtime-lease/1`; also extends the capability) | Reject stale fencing token; cannot revive a revoked generation |
+| `POST /internal/v1/runtime/capabilities:refresh` | Obtain narrowed fresh audience-scoped service capabilities (not implemented: the control API capability is extended by the heartbeat; broker/executor audiences are open) | Recheck desired state, generation and run |
 
-The API performs the database transaction. The runtime never simulates atomicity by making unrelated HTTP writes and assuming they committed together.
+Implemented 2026-10-08 in `apps/api/src/runtime-control/` (migration 0003); see the [control API guide](../integration/control-api.md). The API performs the database transaction. The runtime never simulates atomicity by making unrelated HTTP writes and assuming they committed together.
 
 ### API Broker
 

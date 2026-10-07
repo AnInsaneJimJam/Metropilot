@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/artifact-1.schema.json",
+  "title": "Artifact",
+  "description": "Immutable strategy or catalog artifact served to a runtime, artifact/1. contentHash is the hash the assignment pins (compileStrategy(...).hash for a strategy, contentHash(catalog) for a catalog); the runtime re-verifies it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ref",
+    "kind",
+    "contentHash",
+    "text"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "artifact/1"
+    },
+    "ref": {
+      "$ref": "common.schema.json#/$defs/opaqueKey"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "strategy",
+        "catalog"
+      ]
+    },
+    "contentHash": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 1000000
+    }
+  }
+}

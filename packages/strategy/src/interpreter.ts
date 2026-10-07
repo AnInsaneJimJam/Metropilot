@@ -20,10 +20,14 @@ export type HostCommand = SwapCommand | NotifyCommand | ReadCommand | AiCommand;
 export interface HostResponse { key: string; outcome: 'pending' | 'settled' | 'rejected' | 'failed' | 'acknowledged' | 'recorded' | 'timeout' | 'refused'; result?: unknown; receivedAt?: string }
 export interface AdvanceResult { checkpoint: RunCheckpoint; command?: HostCommand }
 const EXPECTED = { 'swap.exactInput': 'settled', notify: 'acknowledged', read: 'recorded', 'ai.decide': 'recorded' } as const;
+/** The run identity every host and control plane must use: SHA-256 over the UTF-8 JSON tuple. */
+export function runIdentity(deploymentRevision: string, triggerId: string, sourceEventKey: string): Promise<string> {
+  return sha256(JSON.stringify([deploymentRevision, triggerId, sourceEventKey]));
+}
 export async function startRun(program: CompiledStrategy, context: { deploymentRevision: string; triggerId: string; sourceEventKey: string }): Promise<RunCheckpoint> {
   assertCompiled(program);
   if (!program.strategy.triggers.some(t => t.id === context.triggerId) || !context.deploymentRevision || context.deploymentRevision.length > 120 || !context.sourceEventKey || context.sourceEventKey.length > 1024) throw new LanguageError('UNKNOWN_REFERENCE', 'Provide an accepted trigger, deployment revision and bounded source event key.');
-  return { schemaVersion: 'strategy-run/2', strategyHash: program.hash, runId: await sha256(JSON.stringify([context.deploymentRevision, context.triggerId, context.sourceEventKey])), ...context, frames: [{ ownerId: context.triggerId, branch: 'body', index: 0, iteration: -1 }], steps: 1, intents: 0, aiCalls: 0, activeMillis: 0, bindings: [], status: 'running' };
+  return { schemaVersion: 'strategy-run/2', strategyHash: program.hash, runId: await runIdentity(context.deploymentRevision, context.triggerId, context.sourceEventKey), ...context, frames: [{ ownerId: context.triggerId, branch: 'body', index: 0, iteration: -1 }], steps: 1, intents: 0, aiCalls: 0, activeMillis: 0, bindings: [], status: 'running' };
 }
 /** Checks a plain host record against its declared type and returns it as typed values. Errors use `code`. */
 function recordOf(type: RecordType, raw: unknown, code: string): Record<string, BoundValue> {
@@ -68,7 +72,7 @@ export async function advanceRun(program: CompiledStrategy, input: RunCheckpoint
   assertCompiled(program);
   if (!checkCheckpointShape(input)) throw new LanguageError('SCHEMA_INVALID', 'Invalid versioned checkpoint.');
   const checkpoint: RunCheckpoint = structuredClone(input);
-  const expectedRunId = await sha256(JSON.stringify([checkpoint.deploymentRevision, checkpoint.triggerId, checkpoint.sourceEventKey]));
+  const expectedRunId = await runIdentity(checkpoint.deploymentRevision, checkpoint.triggerId, checkpoint.sourceEventKey);
   if (checkpoint.strategyHash !== program.hash || checkpoint.runId !== expectedRunId) throw new LanguageError('SCHEMA_INVALID', 'Checkpoint does not match this strategy/run.');
   const nodes = new Map<string, Statement>();
   const collect = (body: Statement[]): void => { for (const n of body) { nodes.set(n.id, n); if (n.type === 'if') { collect(n.then); collect(n.else); } else if (n.type === 'repeat') collect(n.body); } };

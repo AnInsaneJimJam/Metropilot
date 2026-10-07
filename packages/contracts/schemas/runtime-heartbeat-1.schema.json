@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/runtime-heartbeat-1.schema.json",
+  "title": "RuntimeHeartbeat",
+  "description": "Lease renewal from a runtime, runtime-heartbeat/1. Rechecks the current lease, generation and desired state; it cannot revive a revoked generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "assignmentId",
+    "fencingToken"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "runtime-heartbeat/1"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "assignmentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "fencingToken": {
+      "$ref": "common.schema.json#/$defs/fencingToken"
+    }
+  }
+}

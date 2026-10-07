@@ -1,0 +1,11 @@
+{
+  "description": "A renewal refreshes the capability",
+  "expect": {
+    "fieldPath": "/capability",
+    "keyword": "required"
+  },
+  "document": {
+    "schemaVersion": "runtime-lease/1",
+    "leaseExpiresAt": "2026-10-07T12:00:40.000Z"
+  }
+}

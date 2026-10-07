@@ -1,0 +1,15 @@
+{
+  "description": "Only an assignment carries a capability",
+  "expect": {
+    "fieldPath": "",
+    "keyword": "not"
+  },
+  "document": {
+    "schemaVersion": "assignment-offer/2",
+    "disposition": "none",
+    "capability": {
+      "bearer": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+      "expiresAt": "2026-10-07T12:05:00.000Z"
+    }
+  }
+}

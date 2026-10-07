@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/runtime-lease-1.schema.json",
+  "title": "RuntimeLease",
+  "description": "Answer to a heartbeat, runtime-lease/1: the renewed lease expiry and the assignment's capability with its renewed expiry (lease renewal and capability refresh in one call; the bearer is extended, not rotated, so requests in flight stay valid). Authority loss is an error answer, never a lease.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "leaseExpiresAt",
+    "capability"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "runtime-lease/1"
+    },
+    "leaseExpiresAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "capability": {
+      "$ref": "common.schema.json#/$defs/capabilityGrant"
+    }
+  }
+}

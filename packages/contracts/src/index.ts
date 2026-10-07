@@ -21,6 +21,10 @@ import runStateSchema from '../schemas/run-state-1.schema.json' with { type: 'js
 import timelineEntrySchema from '../schemas/timeline-entry-1.schema.json' with { type: 'json' };
 import brokerRequestSchema from '../schemas/broker-request-1.schema.json' with { type: 'json' };
 import brokerResultSchema from '../schemas/broker-result-1.schema.json' with { type: 'json' };
+import assignmentOffer2Schema from '../schemas/assignment-offer-2.schema.json' with { type: 'json' };
+import artifact1Schema from '../schemas/artifact-1.schema.json' with { type: 'json' };
+import runtimeHeartbeat1Schema from '../schemas/runtime-heartbeat-1.schema.json' with { type: 'json' };
+import runtimeLease1Schema from '../schemas/runtime-lease-1.schema.json' with { type: 'json' };
 import type { Strategy } from './generated.ts';
 import type { RunCheckpoint } from './generated.ts';
 import type { ErrorCode, GeneratedContractMap, RunComplete as GeneratedRunComplete, RunState as GeneratedRunState, RunWait as GeneratedRunWait } from './generated-contracts.ts';
@@ -40,7 +44,7 @@ export type ContractDocumentMap = Omit<GeneratedContractMap, 'runWait' | 'runCom
 export type ContractKind = keyof ContractDocumentMap;
 
 export const schemaBaseUri = 'https://monad-hack.example/schemas/';
-export const schemaDocuments: readonly object[] = [schema, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema];
+export const schemaDocuments: readonly object[] = [schema, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema];
 
 /** Schema reference per kind; strategy is absolute because its schema lives beside the language core. */
 export const contractRefs = {
@@ -64,6 +68,10 @@ export const contractRefs = {
   timelineEntry: schemaBaseUri + 'timeline-entry-1.schema.json',
   brokerRequest: schemaBaseUri + 'broker-request-1.schema.json',
   brokerResult: schemaBaseUri + 'broker-result-1.schema.json',
+  assignmentOffer2: schemaBaseUri + 'assignment-offer-2.schema.json',
+  artifact: schemaBaseUri + 'artifact-1.schema.json',
+  runtimeHeartbeat: schemaBaseUri + 'runtime-heartbeat-1.schema.json',
+  runtimeLease: schemaBaseUri + 'runtime-lease-1.schema.json',
 } as const satisfies Record<ContractKind, string>;
 
 /** UTF-8 byte ceilings checked before JSON parsing (strategy-language.md section 7, runtime.md limits). */
@@ -88,6 +96,10 @@ export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
   timelineEntry: 32 * 1024,
   brokerRequest: 32 * 1024,
   brokerResult: 64 * 1024,
+  assignmentOffer2: 16 * 1024,
+  artifact: 1024 * 1024,
+  runtimeHeartbeat: 4 * 1024,
+  runtimeLease: 4 * 1024,
 };
 
 export type ContractIssueCode = Extract<ErrorCode, 'SCHEMA_INVALID' | 'LIMIT_EXCEEDED' | 'MALFORMED_REQUEST'>;

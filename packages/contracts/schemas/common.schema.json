@@ -203,6 +203,17 @@
       "maxLength": 1024,
       "pattern": "^[!-~]{1,1024}$"
     },
+    "capabilityGrant": {
+      "title": "CapabilityGrant",
+      "description": "Short-lived bearer capability for one assignment (at most five minutes). Secret: never logged, stored or echoed; servers keep only its hash.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bearer", "expiresAt"],
+      "properties": {
+        "bearer": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
     "assetIdentity": {
       "title": "AssetIdentity",
       "description": "Resolved asset identity; never a symbol alone. Mainnet, testnet, fork and paper registries are distinct networkRefs.",

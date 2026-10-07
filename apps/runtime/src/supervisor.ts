@@ -65,7 +65,7 @@ export class Supervisor {
     const { config, control } = this.#deps;
     const poll = { schemaVersion: 'assignment-poll/1' as const, runtimeId: config.runtimeId, state: this.state === 'idle' ? 'idle' as const : 'ready' as const, waitSeconds: config.pollWaitSeconds, ...(this.#lastAssignmentId ? { lastAssignmentId: this.#lastAssignmentId } : {}) };
     const offer = await control.poll(poll);
-    if (!validate('assignmentOffer', offer).ok) throw new RuntimeError('RESULT_INVALID', 'Assignment offer failed its schema.');
+    if (!validate('assignmentOffer2', offer).ok) throw new RuntimeError('RESULT_INVALID', 'Assignment offer failed its schema.');
     if (offer.disposition === 'drain') { this.drain(); return { disposition: 'drain' }; }
     if (offer.disposition === 'none' || !offer.assignment) return { disposition: 'none' };
     return this.execute(offer.assignment);

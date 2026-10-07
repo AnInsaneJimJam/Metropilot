@@ -32,7 +32,7 @@ export interface HostDeps {
   readonly telemetry: Telemetry;
   readonly authority: Authority;
   /** Failure-injection hook for tests and the demo: called at each durable boundary. */
-  readonly crashAt?: (point: CrashPoint, command: HostCommand) => void;
+  readonly crashAt?: (point: CrashPoint, command: HostCommand) => void | Promise<void>;
 }
 
 export type CrashPoint = 'after-wait' | 'after-dispatch';
@@ -72,12 +72,12 @@ export async function runAssignment({ assignment, program }: VerifiedAssignment,
     const operationKey = await keyFor(assignment, command);
     // Checkpoint-before-dispatch: nothing leaves this process until the API holds the waiting state and key.
     await control.wait({ schemaVersion: 'run-wait/1', ...fence, checkpoint, operation: { operationKey, kind: command.kind, nodeId: command.nodeId, iterationPath: [...command.iterationPath] } });
-    deps.crashAt?.('after-wait', command);
+    await deps.crashAt?.('after-wait', command);
     authority.assertActive();
     telemetry.emit({ at: clock.now(), event: 'operation.dispatch', runId: fence.runId, nodeId: command.nodeId, operationKey, kind: command.kind });
 
     const dispatched = await dispatch(assignment, command, operationKey, observationRefs, deps, fence);
-    deps.crashAt?.('after-dispatch', command);
+    await deps.crashAt?.('after-dispatch', command);
     const { response: answer, resultRef, result } = dispatched;
     await control.result({
       schemaVersion: 'run-result/1', ...fence, operationKey, outcome: answer.outcome,

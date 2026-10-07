@@ -4,7 +4,7 @@ export { evaluateExpression } from './expression.ts';
 export type { Value, BoundValue, TextValue, FieldType, RecordType } from './expression.ts';
 export { transitionPrice, scheduleSlot } from './triggers.ts';
 export type { PriceObservation, CrossingState, TriggerDecision } from './triggers.ts';
-export { startRun, advanceRun } from './interpreter.ts';
+export { startRun, advanceRun, runIdentity } from './interpreter.ts';
 export type { HostCommand, HostResponse, AdvanceResult, SwapCommand, NotifyCommand, ReadCommand, AiCommand } from './interpreter.ts';
 export { LanguageError } from './errors.ts';
 export { normalizeHuman, fractionDigits, toAtomic, fromAtomic, toPriceDecimal, toLanguageDecimal, percentToBps, bpsToPercent } from './workspace/units.ts';

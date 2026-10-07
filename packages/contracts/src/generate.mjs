@@ -27,6 +27,10 @@ const refs = {
   timelineEntry: 'timeline-entry-1.schema.json',
   brokerRequest: 'broker-request-1.schema.json',
   brokerResult: 'broker-result-1.schema.json',
+  assignmentOffer2: 'assignment-offer-2.schema.json',
+  artifact: 'artifact-1.schema.json',
+  runtimeHeartbeat: 'runtime-heartbeat-1.schema.json',
+  runtimeLease: 'runtime-lease-1.schema.json',
 };
 const root = {
   title: 'GeneratedContractMap',

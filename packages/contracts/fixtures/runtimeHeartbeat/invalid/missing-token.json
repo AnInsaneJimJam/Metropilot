@@ -1,0 +1,12 @@
+{
+  "description": "The fencing token is required",
+  "expect": {
+    "fieldPath": "/fencingToken",
+    "keyword": "required"
+  },
+  "document": {
+    "schemaVersion": "runtime-heartbeat/1",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "assignmentId": "019a0000-0000-7000-8000-000000000201"
+  }
+}

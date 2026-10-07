@@ -1,0 +1,56 @@
+{
+  "description": "An assignment always arrives with its capability",
+  "expect": {
+    "fieldPath": "/capability",
+    "keyword": "required"
+  },
+  "document": {
+    "schemaVersion": "assignment-offer/2",
+    "disposition": "assigned",
+    "assignment": {
+      "schemaVersion": "runtime-assignment/1",
+      "assignmentId": "019a0000-0000-7000-8000-000000000201",
+      "lease": {
+        "owner": "runtime-local-1",
+        "fencingToken": "17",
+        "expiresAt": "2026-10-07T12:00:30.000Z"
+      },
+      "deployment": {
+        "deploymentId": "019a0000-0000-7000-8000-000000000202",
+        "generation": "3",
+        "mode": "paper",
+        "manifestHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "runtimeImageDigest": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "connectorVersions": {
+          "paper.uniswap": "1.0.0",
+          "paper.kuru": "1.0.0"
+        }
+      },
+      "interpreter": {
+        "languageVersion": "strategy/1",
+        "checkpointVersion": "strategy-run/2"
+      },
+      "run": {
+        "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "deploymentRevision": "019a0000-0000-7000-8000-000000000202/3",
+        "triggerId": "crossing",
+        "sourceEventKey": "chain:10143:0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:4"
+      },
+      "trigger": {
+        "observationRef": "019a0000-0000-7000-8000-000000000111",
+        "observedAt": "2026-10-07T11:59:59.400Z",
+        "acceptedAt": "2026-10-07T11:59:59.900Z",
+        "runCreatedAt": "2026-10-07T11:59:59.900Z"
+      },
+      "artifacts": {
+        "strategyRef": "artifact:deployment/019a0000-0000-7000-8000-000000000202/strategy",
+        "strategyHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "catalogRef": "artifact:catalog/paper/1",
+        "catalogHash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "capabilityRef": "capability:assignment/019a0000-0000-7000-8000-000000000201",
+      "issuedAt": "2026-10-07T12:00:00.000Z",
+      "expiresAt": "2026-10-07T12:01:00.000Z"
+    }
+  }
+}

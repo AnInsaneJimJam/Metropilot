@@ -3,7 +3,8 @@
 // creation, resume after pending effects, pause). It models the documented semantics, not their durability:
 // a real implementation does each mutation below in one PostgreSQL transaction (docs/integration/control-api.md).
 import { contentHash, validate } from '@monad-hack/contracts';
-import type { AssignmentOffer, AssignmentPoll, RunCheckpoint, RunComplete, RunResult, RunState, RunWait, RuntimeAssignment, TimelineEntry } from '@monad-hack/contracts';
+import { randomBytes } from 'node:crypto';
+import type { AssignmentOfferV2, AssignmentPoll, RunCheckpoint, RunComplete, RunResult, RunState, RunWait, RuntimeAssignment, TimelineEntry } from '@monad-hack/contracts';
 import { compileStrategy, scheduleSlot, transitionPrice } from '@monad-hack/strategy';
 import type { Catalog, CompiledStrategy, CrossingState, PriceObservation } from '@monad-hack/strategy';
 import { RuntimeError } from '../errors.ts';
@@ -59,7 +60,8 @@ export interface Run {
   operations: Map<string, Operation>;
   assignment?: { assignmentId: string; fencingToken: string };
   fencingCounter: number;
-  status: 'queued' | 'assigned' | 'waiting' | 'completed' | 'failed';
+  /** `revoked`: its generation was superseded before it finished; it never runs again. */
+  status: 'queued' | 'assigned' | 'waiting' | 'completed' | 'failed' | 'revoked';
 }
 
 export interface TimelineRow {
@@ -123,6 +125,9 @@ export class LocalControlPlane implements ControlApi {
   /** Resume or redeploy mints a new generation; the old generation's runtimes can never act again. */
   resume(deploymentId: string): void {
     const deployment = this.#deployment(deploymentId);
+    // Runs of the superseded generation end here: a late settlement is recorded but never resumes them.
+    for (const run of this.runs.values()) if (run.deploymentId === deploymentId && run.generation === deployment.generation && !['completed', 'failed'].includes(run.status)) run.status = 'revoked';
+    this.#queue.splice(0, this.#queue.length, ...this.#queue.filter((a) => this.runs.get(a.run.runId)?.status !== 'revoked'));
     deployment.generation += 1;
     deployment.active = true;
     for (const row of this.#triggerState) if (row.deploymentId === deploymentId) Object.assign(row, { generation: deployment.generation, active: true, crossing: {} });
@@ -188,7 +193,7 @@ export class LocalControlPlane implements ControlApi {
     operation.outcome = outcome;
     if (resultRef) operation.resultRef = resultRef;
     if (run.checkpoint?.waiting) run.recorded = { operationKey, outcome, ...(resultRef ? { resultRef } : {}) };
-    this.#issueAssignment(run);
+    if (run.status !== 'revoked') this.#issueAssignment(run);
   }
 
   /**
@@ -207,11 +212,14 @@ export class LocalControlPlane implements ControlApi {
 
   // ---- ControlApi: what the runtime calls --------------------------------------------------------------------
 
-  async poll(request: AssignmentPoll): Promise<AssignmentOffer> {
+  async poll(request: AssignmentPoll): Promise<AssignmentOfferV2> {
     if (!validate('assignmentPoll', request).ok) throw new RuntimeError('RESULT_INVALID', 'Malformed poll.');
-    if (this.#draining) return { schemaVersion: 'assignment-offer/1', disposition: 'drain' };
+    if (this.#draining) return { schemaVersion: 'assignment-offer/2', disposition: 'drain' };
     const assignment = this.#queue.shift();
-    return assignment ? { schemaVersion: 'assignment-offer/1', disposition: 'assigned', assignment } : { schemaVersion: 'assignment-offer/1', disposition: 'none' };
+    if (!assignment) return { schemaVersion: 'assignment-offer/2', disposition: 'none' };
+    // The stand-in does not authenticate; the bearer only has the real shape.
+    const capability = { bearer: randomBytes(32).toString('base64url'), expiresAt: new Date(Date.parse(this.#clock.now()) + 300_000).toISOString() };
+    return { schemaVersion: 'assignment-offer/2', disposition: 'assigned', assignment, capability };
   }
 
   async fetchArtifact(ref: string): Promise<Artifact> {
@@ -322,7 +330,7 @@ export class LocalControlPlane implements ControlApi {
   #fenced(runId: string, assignmentId: string, fencingToken: string): Run {
     const run = this.#run(runId);
     const deployment = this.#deployment(run.deploymentId);
-    if (!deployment.active || deployment.generation !== run.generation) throw new RuntimeError('REVOKED', 'Deployment generation is paused or replaced.');
+    if (run.status === 'revoked' || !deployment.active || deployment.generation !== run.generation) throw new RuntimeError('REVOKED', 'Deployment generation is paused or replaced.');
     if (run.assignment?.assignmentId !== assignmentId || run.assignment.fencingToken !== fencingToken) throw new RuntimeError('FENCED', 'A newer lease owns this run.');
     return run;
   }

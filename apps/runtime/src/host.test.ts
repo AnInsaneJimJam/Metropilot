@@ -199,6 +199,17 @@ describe('recovery and identity', () => {
     assert.equal(env.executor.intents.length, 0);
   });
 
+  test('resume supersedes a generation: its waiting run is revoked and a late settlement does not revive it', async () => {
+    const env = await scheduled({ autoSettle: false });
+    assert.equal((await env.supervisor().cycle()).outcome, 'waiting');
+    env.control.pause(env.deployment.deploymentId);
+    env.control.resume(env.deployment.deploymentId);
+    assert.equal(env.run().status, 'revoked');
+    await env.executor.settlePending();
+    assert.equal((await env.supervisor().cycle()).disposition, 'none', 'no assignment for a revoked run');
+    assert.equal(env.control.timelineRows.length, 0);
+  });
+
   test('drain stops new dispatch and ends the serve loop', async () => {
     const env = await scheduled();
     const runtime = env.supervisor({ crashAt: (at) => { if (at === 'after-wait') runtime.drain(); } });

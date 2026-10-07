@@ -3,7 +3,7 @@
 // Every body is a closed packages/contracts document. Failures throw RuntimeError with a stable code.
 import type {
   ActionIntent,
-  AssignmentOffer,
+  AssignmentOfferV2,
   AssignmentPoll,
   BrokerRequest,
   BrokerResult,
@@ -22,8 +22,8 @@ export interface Artifact {
 }
 
 export interface ControlApi {
-  /** Long-poll for the next assignment (assignment-poll/1 → assignment-offer/1). */
-  poll(request: AssignmentPoll): Promise<AssignmentOffer>;
+  /** Long-poll for the next assignment (assignment-poll/1 → assignment-offer/2, which carries its capability). */
+  poll(request: AssignmentPoll): Promise<AssignmentOfferV2>;
   /** Fetch an immutable strategy or catalog artifact by reference. */
   fetchArtifact(ref: string): Promise<Artifact>;
   /** Accepted checkpoint and the recorded result of its waiting operation; FENCED for a stale token. */

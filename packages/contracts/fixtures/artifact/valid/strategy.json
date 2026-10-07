@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "artifact/1",
+  "ref": "artifact:deployment/019a0000-0000-7000-8000-000000000202/strategy",
+  "kind": "strategy",
+  "contentHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "text": "{\"schemaVersion\":\"strategy/1\"}"
+}

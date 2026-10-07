@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/assignment-offer-2.schema.json",
+  "title": "AssignmentOfferV2",
+  "description": "Control API answer to an assignment poll, assignment-offer/2: assignment-offer/1 plus the assignment's bearer capability. assigned carries exactly one assignment and its capability; none means poll again; drain means stop taking work and exit. Supersedes assignment-offer/1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "disposition"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "assignment-offer/2"
+    },
+    "disposition": {
+      "type": "string",
+      "enum": [
+        "assigned",
+        "none",
+        "drain"
+      ]
+    },
+    "assignment": {
+      "$ref": "runtime-assignment-1.schema.json"
+    },
+    "capability": {
+      "$ref": "common.schema.json#/$defs/capabilityGrant"
+    }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "disposition": {
+        "const": "assigned"
+      }
+    },
+    "required": [
+      "disposition"
+    ]
+  },
+  "then": {
+    "required": [
+      "assignment",
+      "capability"
+    ]
+  },
+  "else": {
+    "not": {
+      "anyOf": [
+        {
+          "required": [
+            "assignment"
+          ]
+        },
+        {
+          "required": [
+            "capability"
+          ]
+        }
+      ]
+    }
+  }
+}

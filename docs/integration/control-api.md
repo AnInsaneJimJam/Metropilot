@@ -2,9 +2,9 @@
 
 This guide is for the owner of `apps/api` (control API and API worker roles). It explains what the agent runtime expects from you, in the order you will build it, and how to prove your service is compatible. Rules live in the specs: [agent runtime](../specs/agent-runtime.md), [runtime](../specs/runtime.md), [API/data](../specs/api-and-data.md) and decisions [D32–D34](../decisions.md). Wire shapes live in [`packages/contracts/schemas`](../../packages/contracts/schemas/).
 
-Status 2026-10-07: the runtime side is implemented and runs against an in-memory stand-in of your service, [`LocalControlPlane`](../../apps/runtime/src/local/control-plane.ts). Read that file next to this guide; every method there is a behavior you implement with one PostgreSQL transaction. Run `pnpm runtime:demo` to watch the whole flow.
+Status 2026-10-08 (branch `feat/runtime-control-api`): **the runtime-facing control API is implemented** in [`apps/api/src/runtime-control/`](../../apps/api/src/runtime-control/): [`store.ts`](../../apps/api/src/runtime-control/store.ts) (PostgreSQL; the routes below plus the worker roles), [`app.ts`](../../apps/api/src/runtime-control/app.ts) (internal Fastify routes and capability checks), [`server.ts`](../../apps/api/src/runtime-control/server.ts) (`pnpm api:runtime`, local only) and migration [`0003_runtime_control.sql`](../../apps/api/migrations/0003_runtime_control.sql). The runtime's [HTTP client](../../apps/runtime/src/dispatch/control-api.ts) talks to it, and [`tests/runtime-control.test.ts`](../../tests/runtime-control.test.ts) passes the conformance kit both against the store and through HTTP, plus end-to-end paper runs, all on real PostgreSQL. The in-memory [`LocalControlPlane`](../../apps/runtime/src/local/control-plane.ts) remains the behavioral reference for the demo.
 
-**Not built yet: the runtime's HTTP clients and process entry point.** Until they exist, nothing calls your service; read [runtime HTTP clients](runtime-http-clients.md) for what is missing, the shared error mapping, retry rules and the contract gaps to settle with the runtime owner before you build your routes.
+What is still yours (API owner): the user-facing deployment request and manifest (API-2) on top of the minimal `deployments` table, real ingestion from Envio/RPC feeding `ingestPrice` (gate E10), the selected workload-identity mechanism for the poll (gate E02), audience-scoped capabilities for the broker and executor, and production hosting. The broker and executor clients are not written yet ([runtime HTTP clients](runtime-http-clients.md)).
 
 ## 1. Who calls whom
 
@@ -18,19 +18,20 @@ executor or broker reconciliation ──definitive result──► you ──res
 
 The runtime never reads your database, never subscribes to events and has no timers. Everything that decides *when* a strategy runs is yours.
 
-## 2. Tables this implies
-
-Names are suggestions; behavior is not.
+## 2. Tables (implemented in migration 0003)
 
 | Table | Purpose | Key constraints |
 | --- | --- | --- |
-| `deployments` | One row per agent deployment: generation, mode, desired state, manifest, artifact refs and hashes | Only the current generation may create operations |
-| `trigger_state` | One row per (deployment, trigger): `trigger_type`, `feed_ref` (copied from the AST at deploy time), `generation`, `active`, crossing state (`baseline`, `observed_at`, `source_event_key`, `accepted_at`), `last_slot` | `unique(deployment_id, trigger_id)`; index `(feed_ref) where active` |
-| `events` | Normalized finalized observations | Unique source key ([api-and-data.md](../specs/api-and-data.md)) |
-| `runs` | `run_id`, deployment, generation, trigger, source event key, trigger stage times, status, current checkpoint, observation refs | `unique(run_id)` makes duplicate events harmless |
-| `run_assignments` | Lease per run: assignment ID, owner, **fencing token** (monotonic per run), expiry | A newer token supersedes older ones |
-| `run_operations` | One row per operation key: kind, node ID, iteration path, outcome, result ref, recorded result | `unique(run_id, operation_key)` |
-| `timeline` | Notify entries | `unique(operation_key)` |
+| `deployments` | Minimal deployment: agent, pinned revision, mode, **generation**, desired state, strategy/catalog hashes, connector pins, runtime image digest | Revision must belong to the same agent and tenant; extend it in API-2, do not replace it |
+| `artifacts` | Immutable strategy (canonical AST) and catalog bodies served to runtimes | Immutable; owned by one deployment |
+| `trigger_state` | One row per (deployment, trigger): `trigger_type`, `feed_ref` copied from the AST, `generation`, `active`, crossing state, `last_slot` | Primary key `(deployment_id, trigger_id)`; index `(feed_ref) where active` |
+| `runs` | Run identity, generation, revision, trigger, source event key, stage times, status (`queued` … `completed`/`failed`/`revoked`), checkpoint, recorded result, observation refs | `unique(run_id)` makes duplicate events harmless |
+| `run_assignments` | Each lease: **fencing token** (monotonic per run), runtime, capability **hash** and expiry, lease expiry | `unique(run_id, fencing_token)`; the highest token is the current owner |
+| `run_operations` | One row per operation key: kind, node, iteration path, outcome, result ref | Primary key `(run_id, operation_key)` |
+| `timeline_entries` | Notify entries | Immutable; `operation_key` primary key |
+| `runtime_workers` | Known runtimes and the operator drain flag | |
+
+Normalized source events (`events`) are not part of this migration; ingestion owns them.
 
 ## 3. Ingestion and fan-out (decisions D32, D34)
 
@@ -68,6 +69,7 @@ Build each [`runtime-assignment/1`](../../packages/contracts/schemas/runtime-ass
 | `lease.fencingToken` | Previous token for this run + 1, as a decimal string |
 | `lease.expiresAt` | Now + 30 s; heartbeats every 10 s extend it ([runtime.md](../specs/runtime.md)) |
 | `deployment.generation` | Current generation as a decimal string |
+| `deployment.manifestHash` | Until API-2 produces a real manifest: `contentHash({schemaVersion: "runtime-manifest/0", mode, strategyHash, catalogHash, connectorVersions, runtimeImageDigest})` (see `RuntimeControlStore`). When the manifest record exists, replace it with that record's content hash and keep the runtime informed |
 | `deployment.runtimeImageDigest` | Digest of the pinned runtime image; the runtime refuses any other |
 | `deployment.connectorVersions` | Manifest pins `{connectorRef: "MAJOR.MINOR.PATCH"}` for every connector the strategy uses |
 | `run.triggerId` | The strategy's own trigger ID (for example `crossing`), never a UUID |
@@ -80,18 +82,18 @@ Hand assignments out through `POST /internal/v1/runtime/assignments:poll` ([D33]
 
 ## 5. Endpoints the runtime calls
 
-All bodies are closed documents; validate with `validate(kind, body)` from `@monad-hack/contracts` before use. Every write carries `runId`, `assignmentId` and `fencingToken`; compare them with the current lease **inside the same transaction** as the write.
+Every route except the poll requires `Authorization: Bearer <capability>`; a capability authorizes exactly one assignment of one run, and every run ID and assignment ID in the request must match it (otherwise `403`). All bodies are closed documents; validate with `validate(kind, body)` from `@monad-hack/contracts` before use. Every write carries `runId`, `assignmentId` and `fencingToken`; compare them with the current lease **inside the same transaction** as the write.
 
 | Route | Body → response | Behavior you must guarantee |
 | --- | --- | --- |
-| `POST /internal/v1/runtime/assignments:poll` | `assignment-poll/1` → `assignment-offer/1` | One assignment per lease; `drain` when the runtime should stop |
-| `GET /internal/v1/runtime/artifacts/{ref}` | → `{contentHash, text}` | Immutable; `contentHash` equals the assignment's hash |
+| `POST /internal/v1/runtime/assignments:poll` | `assignment-poll/1` → `assignment-offer/2` | Workload-authenticated. One assignment per lease, delivered with its bearer capability; `drain` when the runtime should stop |
+| `GET /internal/v1/runtime/artifacts/{ref}` | → `artifact/1` | Immutable; `contentHash` equals the assignment's hash; another deployment's artifact answers 404 |
 | `GET /internal/v1/runs/{runId}` | → `run-state/1` | Current checkpoint (absent for a new run), the recorded result of the checkpoint's waiting operation (absent until one exists), and `observationRefs` (broker result IDs recorded in this run, in order) |
 | `POST /internal/v1/runs/{runId}/wait` | `run-wait/1` | Atomically save the checkpoint and insert the operation row. The same operation again is a no-op; the same key with a different kind, node or iteration path is a conflict. A re-wait for an operation that already has an outcome keeps that outcome visible in `run-state` |
 | `POST /internal/v1/runs/{runId}/results` | `run-result/1` | Only for an operation already saved by `wait`. `pending` may later become definitive; once definitive, the same outcome again is a no-op and a different one is a conflict. A `recorded` result with `resultRef` appends to `observationRefs` |
 | `POST /internal/v1/runs/{runId}/complete` | `run-complete/1` | Only `completed` or `failed` checkpoints; conditional on the current lease |
 | `POST /internal/v1/runs/{runId}/timeline` | `timeline-entry/1` | Idempotent by operation key; user-safe text only |
-| `POST /internal/v1/runtime/heartbeat` | assignment ID + token | Extend the lease; refuse a stale token or a revoked generation |
+| `POST /internal/v1/runtime/heartbeat` | `runtime-heartbeat/1` → `runtime-lease/1` | Extend the lease and the same capability (not rotated, so requests in flight stay valid); refuse a stale token or a revoked generation |
 
 The runtime saves the waiting checkpoint **before** it dispatches anything, so a crash at any point leaves you with enough to resume: a re-run loads the checkpoint, regenerates the identical command and operation key, and re-dispatches under the same key, which the broker and executor deduplicate.
 
@@ -114,16 +116,25 @@ Pause sets the deployment inactive: from that moment `wait`, `results`, `complet
 
 ## 9. Proving compatibility
 
-The [control API conformance kit](../../apps/runtime/src/conformance/control-api.ts) checks closed offers and artifacts, new-run and saved-wait state, wait and result idempotency and conflicts, fencing on every write and heartbeat, and terminal-only completion. The in-memory stand-in passes it in [`conformance.test.ts`](../../apps/runtime/src/conformance.test.ts).
+The [control API conformance kit](../../apps/runtime/src/conformance/control-api.ts) checks closed offers and artifacts, new-run and saved-wait state, wait and result idempotency and conflicts, fencing on every write and heartbeat, and terminal-only completion. Three implementations pass it:
 
-To run it against your service you need the runtime's HTTP client, which is **not written yet** ([runtime HTTP clients](runtime-http-clients.md)); apps never import each other's source, so the kit reaches your service only through that client. Start with the loopback approach in [§1](runtime-http-clients.md#1-build-order-that-avoids-a-big-bang-integration). Provide a `ControlApiHarness` whose `arrangeRun` deploys the `ai_gated_purchase` preset and ticks its schedule through your test hooks, whose `expireLease` issues a newer lease, and whose `timelineCount` reads your timeline. Register it the way `conformance.test.ts` does.
+| Implementation | Where |
+| --- | --- |
+| In-memory `LocalControlPlane` | [`apps/runtime/src/conformance.test.ts`](../../apps/runtime/src/conformance.test.ts) |
+| `RuntimeControlStore` on PostgreSQL, in process | [`tests/runtime-control.test.ts`](../../tests/runtime-control.test.ts) |
+| Runtime `HttpControlApi` → internal Fastify app → PostgreSQL | same file |
+
+Run them with a database: `REQUIRE_DB=1 pnpm check` (see [README](../../README.md) setup). If you change a route or a table, keep all three green.
+
+To run the API locally for a runtime: `pnpm db:migrate`, then `pnpm api:runtime` (loopback `127.0.0.1:3002`, development workload header `x-runtime-workload: <runtimeId>`, worker loop ticking schedules and reclaiming expired leases every second).
 
 ## 10. Owner checklist
 
-- [ ] `deployments`, `trigger_state`, `runs`, `run_assignments`, `run_operations`, `timeline` with the constraints above.
-- [ ] Push-first ingestion, heartbeat for quiet feeds, fan-out with row lock and `transitionPrice`, schedule ticks with `scheduleSlot`.
-- [ ] Run identity and assignment fields exactly as in section 4; stage times recorded.
-- [ ] The eight routes in section 5 with closed-document validation and fencing in the same transaction.
-- [ ] `LEASE_FENCED` / `GENERATION_REVOKED` errors.
-- [ ] Resume assignment after a definitive result for a pending operation.
-- [ ] Conformance kit green against the real service ([INT-1](AGENTS.md)).
+- [x] Tables with the constraints above (migration 0003; extend `deployments` in API-2).
+- [ ] Push-first ingestion from the verified source and heartbeat reads for quiet feeds, calling `ingestPrice` (the fan-out with row lock and `transitionPrice` is implemented); schedule ticks are implemented in the local worker loop.
+- [x] Run identity and assignment fields as in section 4; stage times recorded.
+- [x] The eight routes in section 5 with closed-document validation, bearer capabilities and fencing in the same transaction.
+- [x] `LEASE_FENCED` / `GENERATION_REVOKED` errors; `INTERNAL_ERROR` for defects, `PROVIDER_UNAVAILABLE` only for a lost database connection.
+- [x] Resume assignment after a definitive result for a pending operation; revoke unfinished runs when a generation is superseded.
+- [x] Conformance kit green through the runtime HTTP client against PostgreSQL ([INT-1](AGENTS.md)).
+- [ ] Production workload identity (E02), audience-scoped broker/executor capabilities, hosting.

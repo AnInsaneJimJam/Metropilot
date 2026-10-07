@@ -65,7 +65,7 @@ describe('database', { skip }, () => {
   });
 
   test('migrations apply once and re-running applies nothing', async () => {
-    assert.deepEqual(await migrate(db), ['0001_g1_baseline.sql', '0002_control_workspace.sql']);
+    assert.deepEqual(await migrate(db), readMigrations().map((m) => m.name));
     assert.deepEqual(await migrate(db), []);
   });
 
@@ -85,7 +85,7 @@ describe('database', { skip }, () => {
     await second.connect();
     clients.push(second);
     const results = await Promise.all([migrate(a), migrate(second)]);
-    assert.deepEqual(results.flat(), ['0001_g1_baseline.sql', '0002_control_workspace.sql']);
+    assert.deepEqual(results.flat(), readMigrations().map((m) => m.name));
   });
 
   test('migration files are numbered without gaps', () => {
@@ -184,6 +184,52 @@ describe('database', { skip }, () => {
 
     test('IDs must be UUIDv7', async () => {
       await rejects(db.query(`insert into tenants (id, auth_subject) values ('3f2b8c1e-9d4a-4f6b-8e2c-1a2b3c4d5e6f', 'synthetic|v4')`), '23514');
+    });
+  });
+
+  describe('runtime control (0003)', () => {
+    const H = (b: string) => '0x' + b.repeat(32);
+    const deployment = '019a0000-0000-7000-8000-0000000002d1';
+    const runId = H('7a');
+    before(async () => {
+      await seedPaper(db);
+      const { agentId, strategyRevisionId } = paperSeed().request;
+      await db.query(
+        `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest)
+         values ($1, $2, $3, $4, 'paper', $5, $5, '{}', $5)`,
+        [seedTenantId, deployment, agentId, strategyRevisionId, H('aa')],
+      );
+      await db.query(
+        `insert into runs (tenant_id, run_id, deployment_id, generation, deployment_revision, trigger_id, source_event_key, trigger)
+         values ($1, $2, $3, 1, 'rev/1', 'crossing', 'e1', '{}')`,
+        [seedTenantId, runId, deployment],
+      );
+    });
+
+    test('a deployment cannot pin another agent\'s revision or another tenant\'s', async () => {
+      const { strategyRevisionId } = paperSeed().request;
+      await rejects(
+        db.query(
+          `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest)
+           values ($1, '019a0000-0000-7000-8000-0000000002d2', '019a0000-0000-7000-8000-0000000002d3', $2, 'paper', $3, $3, '{}', $3)`,
+          [seedTenantId, strategyRevisionId, H('aa')],
+        ),
+        '23503',
+      );
+    });
+
+    test('run identities are 0x SHA-256 and unique; fencing tokens are unique per run', async () => {
+      await rejects(db.query(`insert into runs (tenant_id, run_id, deployment_id, generation, deployment_revision, trigger_id, source_event_key, trigger) values ($1, 'run-1', $2, 1, 'r', 't', 'e', '{}')`, [seedTenantId, deployment]), '23514');
+      await rejects(db.query(`insert into runs (tenant_id, run_id, deployment_id, generation, deployment_revision, trigger_id, source_event_key, trigger) values ($1, $2, $3, 1, 'r', 't', 'e', '{}')`, [seedTenantId, runId, deployment]), '23505');
+      await db.query(`insert into run_assignments (assignment_id, tenant_id, run_id, fencing_token) values ('019a0000-0000-7000-8000-0000000002e1', $1, $2, 1)`, [seedTenantId, runId]);
+      await rejects(db.query(`insert into run_assignments (assignment_id, tenant_id, run_id, fencing_token) values ('019a0000-0000-7000-8000-0000000002e2', $1, $2, 1)`, [seedTenantId, runId]), '23505');
+    });
+
+    test('artifacts and timeline entries are immutable', async () => {
+      await db.query(`insert into artifacts (ref, tenant_id, deployment_id, kind, content_hash, body) values ('artifact:test', $1, $2, 'strategy', $3, '{}')`, [seedTenantId, deployment, H('bb')]);
+      await rejects(db.query(`update artifacts set body = '[]'`), 'P0001');
+      await db.query(`insert into timeline_entries (tenant_id, operation_key, run_id, node_id, message, inputs) values ($1, $2, $3, 'note', 'hello', '{}')`, [seedTenantId, H('cc'), runId]);
+      await rejects(db.query(`delete from timeline_entries`), 'P0001');
     });
   });
 

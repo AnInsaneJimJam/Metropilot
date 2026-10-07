@@ -1,12 +1,12 @@
-# Runtime HTTP clients (not yet written)
+# Runtime HTTP clients
 
-**Status 2026-10-07: the runtime has no HTTP clients and no process entry point yet.** It talks to the outside world only through the interfaces in [`apps/runtime/src/ports.ts`](../../apps/runtime/src/ports.ts) (`ControlApi`, `Broker`, `Executor`). Today the only implementations are the in-memory stand-ins in [`src/local/`](../../apps/runtime/src/local/), which is why `pnpm runtime:demo` and the tests need no network. Nothing in this repository can call a real control API, broker or executor yet.
+**Status 2026-10-08 (branch `feat/runtime-control-api`): the control API client is written; the broker and executor clients and the process entry point are not.** The runtime talks to the outside world only through the interfaces in [`apps/runtime/src/ports.ts`](../../apps/runtime/src/ports.ts) (`ControlApi`, `Broker`, `Executor`). [`dispatch/control-api.ts`](../../apps/runtime/src/dispatch/control-api.ts) implements `ControlApi` over HTTP and passes the conformance kit against the real control API on PostgreSQL ([`tests/runtime-control.test.ts`](../../tests/runtime-control.test.ts)); it is the template for the other two. `Broker` and `Executor` still have only the in-memory stand-ins in [`src/local/`](../../apps/runtime/src/local/).
 
 What is missing, and where it goes ([agent runtime §16](../specs/agent-runtime.md#16-suggested-source-layout)):
 
 | File | Implements | Talks to |
 | --- | --- | --- |
-| `apps/runtime/src/dispatch/control-api.ts` | `ControlApi` | [Control API routes](control-api.md#5-endpoints-the-runtime-calls) |
+| `apps/runtime/src/dispatch/control-api.ts` (**written**) | `ControlApi` | [Control API routes](control-api.md#5-endpoints-the-runtime-calls) |
 | `apps/runtime/src/dispatch/broker.ts` | `Broker` | API Broker read / `ai.decide` route |
 | `apps/runtime/src/dispatch/executor.ts` | `Executor` | `POST /internal/v1/intents` ([executor guide](executor.md#2-the-request)) |
 | `apps/runtime/src/main.ts` | Process entry | `parseConfig(process.env)` → build the three clients → `new Supervisor(...).serve()` → `drain()` on `SIGTERM` |
@@ -31,7 +31,7 @@ Server owners can start the same way: make the loopback-wrapped stand-in pass fi
 
 ## 3. One error mapping (both sides implement it)
 
-Servers answer failures with an [`error-1`](../../packages/contracts/schemas/error-1.schema.json) body. The client turns status and `code` into the runtime's stable [codes](../../apps/runtime/src/errors.ts); the conformance kits assert these codes, so the mapping must be exact.
+Servers answer failures with an [`error-1`](../../packages/contracts/schemas/error-1.schema.json) body. The client turns status and `code` into the runtime's stable [codes](../../apps/runtime/src/errors.ts) through one function, [`dispatch/errors.ts`](../../apps/runtime/src/dispatch/errors.ts); the conformance kits assert these codes, so the mapping must be exact.
 
 | Response | Runtime code | Client behavior |
 | --- | --- | --- |
@@ -40,8 +40,9 @@ Servers answer failures with an [`error-1`](../../packages/contracts/schemas/err
 | `409 GENERATION_REVOKED` (executor: also its `EXECUTOR_STALE_GENERATION` case) | `REVOKED` | Throw; the process drains |
 | `401`, `403` | `REVOKED` | Throw; do not retry with the same token |
 | `409 IDEMPOTENCY_CONFLICT` (executor: `EXECUTOR_INTENT_CONFLICT`, key mismatch) | `CONFLICT` | Throw; never retried |
-| `400`, `422` | `RESULT_INVALID` | Throw; a runtime defect, never retried |
-| `429`, `503`, network error, timeout | `UNAVAILABLE` | Bounded retry (section 4), then throw |
+| `404` | `CONFLICT` (`ASSIGNMENT_INVALID` for an artifact) | Throw; never retried |
+| `400`, `422`, `500 INTERNAL_ERROR` | `RESULT_INVALID` | Throw; a defect on one side, never retried |
+| `429`, `503`, other `5xx`, network error, timeout | `UNAVAILABLE` | Bounded retry (section 4), then throw |
 | Any other status, or a body that fails its schema | `RESULT_INVALID` | Throw |
 
 **Agree with the executor owner:** `error-1` has no `EXECUTOR_*` codes. The executor's `409` bodies should use `error-1` `IDEMPOTENCY_CONFLICT` or `GENERATION_REVOKED` as `code` and carry the executor reason in `details` (for example `details.reason = "EXECUTOR_STALE_GENERATION"`). Otherwise the client cannot distinguish "drain" from "conflict".
@@ -53,22 +54,24 @@ Servers answer failures with an [`error-1`](../../packages/contracts/schemas/err
 - **Never dispatch after a failed `wait`.** If `POST …/wait` did not return success, the checkpoint may not be durable; the host must not call the broker or executor. The host already enforces this ordering; the client must not swallow a `wait` error.
 - `result` after a successful dispatch must eventually succeed or the process gives up the run: the server re-offers the run later and the same key is re-dispatched and deduplicated.
 
-## 5. Things the specs do not define yet (decide before building)
+## 5. Gaps and how they were settled
 
-These have no closed schema in `packages/contracts` today. Add them there first (one writer for contracts; see [plan.md](../../plan.md)):
-
-| Gap | Suggestion |
+| Gap | Resolution (2026-10-08) |
 | --- | --- |
-| Heartbeat body and answer | `runtime-heartbeat/1`: `{assignmentId, fencingToken}` → `{leaseExpiresAt}` |
-| Artifact fetch response | Raw artifact text as the body plus a `Content-Digest`-style hash header, or a small `artifact/1` JSON `{contentHash, text}`; the runtime already re-verifies hashes in [`assignment.ts`](../../apps/runtime/src/assignment.ts) |
-| Bootstrap redemption for cold-start tasks | `GET /internal/v1/runtime/assignments/{assignmentId}` returns `runtime-assignment/1`; the single-use bootstrap value arrives out of band, never as an environment variable named `*_TOKEN` |
-| Capability issue and refresh | Not implemented in the runtime yet. Needs an audience-scoped capability per service, refresh before expiry with jitter, and refusal → `Authority.revoke` → drain ([agent runtime §6](../specs/agent-runtime.md#6-capability-and-authentication)). The supervisor currently only heartbeats |
-| Long-poll semantics | Server holds `assignments:poll` up to `waitSeconds` and answers `none` on timeout; the client loops immediately on `none` and backs off only on errors |
+| Heartbeat body and answer | [`runtime-heartbeat/1`](../../packages/contracts/schemas/runtime-heartbeat-1.schema.json) `{runId, assignmentId, fencingToken}` → [`runtime-lease/1`](../../packages/contracts/schemas/runtime-lease-1.schema.json) `{leaseExpiresAt, capability}` |
+| Artifact fetch response | [`artifact/1`](../../packages/contracts/schemas/artifact-1.schema.json) `{ref, kind, contentHash, text}`; the runtime still re-verifies hashes |
+| Capability issue and refresh | Per-assignment bearer (32 random bytes, base64url) delivered in [`assignment-offer/2`](../../packages/contracts/schemas/assignment-offer-2.schema.json); the server stores only its SHA-256. The heartbeat extends the same bearer's expiry (not rotated, so requests in flight stay valid). Audience-scoped broker/executor capabilities are **still open** |
+| Long-poll semantics | Server holds the poll up to `waitSeconds`, re-checking every 250 ms without holding a database connection, and answers `none` on timeout; the client times out at `waitSeconds` + 5 s |
+| `fetchArtifact` has no assignment argument | The client uses the capability of the assignment most recently received from `poll` |
+| Bootstrap redemption for cold-start tasks | **Still open**: `GET /internal/v1/runtime/assignments/{assignmentId}` returning `runtime-assignment/1`, with the single-use bootstrap value delivered out of band |
+| Workload identity for the poll | **Still open** (gate E02); the local server accepts a development header, `x-runtime-workload`, and refuses production |
 
 ## 6. Checklist
 
-- [ ] Gap schemas from section 5 agreed and added to `packages/contracts`.
-- [ ] `dispatch/` clients with validation, timeouts, headers, error mapping and retries as above.
-- [ ] Loopback server wrapping the stand-ins; both conformance kits green through the clients.
+- [x] Heartbeat, artifact and capability-offer schemas added to `packages/contracts`.
+- [ ] Bootstrap redemption and production workload identity (gate E02).
+- [x] `dispatch/control-api.ts` with validation, timeouts, headers, error mapping and retries as above.
+- [x] Control API conformance kit green through the client against the real control API on PostgreSQL ([INT-1](AGENTS.md)).
+- [ ] `dispatch/broker.ts` and `dispatch/executor.ts`, each proven first against a loopback server wrapping its stand-in.
+- [ ] Executor conformance kit green through its client against the real paper executor ([INT-2](AGENTS.md)).
 - [ ] `main.ts` with closed configuration, signal-driven drain and capability refresh.
-- [ ] Kits green against the real control API and paper executor ([INT-1, INT-2](AGENTS.md)).
