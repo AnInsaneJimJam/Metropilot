@@ -1,0 +1,22 @@
+{
+  "description": "Inputs are typed literals, not expressions to evaluate",
+  "expect": {
+    "fieldPath": "/inputs/price/kind",
+    "keyword": "const"
+  },
+  "document": {
+    "schemaVersion": "timeline-entry/1",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "assignmentId": "019a0000-0000-7000-8000-000000000201",
+    "fencingToken": "17",
+    "operationKey": "0x1313131313131313131313131313131313131313131313131313131313131313",
+    "nodeId": "record_result",
+    "message": "Threshold sale settled in paper mode.",
+    "inputs": {
+      "price": {
+        "kind": "ref",
+        "name": "market"
+      }
+    }
+  }
+}

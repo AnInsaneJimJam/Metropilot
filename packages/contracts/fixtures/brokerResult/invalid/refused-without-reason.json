@@ -1,0 +1,12 @@
+{
+  "description": "refused carries a stable reason",
+  "expect": {
+    "fieldPath": "/reason",
+    "keyword": "required"
+  },
+  "document": {
+    "schemaVersion": "broker-result/1",
+    "operationKey": "0x1414141414141414141414141414141414141414141414141414141414141414",
+    "disposition": "refused"
+  }
+}

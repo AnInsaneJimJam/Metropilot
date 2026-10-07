@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/timeline-entry-1.schema.json",
+  "title": "TimelineEntry",
+  "description": "A bounded user-safe notify entry, timeline-entry/1. Idempotent by operation key. Not an authority or result store; never an external webhook, email or chat message.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "assignmentId",
+    "fencingToken",
+    "operationKey",
+    "nodeId",
+    "message",
+    "inputs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "timeline-entry/1"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "assignmentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "fencingToken": {
+      "$ref": "common.schema.json#/$defs/fencingToken"
+    },
+    "operationKey": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "nodeId": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "message": {
+      "$ref": "common.schema.json#/$defs/safeText"
+    },
+    "inputs": {
+      "$ref": "common.schema.json#/$defs/boundRecord"
+    }
+  }
+}

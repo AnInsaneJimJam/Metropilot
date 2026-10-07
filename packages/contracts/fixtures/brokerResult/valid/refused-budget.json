@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "broker-result/1",
+  "operationKey": "0x1414141414141414141414141414141414141414141414141414141414141414",
+  "disposition": "refused",
+  "reason": {
+    "code": "BROKER_BUDGET_EXHAUSTED",
+    "message": "The AI allowance for today is used up."
+  }
+}

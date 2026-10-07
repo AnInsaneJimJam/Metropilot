@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "intent-result/1",
+  "intentId": "019a0000-0000-7000-8000-000000000301",
+  "logicalKey": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "mode": "paper",
+  "state": "reserved",
+  "createdAt": "2026-10-07T12:00:00.000Z",
+  "updatedAt": "2026-10-07T12:00:00.000Z",
+  "action": {
+    "connectorRef": "paper.uniswap",
+    "connectorVersion": "1.0.0",
+    "tokenInRef": "paper.WETH",
+    "tokenOutRef": "paper.USD",
+    "maxSlippageBps": 50,
+    "resolvedInputAtomic": "100000000000000000"
+  }
+}

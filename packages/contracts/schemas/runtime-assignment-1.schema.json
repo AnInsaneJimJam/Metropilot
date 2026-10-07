@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/runtime-assignment-1.schema.json",
+  "title": "RuntimeAssignment",
+  "description": "One run handed to an isolated runtime, runtime-assignment/1 (docs/specs/agent-runtime.md section 5). References and identities only: no database, provider, wallet or cloud credential. The runtime rejects an expired assignment, wrong mode, image or interpreter version, hash mismatch, stale generation or fencing conflict before executing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "assignmentId",
+    "lease",
+    "deployment",
+    "interpreter",
+    "run",
+    "trigger",
+    "artifacts",
+    "capabilityRef",
+    "issuedAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "runtime-assignment/1"
+    },
+    "assignmentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "lease": {
+      "title": "AssignmentLease",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "fencingToken",
+        "expiresAt"
+      ],
+      "properties": {
+        "owner": {
+          "$ref": "common.schema.json#/$defs/opaqueKey"
+        },
+        "fencingToken": {
+          "$ref": "common.schema.json#/$defs/fencingToken"
+        },
+        "expiresAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "deployment": {
+      "title": "AssignmentDeployment",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deploymentId",
+        "generation",
+        "mode",
+        "manifestHash",
+        "runtimeImageDigest",
+        "connectorVersions"
+      ],
+      "properties": {
+        "deploymentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "generation": {
+          "$ref": "common.schema.json#/$defs/generation"
+        },
+        "mode": {
+          "$ref": "common.schema.json#/$defs/mode"
+        },
+        "manifestHash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "runtimeImageDigest": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "connectorVersions": {
+          "description": "Manifest-pinned connector versions by catalog reference; the runtime copies the pin into each ActionIntent.",
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "$ref": "common.schema.json#/$defs/catalogRef"
+          },
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/semver"
+          }
+        }
+      }
+    },
+    "interpreter": {
+      "title": "AssignmentInterpreter",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languageVersion",
+        "checkpointVersion"
+      ],
+      "properties": {
+        "languageVersion": {
+          "const": "strategy/1"
+        },
+        "checkpointVersion": {
+          "const": "strategy-run/2"
+        }
+      },
+      "description": "Interpreter versions this run requires."
+    },
+    "run": {
+      "title": "AssignmentRun",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "deploymentRevision",
+        "triggerId",
+        "sourceEventKey"
+      ],
+      "properties": {
+        "runId": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "deploymentRevision": {
+          "description": "Opaque revision string supplied by the control API; input to the interpreter run identity.",
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^[!-~]{1,120}$"
+        },
+        "triggerId": {
+          "$ref": "common.schema.json#/$defs/identifier",
+          "description": "The strategy's own trigger ID, for example crossing."
+        },
+        "sourceEventKey": {
+          "$ref": "common.schema.json#/$defs/opaqueKey"
+        }
+      }
+    },
+    "trigger": {
+      "title": "AssignmentTrigger",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptedAt",
+        "runCreatedAt"
+      ],
+      "properties": {
+        "observationRef": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "observedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "acceptedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "runCreatedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      },
+      "description": "Recorded trigger context and stage times for latency measurement (decision D34)."
+    },
+    "artifacts": {
+      "title": "AssignmentArtifacts",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategyRef",
+        "strategyHash",
+        "catalogRef",
+        "catalogHash"
+      ],
+      "properties": {
+        "strategyRef": {
+          "$ref": "common.schema.json#/$defs/opaqueKey"
+        },
+        "strategyHash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "catalogRef": {
+          "$ref": "common.schema.json#/$defs/opaqueKey"
+        },
+        "catalogHash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        }
+      },
+      "description": "Immutable artifact references and their content hashes."
+    },
+    "capabilityRef": {
+      "$ref": "common.schema.json#/$defs/opaqueKey",
+      "description": "Reference used to obtain audience-scoped capabilities; never the token itself."
+    },
+    "issuedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "expiresAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  }
+}

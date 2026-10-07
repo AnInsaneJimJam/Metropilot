@@ -151,6 +151,58 @@
         "decimal": { "$ref": "#/$defs/nonNegativeDecimal" }
       }
     },
+    "generation": {
+      "title": "Generation",
+      "description": "Monotonic deployment generation as a base-10 integer string. Only the current generation may create new operations.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$"
+    },
+    "fencingToken": {
+      "title": "FencingToken",
+      "description": "Monotonic lease fencing token as a base-10 integer string. A write carrying an older token is rejected.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$"
+    },
+    "iterationPath": {
+      "title": "IterationPath",
+      "description": "Zero-based repeat iteration indices, outermost first; empty outside repeats (strategy-language.md section 8).",
+      "type": "array",
+      "maxItems": 2,
+      "items": { "type": "integer", "minimum": 0, "maximum": 9 }
+    },
+    "hostOperationKind": {
+      "title": "HostOperationKind",
+      "description": "Interpreter host operation kinds supported by strategy/1.",
+      "type": "string",
+      "enum": ["read", "ai.decide", "swap.exactInput", "notify"]
+    },
+    "boundRecord": {
+      "title": "BoundRecord",
+      "description": "Named typed values, each an evaluated strategy literal (the interpreter's BoundValue); never an expression to evaluate.",
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "$ref": "#/$defs/identifier" },
+      "additionalProperties": {
+        "allOf": [
+          { "anyOf": [{ "$ref": "https://monad-hack.local/strategy/1#/$defs/Expression" }, { "$ref": "https://monad-hack.local/strategy/1#/$defs/TextValue" }] },
+          { "type": "object", "additionalProperties": true, "required": ["kind"], "properties": { "kind": { "const": "literal" } } }
+        ]
+      }
+    },
+    "safeText": {
+      "title": "SafeText",
+      "description": "Bounded user-safe text without control characters.",
+      "type": "string",
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]{1,500}$"
+    },
+    "opaqueKey": {
+      "title": "OpaqueKey",
+      "description": "Opaque printable identifier such as a deployment revision or source event key.",
+      "type": "string",
+      "maxLength": 1024,
+      "pattern": "^[!-~]{1,1024}$"
+    },
     "assetIdentity": {
       "title": "AssetIdentity",
       "description": "Resolved asset identity; never a symbol alone. Mainnet, testnet, fork and paper registries are distinct networkRefs.",

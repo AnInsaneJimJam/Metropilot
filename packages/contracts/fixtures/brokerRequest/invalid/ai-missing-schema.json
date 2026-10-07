@@ -1,0 +1,30 @@
+{
+  "description": "An AI request declares its output schema",
+  "expect": {
+    "fieldPath": "/outputSchemaRef",
+    "keyword": "required"
+  },
+  "document": {
+    "schemaVersion": "broker-request/1",
+    "operationKey": "0x1414141414141414141414141414141414141414141414141414141414141414",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "nodeId": "gate",
+    "iterationPath": [],
+    "kind": "ai.decide",
+    "modelProfileRef": "paper.kimi",
+    "prompt": "Answer allow only if buying a small fixed amount of WETH at this price fits a steady accumulation plan; answer skip if unsure.",
+    "inputs": {
+      "price": {
+        "kind": "literal",
+        "valueType": "Price",
+        "value": {
+          "baseAssetRef": "paper.WETH",
+          "quoteUnit": "USD",
+          "decimal": "2501"
+        }
+      }
+    },
+    "timeoutSeconds": 20,
+    "maxOutputTokens": 256
+  }
+}

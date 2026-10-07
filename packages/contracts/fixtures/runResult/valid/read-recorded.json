@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "run-result/1",
+  "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+  "assignmentId": "019a0000-0000-7000-8000-000000000201",
+  "fencingToken": "17",
+  "operationKey": "0x1212121212121212121212121212121212121212121212121212121212121212",
+  "outcome": "recorded",
+  "resultRef": "019a0000-0000-7000-8000-000000000401",
+  "result": {
+    "price": {
+      "baseAssetRef": "paper.WETH",
+      "quoteUnit": "USD",
+      "decimal": "2501"
+    },
+    "observedAt": "2026-10-07T11:59:59.400Z"
+  },
+  "receivedAt": "2026-10-07T11:59:59.900Z"
+}

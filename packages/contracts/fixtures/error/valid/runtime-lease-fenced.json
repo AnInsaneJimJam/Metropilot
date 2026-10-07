@@ -1,0 +1,6 @@
+{
+  "code": "LEASE_FENCED",
+  "message": "A newer lease owns this run; stop writes and dispatch.",
+  "requestId": "019a0000-0000-7000-8000-000000000013",
+  "retryable": false
+}

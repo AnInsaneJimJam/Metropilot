@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/broker-request-1.schema.json",
+  "title": "BrokerRequest",
+  "description": "Bounded read or ai.decide request from a runtime to the API Broker, broker-request/1 (agent-runtime.md section 7). Tenant, deployment and provider come from authentication and the manifest. No URL, model ID, tool or credential.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationKey",
+    "runId",
+    "nodeId",
+    "iterationPath",
+    "kind"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "broker-request/1"
+    },
+    "operationKey": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "nodeId": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "iterationPath": {
+      "$ref": "common.schema.json#/$defs/iterationPath"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "read",
+        "ai.decide"
+      ]
+    },
+    "connectorRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "operation": {
+      "$ref": "common.schema.json#/$defs/capabilityId"
+    },
+    "arguments": {
+      "$ref": "common.schema.json#/$defs/boundRecord"
+    },
+    "modelProfileRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "prompt": {
+      "type": "string",
+      "maxLength": 2000,
+      "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]{1,2000}$"
+    },
+    "inputs": {
+      "$ref": "common.schema.json#/$defs/boundRecord"
+    },
+    "outputSchemaRef": {
+      "type": "string",
+      "enum": [
+        "decision/1",
+        "summary/1"
+      ]
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30
+    },
+    "maxOutputTokens": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "kind": {
+        "const": "read"
+      }
+    },
+    "required": [
+      "kind"
+    ]
+  },
+  "then": {
+    "required": [
+      "connectorRef",
+      "operation",
+      "arguments"
+    ],
+    "not": {
+      "anyOf": [
+        {
+          "required": [
+            "modelProfileRef"
+          ]
+        },
+        {
+          "required": [
+            "prompt"
+          ]
+        },
+        {
+          "required": [
+            "inputs"
+          ]
+        },
+        {
+          "required": [
+            "outputSchemaRef"
+          ]
+        },
+        {
+          "required": [
+            "timeoutSeconds"
+          ]
+        },
+        {
+          "required": [
+            "maxOutputTokens"
+          ]
+        }
+      ]
+    }
+  },
+  "else": {
+    "required": [
+      "modelProfileRef",
+      "prompt",
+      "inputs",
+      "outputSchemaRef",
+      "timeoutSeconds",
+      "maxOutputTokens"
+    ],
+    "not": {
+      "anyOf": [
+        {
+          "required": [
+            "connectorRef"
+          ]
+        },
+        {
+          "required": [
+            "operation"
+          ]
+        },
+        {
+          "required": [
+            "arguments"
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/run-wait-1.schema.json",
+  "title": "RunWait",
+  "description": "Persist the waiting checkpoint and its pending operation before dispatch, run-wait/1 (agent-runtime.md section 8). The control API saves both atomically, deduplicates the operation and compares the fencing token; only then may the runtime dispatch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "assignmentId",
+    "fencingToken",
+    "checkpoint",
+    "operation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "run-wait/1"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "assignmentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "fencingToken": {
+      "$ref": "common.schema.json#/$defs/fencingToken"
+    },
+    "checkpoint": {
+      "$ref": "https://monad-hack.local/strategy/1#/$defs/RunCheckpoint"
+    },
+    "operation": {
+      "title": "HostOperation",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationKey",
+        "kind",
+        "nodeId",
+        "iterationPath"
+      ],
+      "properties": {
+        "operationKey": {
+          "$ref": "common.schema.json#/$defs/hash32",
+          "description": "operation-key/1 hash; equals the intent-key/1 logical key for swap.exactInput."
+        },
+        "kind": {
+          "$ref": "common.schema.json#/$defs/hostOperationKind"
+        },
+        "nodeId": {
+          "$ref": "common.schema.json#/$defs/identifier"
+        },
+        "iterationPath": {
+          "$ref": "common.schema.json#/$defs/iterationPath"
+        }
+      },
+      "description": "Identity of one pending host operation."
+    }
+  }
+}

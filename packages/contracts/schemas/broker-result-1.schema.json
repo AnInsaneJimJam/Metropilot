@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/broker-result-1.schema.json",
+  "title": "BrokerResult",
+  "description": "Broker answer, broker-result/1. completed carries an immutable result ID and the plain typed record; pending a durable operation to resume later; refused a stable reason with no provider dispatch; unknown a dispatched billable call that needs reconciliation and must not be retried as a fresh call.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationKey",
+    "disposition"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "broker-result/1"
+    },
+    "operationKey": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "disposition": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "pending",
+        "refused",
+        "unknown"
+      ]
+    },
+    "resultId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "value": {
+      "type": "object",
+      "description": "Plain record matching the node's declared result type; validated again by the interpreter."
+    },
+    "observedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "receivedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "reason": {
+      "title": "BrokerReason",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "BROKER_CAPABILITY_INVALID",
+            "BROKER_NOT_ALLOWED",
+            "BROKER_BUDGET_EXHAUSTED",
+            "BROKER_PROVIDER_UNAVAILABLE",
+            "BROKER_TIMEOUT",
+            "BROKER_OUTPUT_INVALID",
+            "BROKER_STALE_DATA"
+          ]
+        },
+        "message": {
+          "$ref": "common.schema.json#/$defs/safeText"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "disposition": {
+            "const": "completed"
+          }
+        },
+        "required": [
+          "disposition"
+        ]
+      },
+      "then": {
+        "required": [
+          "resultId",
+          "value",
+          "receivedAt"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "value"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "disposition": {
+            "const": "refused"
+          }
+        },
+        "required": [
+          "disposition"
+        ]
+      },
+      "then": {
+        "required": [
+          "reason"
+        ]
+      }
+    }
+  ]
+}

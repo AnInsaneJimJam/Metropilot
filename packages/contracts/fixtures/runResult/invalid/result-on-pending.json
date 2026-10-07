@@ -1,0 +1,19 @@
+{
+  "description": "Only recorded outcomes carry a result",
+  "expect": {
+    "fieldPath": "",
+    "keyword": "not"
+  },
+  "document": {
+    "schemaVersion": "run-result/1",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "assignmentId": "019a0000-0000-7000-8000-000000000201",
+    "fencingToken": "17",
+    "operationKey": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "outcome": "pending",
+    "resultRef": "019a0000-0000-7000-8000-000000000301",
+    "result": {
+      "x": 1
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "description": "AI timeout is at most 30 s",
+  "expect": {
+    "fieldPath": "/timeoutSeconds",
+    "keyword": "maximum"
+  },
+  "document": {
+    "schemaVersion": "broker-request/1",
+    "operationKey": "0x1414141414141414141414141414141414141414141414141414141414141414",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "nodeId": "gate",
+    "iterationPath": [],
+    "kind": "ai.decide",
+    "modelProfileRef": "paper.kimi",
+    "prompt": "Answer allow only if buying a small fixed amount of WETH at this price fits a steady accumulation plan; answer skip if unsure.",
+    "inputs": {
+      "price": {
+        "kind": "literal",
+        "valueType": "Price",
+        "value": {
+          "baseAssetRef": "paper.WETH",
+          "quoteUnit": "USD",
+          "decimal": "2501"
+        }
+      }
+    },
+    "outputSchemaRef": "decision/1",
+    "timeoutSeconds": 120,
+    "maxOutputTokens": 256
+  }
+}

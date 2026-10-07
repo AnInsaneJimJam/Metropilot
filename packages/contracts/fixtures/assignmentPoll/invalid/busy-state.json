@@ -1,0 +1,14 @@
+{
+  "description": "Only ready or idle runtimes ask for work",
+  "expect": {
+    "fieldPath": "/state",
+    "keyword": "enum"
+  },
+  "document": {
+    "schemaVersion": "assignment-poll/1",
+    "runtimeId": "runtime-local-1",
+    "state": "executing",
+    "lastAssignmentId": "019a0000-0000-7000-8000-000000000201",
+    "waitSeconds": 25
+  }
+}

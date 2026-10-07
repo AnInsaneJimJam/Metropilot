@@ -64,7 +64,9 @@
         "MODEL_OUTPUT_INVALID",
         "MODEL_UNAVAILABLE",
         "BUDGET_EXHAUSTED",
-        "EFFECT_PENDING"
+        "EFFECT_PENDING",
+        "LEASE_FENCED",
+        "GENERATION_REVOKED"
       ]
     }
   }

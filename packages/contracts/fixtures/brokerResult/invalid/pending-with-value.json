@@ -1,0 +1,23 @@
+{
+  "description": "Only completed results carry a value",
+  "expect": {
+    "fieldPath": "",
+    "keyword": "not"
+  },
+  "document": {
+    "schemaVersion": "broker-result/1",
+    "operationKey": "0x1212121212121212121212121212121212121212121212121212121212121212",
+    "disposition": "pending",
+    "resultId": "019a0000-0000-7000-8000-000000000401",
+    "value": {
+      "price": {
+        "baseAssetRef": "paper.WETH",
+        "quoteUnit": "USD",
+        "decimal": "2501"
+      },
+      "observedAt": "2026-10-07T11:59:59.400Z"
+    },
+    "observedAt": "2026-10-07T11:59:59.400Z",
+    "receivedAt": "2026-10-07T11:59:59.900Z"
+  }
+}

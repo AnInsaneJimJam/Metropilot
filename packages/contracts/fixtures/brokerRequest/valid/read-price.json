@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "broker-request/1",
+  "operationKey": "0x1212121212121212121212121212121212121212121212121212121212121212",
+  "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+  "nodeId": "read_market",
+  "iterationPath": [],
+  "kind": "read",
+  "connectorRef": "paper.uniswap",
+  "operation": "price.read",
+  "arguments": {}
+}

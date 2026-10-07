@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/action-intent-1.schema.json",
+  "title": "ActionIntent",
+  "description": "Runtime proposal for one financial action, action-intent/1 (docs/specs/executor.md section 4). A proposal, not authorization: tenant, agent, deployment, generation, mode, wallet, chain, recipient, nonce, gas, deadline, quote and calldata are deliberately absent and come from the authenticated capability and executor state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "logicalKey",
+    "runId",
+    "nodeId",
+    "iterationPath",
+    "connectorRef",
+    "connectorVersion",
+    "action",
+    "tokenInRef",
+    "tokenOutRef",
+    "amount",
+    "maxSlippageBps",
+    "observationRefs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "action-intent/1"
+    },
+    "logicalKey": {
+      "$ref": "common.schema.json#/$defs/hash32",
+      "description": "intent-key/1 hash; the executor recomputes it from the capability and rejects a mismatch."
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "nodeId": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "iterationPath": {
+      "$ref": "common.schema.json#/$defs/iterationPath"
+    },
+    "connectorRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "connectorVersion": {
+      "$ref": "common.schema.json#/$defs/semver"
+    },
+    "action": {
+      "const": "swap.exactInput"
+    },
+    "tokenInRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "tokenOutRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "amount": {
+      "$ref": "https://monad-hack.local/strategy/1#/$defs/Amount"
+    },
+    "maxSlippageBps": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "observationRefs": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.schema.json#/$defs/uuidv7"
+      },
+      "description": "Persisted broker results proving branch choice and freshness; embedded observations are not accepted."
+    }
+  }
+}
