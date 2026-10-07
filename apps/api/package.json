@@ -5,9 +5,14 @@
   "type": "module",
   "dependencies": {
     "@monad-hack/contracts": "workspace:*",
+    "@monad-hack/strategy": "workspace:*",
+    "fastify": "5.12.5",
     "pg": "8.23.1"
   },
   "devDependencies": {
     "@types/pg": "8.23.1"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env src/server.ts"
   }
 }

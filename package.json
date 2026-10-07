@@ -18,7 +18,8 @@
     "db:reset": "docker compose --project-directory . -f infra/compose.yaml down --volumes",
     "generate": "node packages/contracts/src/generate.mjs",
     "web:dev": "pnpm --filter @monad-hack/web dev",
-    "strategy:demo": "pnpm generate && node packages/strategy/src/demo.ts"
+    "strategy:demo": "pnpm generate && node packages/strategy/src/demo.ts",
+    "api:dev": "pnpm generate && node --env-file-if-exists=.env apps/api/src/server.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.0",

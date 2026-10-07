@@ -1,0 +1,87 @@
+{
+  "description": "Control workspace cannot pretend to be live",
+  "expect": {
+    "fieldPath": "/mode",
+    "keyword": "const"
+  },
+  "document": {
+    "schemaVersion": "control-agent/1",
+    "id": "019a0000-0000-7000-8000-000000000001",
+    "name": "Threshold partial sale",
+    "version": 1,
+    "revisionId": "019a0000-0000-7000-8000-000000000002",
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "experience": "rookie",
+    "mode": "live",
+    "state": "draft",
+    "workspace": {
+      "editorFormat": "blocks/1",
+      "blockly": {
+        "blocks": {
+          "languageVersion": 0,
+          "blocks": [
+            {
+              "type": "strategy",
+              "id": "threshold_sale",
+              "fields": {
+                "NAME": "Paper threshold partial sale",
+                "MAX_STEPS": 100,
+                "MAX_AI_CALLS": 1,
+                "MAX_INTENTS": 1,
+                "MAX_ACTIVE_SECONDS": 60
+              },
+              "inputs": {
+                "TRIGGERS": {
+                  "block": {
+                    "type": "price.crossesAbove",
+                    "id": "crossing",
+                    "fields": {
+                      "THRESHOLD": "2500",
+                      "FEED": "paper.weth-usd",
+                      "MAX_AGE": 30,
+                      "COOLDOWN": 3600
+                    },
+                    "inputs": {
+                      "BODY": {
+                        "block": {
+                          "type": "swap.exactInput",
+                          "id": "sell_tenth",
+                          "fields": {
+                            "AMOUNT": "10",
+                            "AMOUNT_KIND": "positionPercent",
+                            "TOKEN_IN": "paper.WETH",
+                            "TOKEN_OUT": "paper.USD",
+                            "CONNECTOR": "paper.uniswap",
+                            "SLIPPAGE": 50
+                          },
+                          "next": {
+                            "block": {
+                              "type": "notify",
+                              "id": "record_result",
+                              "fields": {
+                                "MESSAGE": "Threshold sale settled in paper mode."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "x": 24,
+              "y": 24
+            }
+          ]
+        }
+      }
+    },
+    "budget": {
+      "tradingUsdMicros": "1000000000",
+      "hostingUsdMicros": "10000000",
+      "dataAndAiUsdMicros": "5000000",
+      "monReserveAtomic": "1000000000000000000"
+    },
+    "updatedAt": "2026-10-08T00:00:00.000Z"
+  }
+}

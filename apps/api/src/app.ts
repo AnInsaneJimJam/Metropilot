@@ -1,0 +1,242 @@
+import Fastify from "fastify";
+import { validate } from "@monad-hack/contracts";
+import { LanguageError, syntheticCatalog } from "@monad-hack/strategy";
+import { ControlError, newId, validateDraft } from "./control.ts";
+import type { ControlStore } from "./store.ts";
+
+export interface ApiOptions {
+  store: ControlStore;
+  /** Production callers must supply a verified session resolver. Never accept a tenant from the body. */
+  authenticate: (cookie: string | undefined) => Promise<string | undefined>;
+  origin: string;
+  localSession?: () => Promise<{ cookie: string; tenant: string }>;
+}
+export function createApp(options: ApiOptions) {
+  const app = Fastify({
+    bodyLimit: 512 * 1024,
+    genReqId: newId,
+    requestIdHeader: false,
+    ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
+    logger: false,
+  });
+  const rates = new Map<string, { time: number; count: number }>();
+  app.addHook("onRequest", async (request, reply) => {
+    reply
+      .header("Cache-Control", "no-store")
+      .header("X-Content-Type-Options", "nosniff")
+      .header("X-Request-Id", request.id);
+    if (
+      options.localSession &&
+      !["127.0.0.1:3001", "localhost:3001", "127.0.0.1:5173"].includes(
+        request.headers.host ?? "",
+      )
+    )
+      throw new ControlError(
+        403,
+        "FORBIDDEN",
+        "Local workspace requests require the loopback host.",
+      );
+    if (request.headers.origin && request.headers.origin !== options.origin)
+      throw new ControlError(
+        403,
+        "FORBIDDEN",
+        "This request origin is not allowed.",
+      );
+    const now = Date.now();
+    if (rates.size >= 1000)
+      for (const [ip, rate] of rates)
+        if (now - rate.time > 60_000) rates.delete(ip);
+    const rate = rates.get(request.ip);
+    if (!rate && rates.size >= 1000)
+      throw new ControlError(429, "RATE_LIMITED", "Try again in a minute.");
+    if (!rate || now - rate.time >= 60_000)
+      rates.set(request.ip, { time: now, count: 1 });
+    else if (++rate.count > 120)
+      throw new ControlError(
+        429,
+        "RATE_LIMITED",
+        "Too many requests. Try again in a minute.",
+      );
+  });
+  app.setErrorHandler((error, request, reply) => {
+    const known = error instanceof ControlError;
+    const language = error instanceof LanguageError;
+    const fastify = error as { statusCode?: number; validation?: unknown };
+    const status = known
+      ? error.status
+      : language
+        ? 422
+        : fastify.statusCode && fastify.statusCode < 500
+          ? fastify.statusCode
+          : 503;
+    reply.code(status).send({
+      code:
+        known || language
+          ? error.code
+          : fastify.validation
+            ? "SCHEMA_INVALID"
+            : status < 500
+              ? "MALFORMED_REQUEST"
+              : "PROVIDER_UNAVAILABLE",
+      message:
+        known || language
+          ? error.message
+          : status < 500
+            ? "The request does not match the required format."
+            : "The workspace database is unavailable. Your browser draft is still open.",
+      requestId: request.id,
+      retryable: status >= 500,
+      ...(known
+        ? error.details
+        : language
+          ? { nodeId: error.nodeId, fieldPath: error.fieldPath }
+          : {}),
+    });
+  });
+  app.get("/v1/session", async (_, reply) => {
+    if (!options.localSession)
+      throw new ControlError(
+        401,
+        "UNAUTHENTICATED",
+        "Sign in through the configured authentication provider.",
+      );
+    const session = await options.localSession();
+    reply.header("Set-Cookie", session.cookie);
+    return {
+      mode: "local",
+      label: "Local development workspace",
+      tenant: session.tenant,
+    };
+  });
+  app.register(async (routes) => {
+    routes.addHook("preHandler", async (request) => {
+      const tenant = await options.authenticate(request.headers.cookie);
+      if (!tenant || !(await options.store.active(tenant)))
+        throw new ControlError(
+          401,
+          "UNAUTHENTICATED",
+          "Your session has expired. Reconnect your workspace.",
+        );
+    });
+    const tenant = async (cookie: string | undefined) =>
+      (await options.authenticate(cookie))!;
+    routes.get("/v1/catalog", async () => ({
+      mode: "paper",
+      synthetic: true,
+      catalog: syntheticCatalog,
+      capabilities: { save: true, cloudExecution: false, live: false },
+    }));
+    routes.get(
+      "/v1/agents",
+      {
+        schema: {
+          querystring: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              limit: { type: "string", pattern: "^([1-9]|[1-9][0-9]|100)$" },
+              cursor: {
+                type: "string",
+                pattern:
+                  "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              },
+            },
+          },
+        },
+      },
+      async (request) => {
+        const query = request.query as { limit?: string; cursor?: string };
+        const limit = Number(query.limit ?? 25);
+        const rows = await options.store.list(
+          await tenant(request.headers.cookie),
+          limit + 1,
+          query.cursor,
+        );
+        return {
+          items: rows.slice(0, limit),
+          nextCursor: rows.length > limit ? rows[limit - 1]!.id : null,
+        };
+      },
+    );
+    routes.post("/v1/strategies/validate", async (request) => {
+      const checked = validate("controlSave", request.body);
+      if (!checked.ok)
+        throw new ControlError(
+          400,
+          "SCHEMA_INVALID",
+          checked.issues[0]!.message,
+          { fieldPath: checked.issues[0]!.fieldPath },
+        );
+      const p = await validateDraft(checked.value);
+      return {
+        valid: true,
+        hash: p.hash,
+        bounds: p.bounds,
+        mode: "paper",
+        executionReady: false,
+      };
+    });
+    const save = async (
+      request: {
+        body: unknown;
+        headers: Record<string, unknown>;
+        params: unknown;
+      },
+      isRevision: boolean,
+    ) => {
+      const checked = validate("controlSave", request.body);
+      if (!checked.ok)
+        throw new ControlError(
+          400,
+          "SCHEMA_INVALID",
+          checked.issues[0]!.message,
+          { fieldPath: checked.issues[0]!.fieldPath },
+        );
+      const key = request.headers["idempotency-key"];
+      if (typeof key !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(key))
+        throw new ControlError(
+          400,
+          "MALFORMED_REQUEST",
+          "A valid Idempotency-Key is required.",
+        );
+      const id = isRevision ? (request.params as { id: string }).id : undefined;
+      if (
+        id &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          id,
+        )
+      )
+        throw new ControlError(404, "NOT_FOUND", "Strategy not found.");
+      const match = request.headers["if-match"];
+      if (
+        isRevision &&
+        (typeof match !== "string" || !/^"[1-9][0-9]{0,8}"$/.test(match))
+      )
+        throw new ControlError(
+          400,
+          "MALFORMED_REQUEST",
+          "If-Match must contain the saved version.",
+        );
+      const program = await validateDraft(checked.value);
+      return options.store.save(
+        await tenant(request.headers.cookie as string | undefined),
+        key,
+        checked.value,
+        program,
+        id,
+        isRevision ? Number(String(match).replaceAll('"', "")) : undefined,
+      );
+    };
+    routes.post("/v1/agents", async (request, reply) => {
+      const result = await save(request, false);
+      reply.code(201).header("ETag", `"${result.version}"`);
+      return result;
+    });
+    routes.post("/v1/agents/:id/strategy-revisions", async (request, reply) => {
+      const result = await save(request, true);
+      reply.header("ETag", `"${result.version}"`);
+      return result;
+    });
+  });
+  return app;
+}

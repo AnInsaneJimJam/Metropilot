@@ -8,6 +8,8 @@ await writeFile(new URL('./generated.ts', import.meta.url), await compile(schema
 // Non-strategy contracts in ../schemas. One root keyed by kind gives every named definition one declaration.
 // Keep these refs in step with contractRefs in index.ts; strategy is typed from generated.ts above.
 const refs = {
+  controlSave: 'control-workspace-1.schema.json#/$defs/SaveStrategy',
+  controlAgent: 'control-workspace-1.schema.json#/$defs/SavedAgent',
   deploymentRequest: 'deployment-request-1.schema.json',
   error: 'error-1.schema.json',
   event: 'event-1.schema.json',

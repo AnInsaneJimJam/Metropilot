@@ -19,3 +19,5 @@ Own migrations by agreement with the data owner; never let parallel writers inde
 - [ ] API-7 / G3–G8: pass tenant, duplicate launch, stale generation, paid-call and webhook replay checks.
 
 Dependencies: [contracts](../../packages/contracts/AGENTS.md), [accounting](../../packages/accounting/AGENTS.md), [connectors](../../packages/connectors/AGENTS.md). After API-2/3, [runtime](../runtime/AGENTS.md) can integrate lifecycle. Tick only with implementation and passing evidence.
+
+Progress 2026-10-08 (`codex/user-app-control-api`): local Fastify routes, server compilation, exact virtual-budget configuration checks, tenant-scoped immutable revision saves and transactional response replay are implemented. Real Postgres tests cover concurrency, ownership, reload, pagination and suspended tenants. Hosted identity and lifecycle jobs remain pending; see [slice evidence](../../plan.md#local-control-workspace--2026-10-08).

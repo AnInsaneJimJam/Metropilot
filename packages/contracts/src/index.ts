@@ -3,6 +3,7 @@
 import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import ajvFormats from 'ajv-formats';
 import schema from './strategy.schema.json' with { type: 'json' };
+import control from '../schemas/control-workspace-1.schema.json' with { type: 'json' };
 import common from '../schemas/common.schema.json' with { type: 'json' };
 import deploymentRequest from '../schemas/deployment-request-1.schema.json' with { type: 'json' };
 import errorBody from '../schemas/error-1.schema.json' with { type: 'json' };
@@ -19,10 +20,12 @@ export type ContractDocumentMap = GeneratedContractMap & { strategy: Strategy };
 export type ContractKind = keyof ContractDocumentMap;
 
 export const schemaBaseUri = 'https://monad-hack.example/schemas/';
-export const schemaDocuments: readonly object[] = [schema, common, deploymentRequest, errorBody, event, auditEvent];
+export const schemaDocuments: readonly object[] = [schema, common, control, deploymentRequest, errorBody, event, auditEvent];
 
 /** Schema reference per kind; strategy is absolute because its schema lives beside the language core. */
 export const contractRefs = {
+  controlSave: control.$id + '#/$defs/SaveStrategy',
+  controlAgent: control.$id + '#/$defs/SavedAgent',
   strategy: schema.$id,
   deploymentRequest: schemaBaseUri + 'deployment-request-1.schema.json',
   error: schemaBaseUri + 'error-1.schema.json',
@@ -33,6 +36,8 @@ export const contractRefs = {
 
 /** UTF-8 byte ceilings checked before JSON parsing (strategy-language.md section 7, runtime.md limits). */
 export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
+  controlSave: 512 * 1024,
+  controlAgent: 512 * 1024,
   strategy: 256 * 1024,
   deploymentRequest: 1024 * 1024,
   error: 16 * 1024,
@@ -141,3 +146,5 @@ export function checkStrategyShape(value: unknown): { valid: true; strategy: Str
 
 const validateCheckpoint = strategyAjv.compile({ $defs: schema.$defs, $ref: "#/$defs/RunCheckpoint" });
 export function checkCheckpointShape(value: unknown): boolean { return validateCheckpoint(value); }
+
+export {paperBudgetIssue} from './paper-budget.ts';
