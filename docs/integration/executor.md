@@ -4,6 +4,8 @@ This guide is for the owner of `apps/executor`. It covers only the runtime-facin
 
 Status 2026-10-07: the runtime builds and sends `ActionIntent`s and handles every result state. It runs against an in-memory paper executor, [`PaperExecutor`](../../apps/runtime/src/local/paper-executor.ts), which shows the expected behavior in about a hundred lines. Run `pnpm runtime:demo` to see admission, duplicates, crash recovery and settlement.
 
+**Not built yet: the runtime's HTTP clients and process entry point.** Until they exist, nothing calls your service; read [runtime HTTP clients](runtime-http-clients.md), especially the error mapping (§3: your `409` bodies need an `error-1` code the client can read) and the retry rules (§4: the runtime retries the identical intent after a timeout).
+
 ## 1. When the runtime calls you
 
 The interpreter reaches a `swap.exactInput` node. Before calling you, the runtime has already saved the waiting checkpoint and the operation key with the control API. It then sends exactly one `POST /internal/v1/intents`. After a crash it sends the **same** intent again (same logical key, same canonical body); this is how recovery works, so a duplicate must return the recorded result, never a second effect.
@@ -50,14 +52,14 @@ Generation is a decimal **string**. Each repeat iteration is a distinct intent b
 | --- | --- |
 | New, admissible intent | `201` with `intent-result/1` (often `reserved`, or already terminal in paper mode) |
 | Same `logicalKey` and same canonical body | `200` with the current result for that intent; no new effect, no new reservation |
-| Same `logicalKey`, different body | `409 EXECUTOR_INTENT_CONFLICT` |
-| `logicalKey` does not match the authenticated identity | `409` |
-| Stale or revoked generation | `409 EXECUTOR_STALE_GENERATION` for a new intent; a known intent's status stays readable |
+| Same `logicalKey`, different body | `409`, `error-1` code `IDEMPOTENCY_CONFLICT`, `details.reason = "EXECUTOR_INTENT_CONFLICT"` |
+| `logicalKey` does not match the authenticated identity | `409`, code `IDEMPOTENCY_CONFLICT` |
+| Stale or revoked generation | `409`, code `GENERATION_REVOKED`, `details.reason = "EXECUTOR_STALE_GENERATION"` for a new intent; a known intent's status stays readable |
 | Paper capability for a live identity, or the reverse | `403` |
 | Policy denial, insufficient balance | `201` with `state: "rejected"` and a stable `reason.code`; a denial is a durable result, not an error |
 | Dependency unavailable before admission | `503`; nothing was dispatched |
 
-Compare bodies with `canonicalize()` from `@monad-hack/contracts` (RFC 8785), not string equality of the raw request.
+Error bodies are `error-1`; the runtime reads only status and `code` ([mapping](runtime-http-clients.md#3-one-error-mapping-both-sides-implement-it)). Compare bodies with `canonicalize()` from `@monad-hack/contracts` (RFC 8785), not string equality of the raw request.
 
 ## 5. The result and how the runtime reads it
 
@@ -84,7 +86,7 @@ Follow [executor.md section 8](../specs/executor.md#8-paper-execution). The stan
 
 The [executor conformance kit](../../apps/runtime/src/conformance/executor.ts) checks closed results, idempotent duplicates, body conflicts, key recomputation, closed request bodies, distinct repeat iterations, durable rejections and stale-generation refusal. The stand-in passes it in [`conformance.test.ts`](../../apps/runtime/src/conformance.test.ts).
 
-To run it against your service: the runtime's Phase 2 HTTP client implements the same `Executor` port against your route and maps statuses to runtime codes (`409` → `CONFLICT`, or `REVOKED` for `EXECUTOR_STALE_GENERATION`; `401`/`403` → `REVOKED`; `400` → `RESULT_INVALID`; `503` → `UNAVAILABLE`). Provide an `ExecutorHarness` whose `arrangeRun` creates an authorized paper run with at least 1 `paper.WETH` available and whose `revoke` pauses it.
+To run it against your service you need the runtime's executor client, which is **not written yet** ([runtime HTTP clients](runtime-http-clients.md)); it will map your statuses exactly as in [§3 there](runtime-http-clients.md#3-one-error-mapping-both-sides-implement-it). Provide an `ExecutorHarness` whose `arrangeRun` creates an authorized paper run with at least 1 `paper.WETH` available and whose `revoke` pauses it.
 
 ## 9. Owner checklist
 

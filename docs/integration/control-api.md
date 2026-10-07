@@ -4,6 +4,8 @@ This guide is for the owner of `apps/api` (control API and API worker roles). It
 
 Status 2026-10-07: the runtime side is implemented and runs against an in-memory stand-in of your service, [`LocalControlPlane`](../../apps/runtime/src/local/control-plane.ts). Read that file next to this guide; every method there is a behavior you implement with one PostgreSQL transaction. Run `pnpm runtime:demo` to watch the whole flow.
 
+**Not built yet: the runtime's HTTP clients and process entry point.** Until they exist, nothing calls your service; read [runtime HTTP clients](runtime-http-clients.md) for what is missing, the shared error mapping, retry rules and the contract gaps to settle with the runtime owner before you build your routes.
+
 ## 1. Who calls whom
 
 ```text
@@ -95,16 +97,7 @@ The runtime saves the waiting checkpoint **before** it dispatches anything, so a
 
 ## 6. Errors
 
-Return an [`error-1`](../../packages/contracts/schemas/error-1.schema.json) body. The runtime client maps them to its stable codes:
-
-| HTTP and `code` | Runtime behavior |
-| --- | --- |
-| `409 LEASE_FENCED` | `FENCED`: a newer lease owns the run; the process stops writes and dispatch at once |
-| `409 GENERATION_REVOKED` | `REVOKED`: paused, stopped or replaced generation; the process drains |
-| `409 IDEMPOTENCY_CONFLICT` | `CONFLICT`: same key, different body or outcome; never retried |
-| `400 MALFORMED_REQUEST` / `SCHEMA_INVALID` | `RESULT_INVALID`: a runtime defect; never retried |
-| `401` / `403` | `REVOKED` |
-| `503 PROVIDER_UNAVAILABLE`, timeouts | `UNAVAILABLE`: bounded retry with the same identity; never dispatch after a failed `wait` |
+Answer failures with an [`error-1`](../../packages/contracts/schemas/error-1.schema.json) body. The runtime depends on two codes in particular: `409 LEASE_FENCED` (a newer lease owns the run) and `409 GENERATION_REVOKED` (paused, stopped or replaced generation). The full status-to-behavior mapping is in [runtime HTTP clients §3](runtime-http-clients.md#3-one-error-mapping-both-sides-implement-it); it is the single place both sides implement.
 
 ## 7. Resuming after a pending operation
 
@@ -123,7 +116,7 @@ Pause sets the deployment inactive: from that moment `wait`, `results`, `complet
 
 The [control API conformance kit](../../apps/runtime/src/conformance/control-api.ts) checks closed offers and artifacts, new-run and saved-wait state, wait and result idempotency and conflicts, fencing on every write and heartbeat, and terminal-only completion. The in-memory stand-in passes it in [`conformance.test.ts`](../../apps/runtime/src/conformance.test.ts).
 
-To run it against your service: the runtime's Phase 2 HTTP client implements the same `ControlApi` port against your routes (apps never import each other's source). Provide a `ControlApiHarness` whose `arrangeRun` deploys the `ai_gated_purchase` preset and ticks its schedule through your test hooks, whose `expireLease` issues a newer lease, and whose `timelineCount` reads your timeline. Register it the way `conformance.test.ts` does.
+To run it against your service you need the runtime's HTTP client, which is **not written yet** ([runtime HTTP clients](runtime-http-clients.md)); apps never import each other's source, so the kit reaches your service only through that client. Start with the loopback approach in [§1](runtime-http-clients.md#1-build-order-that-avoids-a-big-bang-integration). Provide a `ControlApiHarness` whose `arrangeRun` deploys the `ai_gated_purchase` preset and ticks its schedule through your test hooks, whose `expireLease` issues a newer lease, and whose `timelineCount` reads your timeline. Register it the way `conformance.test.ts` does.
 
 ## 10. Owner checklist
 

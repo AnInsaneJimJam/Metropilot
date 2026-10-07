@@ -436,7 +436,7 @@ apps/runtime/src/
   host.test.ts, conformance.test.ts
 ```
 
-Real HTTP clients (`dispatch/`) and `main.ts` arrive in Phase 2 with the first real service; they implement `ports.ts` unchanged.
+Real HTTP clients (`dispatch/`) and `main.ts` are **not written yet**; they arrive in Phase 2 and implement `ports.ts` unchanged. Build rules, error mapping and open contract gaps: [runtime HTTP clients](../integration/runtime-http-clients.md).
 
 Shared JSON Schemas and generated types belong in `packages/contracts`; interpreter semantics belong in `packages/strategy`. Do not move policy, accounting, connectors, signing or SQL into `apps/runtime` for convenience. HTTP clients should be small typed adapters with explicit timeouts and no generic arbitrary-URL method.
 

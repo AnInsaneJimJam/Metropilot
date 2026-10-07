@@ -6,6 +6,7 @@ Every guide names the conformance kit that proves an integration and keeps its e
 
 ## Checklist
 
+- [ ] INT-0 / G4: build the runtime HTTP clients and `main.ts` per [runtime HTTP clients](runtime-http-clients.md), proven first against a loopback server wrapping the stand-ins.
 - [ ] INT-1 / G4: control API owner passes the [control API conformance kit](../../apps/runtime/src/conformance/control-api.ts) against the real service through the runtime HTTP client.
 - [ ] INT-2 / G4: executor owner passes the [executor conformance kit](../../apps/runtime/src/conformance/executor.ts) against the paper executor through the runtime HTTP client.
 
