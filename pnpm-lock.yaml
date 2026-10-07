@@ -196,7 +196,14 @@ importers:
 
   apps/executor: {}
 
-  apps/runtime: {}
+  apps/runtime:
+    dependencies:
+      '@monad-hack/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@monad-hack/strategy':
+        specifier: workspace:*
+        version: link:../../packages/strategy
 
   apps/web:
     dependencies:

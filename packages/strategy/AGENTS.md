@@ -19,4 +19,6 @@ Progress 2026-10-02: first AST-only core supports closed validation, exact expre
 
 Progress 2026-10-03 (G2 editor plan Phase 8): named values with lexical scopes (`field`), `read` (catalog `reads`, freshness → `STALE_DATA`) and `ai.decide` (catalog `modelProfiles`, `decision/1`/`summary/1`, `MODEL_OUTPUT_INVALID`) compile and run; checkpoints are `strategy-run/2` with AI counts and in-scope recorded results; all four presets exist. Evidence: 21 language tests and the workspace tests under `pnpm check`. STR boxes stay open until editor Phase 10 collects the G2 evidence.
 
+Progress 2026-10-07 (STR-5): the [runtime host](../../apps/runtime/src/host.ts) drives `startRun`/`advanceRun` unchanged, persisting each waiting checkpoint before dispatch and replaying recorded read/AI/effect results after restarts (option 1: the runtime maps the interpreter's internal key to contract keys). Local evidence only; hosted replay remains open.
+
 Progress 2026-10-04 (G2 editor plan Phases 9–10): keyboard outline editing and the keyboard-only browser test landed; STR-1–4 and STR-6 ticked with the evidence above. STR-5 stays open for the hosted runtime (G4/G6).

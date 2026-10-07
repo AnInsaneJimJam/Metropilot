@@ -1,6 +1,6 @@
 # Isolated strategy runtime
 
-Own the process wrapper around the shared interpreter, capability transport, run checkpoints, health and graceful stop. Read [runtime](../../docs/specs/runtime.md), [language](../../docs/specs/strategy-language.md), and [security](../../docs/specs/security.md).
+Own the process wrapper around the shared interpreter, capability transport, run checkpoints, health and graceful stop. Read the implementation-level [agent runtime specification](../../docs/specs/agent-runtime.md), then the platform [runtime](../../docs/specs/runtime.md), [language](../../docs/specs/strategy-language.md), and [security](../../docs/specs/security.md).
 
 The interpreter core belongs in `packages/strategy`. This process gets immutable configuration and short-lived capabilities, never DB/cloud/model/signing credentials. Use approved internal API/executor routes only. No eval, arbitrary scripts, user images, downloaded skills or direct provider access. Respect active-time/step limits and durable waiting for financial effects.
 
@@ -14,5 +14,7 @@ A replay uses the same run/node/iteration identity and recorded observations/mod
 - [ ] RUN-4 / G6: route bounded AI/read requests through the metered broker.
 - [ ] RUN-5 / G4,G8: implement pause/stop/drain and prove no new actions after revocation.
 - [ ] RUN-6 / G4: pass isolation, malformed input, resource exhaustion and paper/live separation checks.
+
+Progress 2026-10-07 (G4 Phase 1, local only): [host](src/host.ts), [supervisor](src/supervisor.ts), [assignment verification](src/assignment.ts), option-1 [key mapping](src/keys.ts), [config](src/config.ts), [telemetry](src/telemetry.ts); in-memory [stand-ins](src/local/) and [conformance kits](src/conformance/); `pnpm runtime:demo`. [Host tests](src/host.test.ts) cover RUN-2 (checkpoint/resume, active time), RUN-3 (crash after wait and after dispatch, duplicate assignment, stale lease) and RUN-5 (pause, generation change, drain, refused heartbeat) against the stand-ins, plus malformed assignments/results and paper/live refusal for RUN-6. No box is ticked: real control API/executor/broker integration, observed resource limits, isolation and hosted recovery are still required. Integration guides: [control API](../../docs/integration/control-api.md), [executor](../../docs/integration/executor.md).
 
 Prerequisites: [strategy](../../packages/strategy/AGENTS.md), [API](../api/AGENTS.md), [infra](../../infra/AGENTS.md). Runtime intent integration depends on [executor](../executor/AGENTS.md). Tick after behavior and verification evidence exist.

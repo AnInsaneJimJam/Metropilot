@@ -1,6 +1,6 @@
 # Privileged execution gateway
 
-Own policy enforcement, quotes/build/simulation, custody-provider calls, nonce ownership, signed/submitted recovery, settlement, withdrawal and earned-fee sweep execution. Read [funds](../../docs/specs/funds-and-budgets.md), [runtime](../../docs/specs/runtime.md), [security](../../docs/specs/security.md), and [connectors](../../docs/specs/connectors.md) before editing.
+Own policy enforcement, quotes/build/simulation, custody-provider calls, nonce ownership, signed/submitted recovery, settlement, withdrawal and earned-fee sweep execution. Read the authoritative [executor specification](../../docs/specs/executor.md), then [funds](../../docs/specs/funds-and-budgets.md), [runtime](../../docs/specs/runtime.md), [security](../../docs/specs/security.md), and [connectors](../../docs/specs/connectors.md) before editing.
 
 Runtime submits typed intents, never authorized calldata. Recompute identity, check current authority, reserve atomically, serialize per wallet and validate exact transaction effects. Signing and policy-administration credentials are separate. No generic raw signing/message/export endpoint. Provider counters supplement application reservations.
 

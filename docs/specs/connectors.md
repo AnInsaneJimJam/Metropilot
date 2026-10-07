@@ -31,7 +31,7 @@ Data path: ingest approved pool logs/finalized RPC observations and normalized r
 
 Quotes expire after 15 seconds by default; actual supported provider/pair can require shorter expiry. User maximum slippage is applied to expected output using exact floor arithmetic, producing an on-chain minimum. Validate reference price separately from router quote to avoid accepting a manipulated quote merely because slippage is small. On-chain deadline is short, explicit and inside policy; expired unsigned quotes are refreshed only under the same still-valid intent, without changing its authorized input ceiling.
 
-Polling starts at 15-second cadence per shared market for the hackathon; finalized event subscriptions can reduce latency. Per-agent strategies consume shared observations, not one paid subscription per user. Reference feed age is feed-specific, recorded in the catalog; no hardcoded universal heartbeat. Feed decimals, validity fields, market hours where relevant and deviation bounds must be checked.
+Ingestion is push-first ([D32](../decisions.md)): each finalized pool event from the verified subscription recomputes the feed value for that block and enters trigger fan-out immediately. A shared heartbeat read runs only when a feed has had no event within its catalog heartbeat interval (initially 5–10 seconds), so quiet markets keep fresh baselines. Polling at the catalog cadence is the fallback until an event source passes gate E10. Per-agent strategies consume shared observations, not one paid subscription per user. Reference feed age is feed-specific, recorded in the catalog; no hardcoded universal heartbeat. Feed decimals, validity fields, market hours where relevant and deviation bounds must be checked.
 
 ## Webhook and RPC rules
 

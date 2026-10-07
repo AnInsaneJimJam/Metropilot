@@ -2,7 +2,7 @@
 
 A managed platform for retail traders to configure, test, and run trading agents on Monad without setting up servers, model accounts, protocol integrations, or a programming environment.
 
-**Status: G1 contracts and development baseline complete; strategy-language core and Blockly editor (G2) in progress.** Versioned JSON Schemas, generated types, fixtures, local Postgres migrations with synthetic paper seed data, secret checks, CI, AST validation and resumable synthetic execution exist. The hosted application, deployed infrastructure and production wallet remain pending. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
+**Status: G1 contracts and development baseline and G2 strategy core complete; the agent runtime (G4 Phase 1) runs locally against in-memory stand-ins.** Versioned JSON Schemas, generated types, fixtures, local Postgres migrations with synthetic paper seed data, secret checks, CI, AST validation, the Blockly editor, runtime contracts and a resumable runtime host with conformance kits exist. The hosted application, deployed infrastructure and production wallet remain pending. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
 
 ## The product
 
@@ -19,6 +19,8 @@ The platform supplies hosted isolation and a free, quota-limited paper-trading s
 | [goals.md](goals.md) | Sequential delivery gates and the root progress checklist |
 | [plan.md](plan.md) | Workstreams, dependencies, integration order, release evidence |
 | [docs/README.md](docs/README.md) | Detailed product, language, financial, runtime, and interface specifications |
+| [docs/specs/agent-runtime.md](docs/specs/agent-runtime.md) | Agent-runtime role, component boundaries, contracts, sandboxing, recovery and implementation plan |
+| [docs/specs/executor.md](docs/specs/executor.md) | Executor HTTP contract, intent identity, paper/live state machines, signing and recovery |
 | [docs/decisions.md](docs/decisions.md) | Settled choices and external verification gates |
 | [docs/research/sponsors.md](docs/research/sponsors.md) | Sponsor evidence and integration priorities |
 | [AGENTS.md](AGENTS.md) | Instructions for contributors and coding agents |
@@ -66,6 +68,7 @@ G1 provides the contracts, a local database with migrations and synthetic paper 
 cp .env.example .env       # then set a new POSTGRES_PASSWORD and the same value in DATABASE_URL
 pnpm bootstrap             # install, preflight, start Postgres, migrate, seed, full checks
 pnpm strategy:demo         # synthetic threshold-sale execution; no network or wallet
+pnpm runtime:demo          # synthetic paper runtime: triggers, host loop, crash recovery, fencing, pause
 pnpm web:dev               # Blockly strategy editor
 ```
 
