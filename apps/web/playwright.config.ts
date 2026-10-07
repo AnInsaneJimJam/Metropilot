@@ -6,6 +6,6 @@ export default defineConfig({
   testMatch: '**/*.spec.ts',
   // Kept under node_modules so failure traces never show up as repository structure.
   outputDir: './node_modules/.playwright/test-results',
-  use: { baseURL: 'http://localhost:5173' },
-  webServer: { command: 'pnpm dev', url: 'http://localhost:5173', reuseExistingServer: true },
+  use: { baseURL: 'http://127.0.0.1:5173' },
+  webServer: { command: 'pnpm dev', url: 'http://127.0.0.1:5173', reuseExistingServer: true },
 });

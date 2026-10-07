@@ -65,7 +65,7 @@ describe('database', { skip }, () => {
   });
 
   test('migrations apply once and re-running applies nothing', async () => {
-    assert.deepEqual(await migrate(db), ['0001_g1_baseline.sql']);
+    assert.deepEqual(await migrate(db), ['0001_g1_baseline.sql', '0002_control_workspace.sql']);
     assert.deepEqual(await migrate(db), []);
   });
 
@@ -85,7 +85,7 @@ describe('database', { skip }, () => {
     await second.connect();
     clients.push(second);
     const results = await Promise.all([migrate(a), migrate(second)]);
-    assert.deepEqual(results.flat(), ['0001_g1_baseline.sql']);
+    assert.deepEqual(results.flat(), ['0001_g1_baseline.sql', '0002_control_workspace.sql']);
   });
 
   test('migration files are numbered without gaps', () => {

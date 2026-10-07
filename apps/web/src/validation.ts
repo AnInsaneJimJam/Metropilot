@@ -41,7 +41,7 @@ const FIELD_OF_KEY: Readonly<Record<string, string>> = {
   tokenInRef: FIELD.tokenIn, tokenOutRef: FIELD.tokenOut, amount: FIELD.amount, atomic: FIELD.amount, bps: FIELD.amount,
   maxSlippageBps: FIELD.slippage, message: FIELD.message, reason: FIELD.reason,
 };
-const fieldOf = (fieldPath: string): string | undefined =>
+export const fieldOf = (fieldPath: string): string | undefined =>
   fieldPath.split('/').reverse().map(key => Object.hasOwn(FIELD_OF_KEY, key) ? FIELD_OF_KEY[key] : undefined).find(Boolean);
 const problem = (error: unknown, blockId: string | undefined): Problem => error instanceof LanguageError
   ? { code: error.code, message: plain(error), blockId, field: fieldOf(error.fieldPath) }

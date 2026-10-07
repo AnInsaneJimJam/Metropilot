@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/control-workspace-1.schema.json",
+  "title": "ControlWorkspace",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "PaperBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tradingUsdMicros": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "maxLength": 78
+        },
+        "hostingUsdMicros": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "maxLength": 78
+        },
+        "dataAndAiUsdMicros": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "maxLength": 78
+        },
+        "monReserveAtomic": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "maxLength": 78
+        }
+      },
+      "required": [
+        "tradingUsdMicros",
+        "hostingUsdMicros",
+        "dataAndAiUsdMicros",
+        "monReserveAtomic"
+      ]
+    },
+    "EditorWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "editorFormat": {
+          "const": "blocks/1"
+        },
+        "blockly": {
+          "type": "object",
+          "maxProperties": 10,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "editorFormat",
+        "blockly"
+      ]
+    },
+    "SaveStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "control-workspace/1"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "experience": {
+          "enum": [
+            "rookie",
+            "advanced"
+          ]
+        },
+        "workspace": {
+          "$ref": "#/$defs/EditorWorkspace"
+        },
+        "budget": {
+          "$ref": "#/$defs/PaperBudget"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "name",
+        "experience",
+        "workspace",
+        "budget"
+      ]
+    },
+    "SavedAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "revisionId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "hash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "experience": {
+          "enum": [
+            "rookie",
+            "advanced"
+          ]
+        },
+        "mode": {
+          "const": "paper"
+        },
+        "state": {
+          "const": "draft"
+        },
+        "workspace": {
+          "$ref": "#/$defs/EditorWorkspace"
+        },
+        "budget": {
+          "$ref": "#/$defs/PaperBudget"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "schemaVersion": {
+          "const": "control-agent/1"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "revisionId",
+        "hash",
+        "experience",
+        "mode",
+        "state",
+        "workspace",
+        "budget",
+        "updatedAt",
+        "schemaVersion"
+      ]
+    }
+  }
+}

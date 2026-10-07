@@ -17,6 +17,9 @@ This plan is a handoff for a team, not a request to implement during the scaffol
 
 ### Active claims
 
+Codex, 2026-10-08 — `codex/user-app-control-api` in `monad-hack-fork`: sole writer for `apps/web/`, `apps/api/` including migration `0002_control_workspace.sql`, control-workspace contracts in `packages/contracts/`, root scripts/lockfile and implementation documentation. User requested the React/Blockly app and Fastify validation/budget blocks. G1/G2 are the baseline. Runtime, executor, provider wallets and root gate status are outside this slice. The user transfers the existing editor scope for this integration.
+
+
 | Work item | Branch | Writable scope | Prerequisites |
 | --- | --- | --- | --- |
 | Runtime contracts and local agent runtime (G4 Phase 1) — yash, 2026-10-07 | `master` | `packages/contracts/` (runtime schemas in `schemas/`, `common`/`error-1` additions, `src/keys.ts`, `index.ts`, `generate.mjs`, fixtures, tests), `apps/runtime/` (`package.json`, `src/`), root `package.json` `runtime:demo` script and lockfile entries, `docs/integration/`, runtime sections of `docs/specs/agent-runtime.md`, `executor.md` §3–4, `api-and-data.md` §9, `connectors.md`, `runtime.md`, `docs/decisions.md` D32–D34/E10 | G1, G2. Key decision: option 1 (runtime maps interpreter keys to `operation-key/1`/`intent-key/1`; `packages/strategy` unchanged). Done 2026-10-07: `pnpm check` and `pnpm runtime:demo` green; local stand-ins pass both conformance kits. Real API/executor/broker integration and hosting remain open. |
@@ -99,3 +102,20 @@ Before G5/G8, verify Privy policies and signing recovery; exact stablecoin/route
 No calendar deadline is inferred from conflicting public event listings. The team records the authenticated portal deadline before planning submission. Do not promise a production custody launch merely because the hackathon demo works.
 
 Tooling fix — Codex, 2026-10-03: owns root runtime manifest/lockfile and setup instructions. Reproduced `pnpm strategy:demo` using an incompatible Node runtime. Fixed with exact Node 24.21.0 in `devEngines.runtime` (`onFail: download`) and the runtime checksum in the lockfile. Normal `pnpm install --frozen-lockfile`, `pnpm strategy:demo` and `pnpm check` verified; 17 checks pass. Setup instructions updated; strategy/research changes preserved.
+
+## Local control workspace — 2026-10-08
+
+Visual redesign — Codex, 2026-10-08: owns `apps/web/` presentation, Blockly theme and this evidence note on `codex/user-app-control-api`. Rebuilt as a graphite strategy workbench with selected parameters first, AST-derived market/trigger/run scope, mineral Blockly colors and readable fields, matching rehearsal charts, restrained motion and reduced-motion support. Phone-sized screens start with rule forms. Language, API and financial boundaries are preserved. [Figma visual direction](https://www.figma.com/design/t3uXhn26g3TvM0GmjRhk6u). Evidence: 267 checks pass with no skipped PostgreSQL tests; production build passes; CUA verifies keyboard threshold edits update scope, revision 4 saves and reopens, mobile Saved drawer and Rules, one crossing/one simulated settlement, no page overflow at 320/768/1024px and desktop composition at 1440px. No fresh-page console errors. Existing Playwright runner remains unrun.
+
+Branch `codex/user-app-control-api`, cloned fork in `monad-hack-fork`, baseline `fe710ce` (fork/upstream both current).
+
+- [x] Fastify validation/save routes, schema-derived control contracts and migration 0002: tenant ownership, immutable revisions, exact paper configuration limits, transactional idempotency and optimistic concurrency.
+- [x] React/Blockly Build → Rehearse → Review workspace, local session, save/reopen, keyboard rule forms, responsive Saved library, source-focused errors and immediate validation invalidation.
+- [x] Verification: `REQUIRE_DB=1 pnpm check` → 267 passed, zero skipped against isolated PostgreSQL; web production build passed.
+- [x] Browser verification through CUA: revision saved/reloaded with a 1,250 virtual USD trading limit; zero threshold rejected; rookie slippage 80 bps blocks Save and its error focuses the field; 50 bps restores validity; zero trading budget blocks Save; rapid edit/revert recovers validation; one crossing produces one simulated trade; keyboard Tab reaches playback; no page overflow at 320/768/1024 px, desktop checked at 1440 px, mobile Saved and Rules work.
+- [ ] The updated Playwright regression file is retained for CI; its runner was not executed during this task. Browser checks above were performed through CUA.
+- [ ] Hosted identity, runtime/executor, actual paper fills, wallets, financial allocations/reservations and billable estimates are separate integration work. No root gate completion claimed.
+
+See [control-workspace contracts and setup](docs/specs/control-workspace.md). Browser checks use synthetic data. Local environment, database volumes, logs, generated types, build output and screenshots remain ignored/local.
+
+Review fixes — Codex, 2026-10-08: owns API request/error handling, control contract registration/version tests, corresponding specifications and error fixtures. Prerequisites: upstream runtime contracts integrated without losing control transports; no migration changes. Resolve session once per request, separate internal faults from connection outages, accept both local loopback frontend origins, and cover version pins inside definitions. Evidence: upstream `9fb4f4b` integrated; `REQUIRE_DB=1 pnpm check` passes 403 tests, zero skipped, including real PostgreSQL persistence/tenant checks and the new request-boundary regressions. Web production build passes. Per-process rate limiting remains explicitly local; shared hosted ingress limiting is pending.
