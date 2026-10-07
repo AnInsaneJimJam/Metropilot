@@ -10,6 +10,8 @@ if (process.env['LOCAL_RUNTIME_CONTROL'] !== '1' || process.env['NODE_ENV'] === 
   throw new Error('Local development only. Set LOCAL_RUNTIME_CONTROL=1; hosted servers need a verified workload identity.');
 }
 const pool = new pg.Pool({ connectionString: databaseUrl(process.env).toString(), max: 10, connectionTimeoutMillis: 3000 });
+// An idle client losing its connection must not crash the process; the next query reconnects.
+pool.on('error', (error) => console.error(`database pool error: ${error.name}`));
 const store = new RuntimeControlStore({ pool });
 const app = createInternalApp({
   store,

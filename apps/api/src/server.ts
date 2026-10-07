@@ -17,6 +17,8 @@ const pool = new pg.Pool({
   max: 10,
   connectionTimeoutMillis: 3000,
 });
+// An idle client losing its connection must not crash the process; the next query reconnects.
+pool.on("error", (error) => console.error(`database pool error: ${error.name}`));
 const store = new ControlStore(pool);
 const tenant = await store.tenant("local-control-workspace");
 const sessions = new Map<string, number>();

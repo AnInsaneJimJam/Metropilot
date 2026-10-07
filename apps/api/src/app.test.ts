@@ -55,6 +55,9 @@ describe("control API / real PostgreSQL", { skip: !url }, () => {
     const u = new URL(url!);
     u.pathname = `/${dbName}`;
     pool = new pg.Pool({ connectionString: u.toString() });
+    // pool.end() resolves before idle sockets close; the forced drop in after() can then kill them.
+    // Without a listener that becomes an uncaught exception attributed to whichever test opened the socket.
+    pool.on("connect", (client) => client.on("error", () => {}));
     const c = new pg.Client({ connectionString: u.toString() });
     await c.connect();
     await migrate(c);

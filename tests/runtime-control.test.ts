@@ -58,12 +58,14 @@ async function freshPool(): Promise<pg.Pool> {
   await admin!.query(`create database ${name} template ${await template}`);
   databases.push(name);
   const pool = new pg.Pool({ connectionString: urlFor(name), max: 8 });
+  // pool.end() resolves before idle sockets close; the forced drop below may kill them (see app.test.ts).
+  pool.on('connect', (client) => client.on('error', () => {}));
   pools.push(pool);
   return pool;
 }
 after(async () => {
   for (const pool of pools) await pool.end();
-  for (const name of databases.reverse()) await admin?.query(`drop database if exists ${name}`);
+  for (const name of databases.reverse()) await admin?.query(`drop database if exists ${name} with (force)`);
   await admin?.end();
 });
 
