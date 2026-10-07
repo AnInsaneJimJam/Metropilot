@@ -194,18 +194,18 @@ export async function rehearse(program: CompiledStrategy, catalog: Catalog, scen
     const last = new Map<string, string>();
     for (let slot = 0; slot < SCHEDULE_SLOTS && schedules.length; slot++) {
       const now = first + slot * step; const block = slot * Math.ceil(step / blockMillis);
-      ticks.push({ block, timeMs: now - first });
+      ticks.push({ block, timeMs: now - first, spot: REFERENCE_TWAP, twap: REFERENCE_TWAP });
       clock = now;
       for (const feedRef of Object.keys(catalog.feeds)) latestObservedAt.set(feedRef, now);
       for (const t of schedules) {
         const accepted = scheduleSlot(t, iso(now), last.get(t.id));
         if (!accepted) continue;
         last.set(t.id, accepted);
-        await resumePending(Number.MAX_SAFE_INTEGER);
+        await resumePending(run?.pendingUntil ?? block);
         await fire(block, t, `synthetic:${t.id}:${accepted}`, `schedule slot ${accepted}`);
       }
     }
-    await resumePending(Number.MAX_SAFE_INTEGER);
+    await resumePending(run?.pendingUntil ?? ticks.at(-1)?.block ?? 0);
     return { blockMillis, ticks, events, holdings: Object.fromEntries([...holdings].map(([ref, v]) => [ref, human(ref, v)])) };
   }
 

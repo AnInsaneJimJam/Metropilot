@@ -10,6 +10,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@fontsource-variable/dm-sans": "5.2.8",
     "@monad-hack/contracts": "workspace:*",
     "@monad-hack/strategy": "workspace:*",
     "blockly": "13.3.0",

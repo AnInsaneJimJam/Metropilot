@@ -6,6 +6,7 @@ Read the [product specification](specs/product.md) for the user journey, then th
 | --- | --- |
 | [Product](specs/product.md) | Modes, onboarding, presets, sandbox, scope, user-visible outcomes |
 | [Strategy language](specs/strategy-language.md) | Block types, JSON representation, compiler, typing, AI semantics, replay |
+| [Local control workspace](specs/control-workspace.md) | Implemented editor/save contracts, local setup, verified boundaries |
 | [API and data](specs/api-and-data.md) | Deployment manifest, endpoints, schemas, tables, errors, events |
 | [Funds and budgets](specs/funds-and-budgets.md) | Custody, allocation, ledger, reservations, estimates, billing, withdrawals |
 | [Connectors](specs/connectors.md) | Capability bundles, contract identity, events, MCP, transaction building |

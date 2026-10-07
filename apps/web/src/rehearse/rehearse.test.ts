@@ -74,3 +74,10 @@ test('AI-gated purchase buys only on a scripted allow; skip, bad output and time
     assert.ok(kinds(r, 'failed').every(e => e.text.includes('MODEL_OUTPUT_INVALID') && e.nodeIds.includes('gate')), script);
   }
 });
+
+test('scheduled pending fills have finite due blocks and an observable reference price',async()=>{
+  const r=await rehearse(await program('scheduled_purchase'),syntheticCatalog,'pendingFill');
+  assert.equal(r.events.filter(e=>e.kind==='settled').length,3);
+  assert.ok(r.ticks.every(t=>t.twap==='2500'));
+  assert.ok(r.events.every(e=>e.block<1_000_000));
+});

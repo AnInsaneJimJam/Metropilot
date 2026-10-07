@@ -2,7 +2,11 @@
 
 A managed platform for retail traders to configure, test, and run trading agents on Monad without setting up servers, model accounts, protocol integrations, or a programming environment.
 
-**Status: G1 contracts and development baseline complete; strategy-language core and Blockly editor (G2) in progress.** Versioned JSON Schemas, generated types, fixtures, local Postgres migrations with synthetic paper seed data, secret checks, CI, AST validation and resumable synthetic execution exist. The hosted application, deployed infrastructure and production wallet remain pending. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
+**Status: G1/G2 baseline complete; local strategy studio and control API implemented.** Versioned JSON Schemas, generated types, fixtures, local Postgres migrations with synthetic paper seed data, secret checks, CI, AST validation and resumable synthetic execution exist. The hosted application, deployed infrastructure and production wallet remain pending. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
+
+## Local strategy studio
+
+The React/Blockly workspace and Fastify control API now support authoritative validation, virtual budget limits and immutable saved revisions. See [setup, contracts and integration boundaries](docs/specs/control-workspace.md). Cloud execution and hosted identity are separate integrations.
 
 ## The product
 

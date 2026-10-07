@@ -17,6 +17,9 @@ This plan is a handoff for a team, not a request to implement during the scaffol
 
 ### Active claims
 
+Codex, 2026-10-08 — `codex/user-app-control-api` in `monad-hack-fork`: sole writer for `apps/web/`, `apps/api/` including migration `0002_control_workspace.sql`, control-workspace contracts in `packages/contracts/`, root scripts/lockfile and implementation documentation. User requested the React/Blockly app and Fastify validation/budget blocks. G1/G2 are the baseline. Runtime, executor, provider wallets and root gate status are outside this slice. The user transfers the existing editor scope for this integration.
+
+
 | Work item | Branch | Writable scope | Prerequisites |
 | --- | --- | --- | --- |
 | G1 workspace skeleton (PKG-1, APPS-1, INF-1 progress; CI-1) | `master` | Root manifests, `pnpm-lock.yaml`, `tsconfig.json`, `.node-version`, `.env.example`, stub `package.json` per app/package, `infra/compose.yaml`, `.github/`, `tests/workspace.test.ts` | G0 |
@@ -96,3 +99,16 @@ Before G5/G8, verify Privy policies and signing recovery; exact stablecoin/route
 No calendar deadline is inferred from conflicting public event listings. The team records the authenticated portal deadline before planning submission. Do not promise a production custody launch merely because the hackathon demo works.
 
 Tooling fix — Codex, 2026-10-03: owns root runtime manifest/lockfile and setup instructions. Reproduced `pnpm strategy:demo` using an incompatible Node runtime. Fixed with exact Node 24.21.0 in `devEngines.runtime` (`onFail: download`) and the runtime checksum in the lockfile. Normal `pnpm install --frozen-lockfile`, `pnpm strategy:demo` and `pnpm check` verified; 17 checks pass. Setup instructions updated; strategy/research changes preserved.
+
+## Local control workspace — 2026-10-08
+
+Branch `codex/user-app-control-api`, cloned fork in `monad-hack-fork`, baseline `fe710ce` (fork/upstream both current).
+
+- [x] Fastify validation/save routes, schema-derived control contracts and migration 0002: tenant ownership, immutable revisions, exact paper configuration limits, transactional idempotency and optimistic concurrency.
+- [x] React/Blockly Build → Rehearse → Review workspace, local session, save/reopen, keyboard rule forms, responsive Saved library, source-focused errors and immediate validation invalidation.
+- [x] Verification: `REQUIRE_DB=1 pnpm check` → 267 passed, zero skipped against isolated PostgreSQL; web production build passed.
+- [x] Browser verification through CUA: revision saved/reloaded with a 1,250 virtual USD trading limit; zero threshold rejected; rookie slippage 80 bps blocks Save and its error focuses the field; 50 bps restores validity; zero trading budget blocks Save; rapid edit/revert recovers validation; one crossing produces one simulated trade; keyboard Tab reaches playback; no page overflow at 320/768/1024 px, desktop checked at 1440 px, mobile Saved and Rules work.
+- [ ] The updated Playwright regression file is retained for CI; its runner was not executed during this task. Browser checks above were performed through CUA.
+- [ ] Hosted identity, runtime/executor, actual paper fills, wallets, financial allocations/reservations and billable estimates are separate integration work. No root gate completion claimed.
+
+See [control-workspace contracts and setup](docs/specs/control-workspace.md). Browser checks use synthetic data. Local environment, database volumes, logs, generated types, build output and screenshots remain ignored/local.

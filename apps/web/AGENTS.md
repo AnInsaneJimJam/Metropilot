@@ -17,3 +17,5 @@ Coordinate editor file ownership with the strategy contributor through [plan](..
 - [ ] WEB-7 / G7–G8: pass keyboard-accessible paper onboarding and relevant live-flow browser checks.
 
 Dependencies: [strategy](../../packages/strategy/AGENTS.md), [API](../api/AGENTS.md), [contracts](../../packages/contracts/AGENTS.md). Tick only after working behavior and linked check evidence; do not tick UI mocks as backend completion.
+
+Progress 2026-10-08 (`codex/user-app-control-api`): Build/Rehearse/Review workspace integrated with the local control API, immutable save/reopen, conflict-safe versions, virtual-budget review and responsive/keyboard editing. Browser verification and limits are recorded in [plan](../../plan.md#local-control-workspace--2026-10-08). Hosted sign-in, deployments and wallet controls remain pending.
