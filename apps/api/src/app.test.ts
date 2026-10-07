@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
+import { readFileSync } from "node:fs";
 import {
   PRESETS,
   workspaceFromStrategy,
@@ -350,6 +351,196 @@ describe("control API / real PostgreSQL", { skip: !url }, () => {
       );
     } finally {
       await local.close();
+    }
+  });
+});
+
+// Request-boundary regressions run without a database; the suite above proves
+// persistence and tenant isolation against real PostgreSQL.
+describe("control API request boundaries", () => {
+  const tenantId = "0195a000-0000-7000-8000-000000000001";
+
+  test("internal faults are non-retryable; only connection outages are 503", async (t) => {
+    const store = new ControlStore(new pg.Pool());
+    t.mock.method(store, "active", async () => true);
+    const failures = [
+      {
+        error: new TypeError("private implementation detail"),
+        status: 500,
+        code: "INTERNAL_ERROR",
+        retryable: false,
+      },
+      {
+        error: Object.assign(new Error("SQL detail"), { code: "42703" }),
+        status: 500,
+        code: "INTERNAL_ERROR",
+        retryable: false,
+      },
+      ...[
+        "ECONNREFUSED",
+        "ECONNRESET",
+        "ETIMEDOUT",
+        "08006",
+        "57P01",
+        "53300",
+      ].map((code) => ({
+        error: Object.assign(new Error("connection detail"), { code }),
+        status: 503,
+        code: "PROVIDER_UNAVAILABLE",
+        retryable: true,
+      })),
+      ...[
+        "Connection terminated unexpectedly",
+        "Connection terminated due to connection timeout",
+        "timeout exceeded when trying to connect",
+      ].map((message) => ({
+        error: new Error(message),
+        status: 503,
+        code: "PROVIDER_UNAVAILABLE",
+        retryable: true,
+      })),
+    ];
+    let failure = failures[0]!;
+    t.mock.method(store, "list", async () => {
+      throw failure.error;
+    });
+    const app = createApp({
+      store,
+      origin: "http://127.0.0.1:5173",
+      authenticate: async () => tenantId,
+    });
+    try {
+      for (failure of failures) {
+        const response = await app.inject({ url: "/v1/agents" });
+        const body = response.json();
+        assert.equal(response.statusCode, failure.status);
+        assert.equal(body.code, failure.code);
+        assert.equal(body.retryable, failure.retryable);
+        assert.ok(validate("error", body).ok);
+        assert.ok(!body.message.includes(failure.error.message));
+      }
+    } finally {
+      await app.close();
+      await store.pool.end();
+    }
+  });
+
+  test("list and save each use one verified session even if a second resolution would expire", async (t) => {
+    const store = new ControlStore(new pg.Pool());
+    t.mock.method(store, "active", async (tenant: string) => {
+      assert.equal(tenant, tenantId);
+      return true;
+    });
+    t.mock.method(store, "list", async (tenant: string) => {
+      assert.equal(tenant, tenantId);
+      return [];
+    });
+    const saved = JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../packages/contracts/fixtures/controlAgent/valid/saved-paper-agent.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as SavedAgent;
+    t.mock.method(store, "save", async (tenant: string) => {
+      assert.equal(tenant, tenantId);
+      return saved;
+    });
+    let resolutions = 0;
+    const app = createApp({
+      store,
+      origin: "http://127.0.0.1:5173",
+      authenticate: async () => (++resolutions === 1 ? tenantId : undefined),
+    });
+    try {
+      assert.equal((await app.inject({ url: "/v1/agents" })).statusCode, 200);
+      assert.equal(resolutions, 1);
+      resolutions = 0;
+      const payload = JSON.parse(
+        readFileSync(
+          new URL(
+            "../../../packages/contracts/fixtures/controlSave/valid/paper-draft.json",
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      );
+      assert.equal(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/v1/agents",
+            headers: { "idempotency-key": "session-expiry-test" },
+            payload,
+          })
+        ).statusCode,
+        201,
+      );
+      assert.equal(resolutions, 1);
+      assert.equal((await app.inject({ url: "/v1/agents" })).statusCode, 401);
+    } finally {
+      await app.close();
+      await store.pool.end();
+    }
+  });
+
+  test("local frontend accepts both loopback names and rejects foreign hosts and origins", async () => {
+    const store = new ControlStore(new pg.Pool());
+    const app = createApp({
+      store,
+      origin: "http://127.0.0.1:5173",
+      authenticate: async () => undefined,
+      localSession: async () => ({
+        tenant: tenantId,
+        cookie: "test-session; HttpOnly; SameSite=Strict",
+      }),
+    });
+    try {
+      for (const hostname of ["127.0.0.1", "localhost"])
+        assert.equal(
+          (
+            await app.inject({
+              url: "/v1/session",
+              headers: {
+                host: `${hostname}:5173`,
+                origin: `http://${hostname}:5173`,
+              },
+            })
+          ).statusCode,
+          200,
+        );
+      for (const headers of [
+        { host: "evil.example", origin: "http://localhost:5173" },
+        { host: "localhost:5173", origin: "https://evil.example" },
+        { host: "localhost:5173", origin: "http://localhost:9999" },
+      ])
+        assert.equal(
+          (await app.inject({ url: "/v1/session", headers })).statusCode,
+          403,
+        );
+    } finally {
+      await app.close();
+      await store.pool.end();
+    }
+    const hosted = createApp({
+      store,
+      origin: "https://studio.example",
+      authenticate: async () => undefined,
+    });
+    try {
+      assert.equal(
+        (
+          await hosted.inject({
+            url: "/v1/session",
+            headers: { origin: "http://localhost:5173" },
+          })
+        ).statusCode,
+        403,
+      );
+    } finally {
+      await hosted.close();
     }
   });
 });

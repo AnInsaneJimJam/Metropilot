@@ -15,7 +15,7 @@ Use JSON Schema 2020-12 as source of truth; generated TypeScript types are not a
 - [ ] CON-4 / G2–G6: validate model/connector outputs and capability/profile references.
   - Progress 2026-10-07 (G4 Phase 1): twelve runtime documents ([action-intent-1](schemas/action-intent-1.schema.json), [intent-result-1](schemas/intent-result-1.schema.json), [runtime-assignment-1](schemas/runtime-assignment-1.schema.json), assignment poll/offer, run state/wait/result/complete, timeline entry, broker request/result) with valid/invalid fixtures, `intentKey()`/`operationKey()` with an independently checked vector ([keys.test.ts](src/keys.test.ts)), and the executor and agent-runtime examples as spec fixtures. Broker results stay open payloads typed by the interpreter; connector output schemas and capability/profile reference checks remain. Evidence: `pnpm check` 364 pass (2026-10-07).
 - [ ] CON-5 / G1–G8: verify compatibility and consumer generation before changing a contract.
-  - 2026-10-07: `error-1` gained `LEASE_FENCED` and `GENERATION_REVOKED` in place rather than as `error-2`; accepted because no deployed consumer validates `error-1` yet. Later additions follow the new-file rule.
+  - 2026-10-07: `error-1` gained `LEASE_FENCED` and `GENERATION_REVOKED` in place rather than as `error-2`; accepted because no deployed consumer validates `error-1` yet. 2026-10-08: `INTERNAL_ERROR` added under the same undeployed-consumer exception for non-retryable internal faults. Later deployed additions follow the new-file rule.
 
 No prerequisite beyond G0. After CON-1/2, strategy, API, accounting and connector work can proceed in parallel with disjoint ownership. Tick only with schema validation evidence; a Markdown table is not an implemented schema.
 

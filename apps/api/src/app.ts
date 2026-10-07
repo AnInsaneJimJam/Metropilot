@@ -1,8 +1,48 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { validate } from "@monad-hack/contracts";
 import { LanguageError, syntheticCatalog } from "@monad-hack/strategy";
 import { ControlError, newId, validateDraft } from "./control.ts";
 import type { ControlStore } from "./store.ts";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    tenantId: string | null;
+  }
+}
+
+// Only recognized transport/availability failures are retryable. SQL mistakes and
+// unexpected application exceptions are internal faults, not database outages.
+function databaseUnavailable(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: string }).code;
+  return (
+    (typeof code === "string" &&
+      (/^08[0-9A-Z]{3}$/.test(code) ||
+        [
+          "57P01",
+          "57P02",
+          "57P03",
+          "53300",
+          "ECONNREFUSED",
+          "ECONNRESET",
+          "ETIMEDOUT",
+          "EPIPE",
+          "ENOTFOUND",
+          "EHOSTUNREACH",
+        ].includes(code))) ||
+    [
+      "Connection terminated unexpectedly",
+      "Connection terminated due to connection timeout",
+      "timeout exceeded when trying to connect",
+    ].includes(error.message)
+  );
+}
+
+function requestTenant(request: FastifyRequest): string {
+  if (!request.tenantId)
+    throw new ControlError(401, "UNAUTHENTICATED", "Reconnect your workspace.");
+  return request.tenantId;
+}
 
 export interface ApiOptions {
   store: ControlStore;
@@ -19,6 +59,7 @@ export function createApp(options: ApiOptions) {
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
     logger: false,
   });
+  app.decorateRequest("tenantId", null);
   const rates = new Map<string, { time: number; count: number }>();
   app.addHook("onRequest", async (request, reply) => {
     reply
@@ -27,16 +68,25 @@ export function createApp(options: ApiOptions) {
       .header("X-Request-Id", request.id);
     if (
       options.localSession &&
-      !["127.0.0.1:3001", "localhost:3001", "127.0.0.1:5173"].includes(
-        request.headers.host ?? "",
-      )
+      ![
+        "127.0.0.1:3001",
+        "localhost:3001",
+        "127.0.0.1:5173",
+        "localhost:5173",
+      ].includes(request.headers.host ?? "")
     )
       throw new ControlError(
         403,
         "FORBIDDEN",
         "Local workspace requests require the loopback host.",
       );
-    if (request.headers.origin && request.headers.origin !== options.origin)
+    const allowedOrigins = options.localSession
+      ? ["http://127.0.0.1:5173", "http://localhost:5173"]
+      : [options.origin];
+    if (
+      request.headers.origin &&
+      !allowedOrigins.includes(request.headers.origin)
+    )
       throw new ControlError(
         403,
         "FORBIDDEN",
@@ -62,13 +112,16 @@ export function createApp(options: ApiOptions) {
     const known = error instanceof ControlError;
     const language = error instanceof LanguageError;
     const fastify = error as { statusCode?: number; validation?: unknown };
+    const unavailable = databaseUnavailable(error);
     const status = known
       ? error.status
       : language
         ? 422
         : fastify.statusCode && fastify.statusCode < 500
           ? fastify.statusCode
-          : 503;
+          : unavailable
+            ? 503
+            : 500;
     reply.code(status).send({
       code:
         known || language
@@ -77,15 +130,19 @@ export function createApp(options: ApiOptions) {
             ? "SCHEMA_INVALID"
             : status < 500
               ? "MALFORMED_REQUEST"
-              : "PROVIDER_UNAVAILABLE",
+              : unavailable
+                ? "PROVIDER_UNAVAILABLE"
+                : "INTERNAL_ERROR",
       message:
         known || language
           ? error.message
           : status < 500
             ? "The request does not match the required format."
-            : "The workspace database is unavailable. Your browser draft is still open.",
+            : unavailable
+              ? "The workspace database is unavailable. Your browser draft is still open."
+              : "An internal error occurred. Your browser draft is still open.",
       requestId: request.id,
-      retryable: status >= 500,
+      retryable: status === 503,
       ...(known
         ? error.details
         : language
@@ -117,9 +174,8 @@ export function createApp(options: ApiOptions) {
           "UNAUTHENTICATED",
           "Your session has expired. Reconnect your workspace.",
         );
+      request.tenantId = tenant;
     });
-    const tenant = async (cookie: string | undefined) =>
-      (await options.authenticate(cookie))!;
     routes.get("/v1/catalog", async () => ({
       mode: "paper",
       synthetic: true,
@@ -148,7 +204,7 @@ export function createApp(options: ApiOptions) {
         const query = request.query as { limit?: string; cursor?: string };
         const limit = Number(query.limit ?? 25);
         const rows = await options.store.list(
-          await tenant(request.headers.cookie),
+          requestTenant(request),
           limit + 1,
           query.cursor,
         );
@@ -176,14 +232,7 @@ export function createApp(options: ApiOptions) {
         executionReady: false,
       };
     });
-    const save = async (
-      request: {
-        body: unknown;
-        headers: Record<string, unknown>;
-        params: unknown;
-      },
-      isRevision: boolean,
-    ) => {
+    const save = async (request: FastifyRequest, isRevision: boolean) => {
       const checked = validate("controlSave", request.body);
       if (!checked.ok)
         throw new ControlError(
@@ -219,7 +268,7 @@ export function createApp(options: ApiOptions) {
         );
       const program = await validateDraft(checked.value);
       return options.store.save(
-        await tenant(request.headers.cookie as string | undefined),
+        requestTenant(request),
         key,
         checked.value,
         program,

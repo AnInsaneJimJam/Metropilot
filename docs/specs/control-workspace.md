@@ -11,7 +11,7 @@ pnpm api:dev
 pnpm web:dev
 ```
 
-Open http://127.0.0.1:5173/. The development API listens on 127.0.0.1:3001 and Vite proxies `/v1`. Use the numeric loopback URL. The cookie is HTTP-only and SameSite Strict; foreign origins and rebinding hosts are rejected. This entry point refuses production and requires the explicit local flag. It represents one local developer workspace, **not production authentication**. A hosted entry point must supply a verified session resolver to `createApp`, terminate HTTPS, and implement the identity integration described in [security](security.md).
+Open http://127.0.0.1:5173/. The development API listens on 127.0.0.1:3001 and Vite proxies `/v1`. Both `http://127.0.0.1:5173` and `http://localhost:5173` are accepted for local development. The cookie is HTTP-only and SameSite Strict; foreign origins and rebinding hosts are rejected. This entry point refuses production and requires the explicit local flag. It represents one local developer workspace, **not production authentication**. A hosted entry point must supply a verified session resolver to `createApp`, terminate HTTPS, and implement the identity integration described in [security](security.md).
 
 ## User flow
 
@@ -34,7 +34,7 @@ The API reruns conversion, compilation and paper-profile checks. It stores the w
 | POST `/v1/agents` | Create a draft with its first immutable revision; Idempotency-Key required |
 | POST `/v1/agents/:id/strategy-revisions` | Save another revision; Idempotency-Key and quoted numeric If-Match required |
 
-Scope comes only from the authenticated tenant. Unknown owned IDs return 404. A reused request key with different content returns 409 IDEMPOTENCY_CONFLICT; stale If-Match returns 409 REVISION_CONFLICT. Errors use the existing `error/1` contract (versioned by route), with request IDs, safe messages and source locations. Bodies are capped at 512 KiB; conversion applies its narrower workspace bound. Basic per-process throttling caps an IP at 120 requests/minute; hosted scale needs a shared ingress limiter.
+The session is resolved once per request; the verified tenant is carried to its route. Scope comes only from the authenticated tenant. Unknown owned IDs return 404. A reused request key with different content returns 409 IDEMPOTENCY_CONFLICT; stale If-Match returns 409 REVISION_CONFLICT. Errors use the existing `error/1` contract (versioned by route), with request IDs, safe messages and source locations. Unexpected application faults return 500 `INTERNAL_ERROR`, not retryable. Recognized database connection/availability failures return 503 `PROVIDER_UNAVAILABLE`, retryable with the same request key. Raw exception messages are never exposed. Bodies are capped at 512 KiB; conversion applies its narrower workspace bound. Basic per-process throttling caps an IP at 120 requests/minute; The map tracks at most 1,000 IPs per minute and refuses new IPs at capacity; this is a local safeguard. Hosted scale needs a shared ingress limiter.
 
 Paper budget units: `tradingUsdMicros`, `hostingUsdMicros`, `dataAndAiUsdMicros` are integer strings with six decimal places per virtual USD; `monReserveAtomic` uses 18 decimal places. Trading and hosting must be positive; total virtual USD ≤ 10,000; reserve > 0 and ≤ 100 virtual MON. An AST containing AI calls requires a positive data/AI limit. These settings are validated configuration, **not financial allocations, billing quotes or ledger reservations**. The reserve is a separate virtual-token bound; no token/USD conversion is invented.
 
@@ -42,7 +42,7 @@ Paper budget units: `tradingUsdMicros`, `hostingUsdMicros`, `dataAndAiUsdMicros`
 
 Cloud runtime, executor, actual paper execution, provider models, wallet funding, ledger enforcement, billable estimates and hosted identity are outside this two-block slice. Deploy is visibly unavailable. All saved agents remain drafts. No UI or route claims an agent is running, paused, exited, funded or live. Pause, sell and withdrawal remain separate operations for the lifecycle/executor integration.
 
-The browser still carries Blockly and the compiler; the production bundle is roughly 346 KiB gzipped plus locally bundled fonts. Future loading and compiler-worker work should be measured against real devices rather than hiding the bundle warning.
+The browser still carries Blockly and the compiler; the production bundle is roughly 351 KiB gzipped plus locally bundled fonts. Future loading and compiler-worker work should be measured against real devices rather than hiding the bundle warning.
 
 ## Verification
 

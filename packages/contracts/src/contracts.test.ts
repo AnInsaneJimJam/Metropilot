@@ -217,7 +217,12 @@ describe('schema hygiene', () => {
   });
 
   test('every document schema pins its schemaVersion with const', () => {
-    const versioned = all.filter((schema) => (schema['properties'] as Node | undefined)?.['schemaVersion']);
+    const versioned: Node[] = [];
+    for (const schema of all) {
+      walk(schema, `${String(schema['$id'])}#`, (node) => {
+        if ((node['properties'] as Node | undefined)?.['schemaVersion']) versioned.push(node);
+      });
+    }
     assert.deepEqual(
       versioned.map((schema) => ((schema['properties'] as Node)['schemaVersion'] as Node)['const']).sort(),
       [
@@ -227,6 +232,8 @@ describe('schema hygiene', () => {
         'audit-event/1',
         'broker-request/1',
         'broker-result/1',
+        'control-agent/1',
+        'control-workspace/1',
         'deployment/1',
         'event/1',
         'intent-result/1',
@@ -235,6 +242,7 @@ describe('schema hygiene', () => {
         'run-state/1',
         'run-wait/1',
         'runtime-assignment/1',
+        'strategy-run/2',
         'strategy/1',
         'timeline-entry/1',
       ],
