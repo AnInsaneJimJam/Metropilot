@@ -22,15 +22,17 @@ export function WorkspaceSidebar({
   return (
     <aside className="sidebar">
       <a className="brand" href="/" aria-label="Monad strategy studio">
-        <span className="brand-mark">m</span>
+        <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 3 28 10v12L16 29 4 22V10Z" />
+          <path d="m4 10 12 7 12-7M16 17v12" />
+        </svg>
         <span>
           monad<span className="brand-sub">STRATEGY STUDIO</span>
         </span>
       </a>
       <div className="workspace-label">
-        <span className="avatar">Y</span>
         <div>
-          Your workspace<small>Personal · Local development</small>
+          Personal workspace<small>Local development</small>
         </div>
       </div>
       <button className="new-strategy" onClick={() => onNew()}>
@@ -87,7 +89,7 @@ export function WorkspaceSidebar({
           </button>
         )}
         <p>
-          Paper workspace
+          Synthetic environment
           <br />
           No real funds connected
         </p>

@@ -17,6 +17,8 @@ Open http://127.0.0.1:5173/. The development API listens on 127.0.0.1:3001 and V
 
 Build with blocks or the keyboard rule inspector. Rehearse against clearly labeled synthetic scenarios; the chart and outcome derive from the real interpreter. Rehearsal uses fixed fixture holdings, independent of saved budget settings. AI answers are scripted; no model is called. Review virtual trading, hosting, data/AI and MON limits. Save a revision, then reopen it from Saved strategies (available on small screens too). Unsaved replacement and navigation prompt before losing edits.
 
+The workbench uses one graphite/citron visual system across Blockly, parameters and rehearsal. Compiled scope shows the actual market, trigger and worst-case run bounds. Selected parameters precede safety checks; phone-sized screens initially use readable rule forms, with Blocks available. Motion respects reduced-motion preferences.
+
 The API reruns conversion, compilation and paper-profile checks. It stores the workspace and immutable AST revision in one transaction with the current draft pointer and replayable response. Compiler errors identify blocks. Transport failures reuse the same request key while content and version remain unchanged. New edits made during a save remain unsaved. Stale versions return a conflict; reopening the saved strategy requires confirmation before discarding local edits.
 
 ## Wire contracts

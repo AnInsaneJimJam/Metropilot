@@ -20,6 +20,7 @@ import { StrategyHeading } from "./StrategyHeading.tsx";
 import type { Stage } from "./StrategyHeading.tsx";
 import { WorkspaceSidebar } from "./WorkspaceSidebar.tsx";
 import { PresetPicker } from "./PresetPicker.tsx";
+import { StrategyScope } from "./StrategyScope.tsx";
 export function EditorPage() {
   const [stage, setStage] = useState<Stage>("build");
   const [experience, setExperience] = useState<Experience>("rookie");
@@ -36,7 +37,9 @@ export function EditorPage() {
   const { saving, persist } = useSaveRevision();
   const [dirty, setDirty] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
-  const [view, setView] = useState<"blocks" | "rules">("blocks");
+  const [view, setView] = useState<"blocks" | "rules">(() =>
+    window.matchMedia("(max-width: 680px)").matches ? "rules" : "blocks",
+  );
   const baselineWorkspace = useRef("");
   const generation = useRef(0);
   const { canvas, workspace } = useBlocklyStudio(stage, view, {
@@ -210,12 +213,12 @@ export function EditorPage() {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumbs">
-            Workspace <Icon name="chevron" size={12} /> Strategies{" "}
+            Strategies <Icon name="chevron" size={12} /> Editor{" "}
             <Icon name="chevron" size={12} />
             <span>{current ? "Saved draft" : "New draft"}</span>
           </div>
           <span className="local-label">
-            LOCAL DEVELOPMENT <span className="avatar small">Y</span>
+            <span className="environment-mark" /> LOCAL · SYNTHETIC
           </span>
         </header>
         <main id="workspace">
@@ -244,6 +247,7 @@ export function EditorPage() {
               onPick={preset}
             />
           )}
+          {stage === "build" && <StrategyScope validation={validation} />}
           <StrategyCanvas
             visible={stage === "build"}
             canvas={canvas}
@@ -258,7 +262,7 @@ export function EditorPage() {
             validation={validation}
             focus={focus}
             onPatterns={() => setShowPresets(true)}
-            onFit={() => workspace?.zoomToFit()}
+            onFit={() => workspace && fitWorkspace(workspace)}
             onUndo={() => workspace?.undo(false)}
           />
           {stage === "rehearse" && (
@@ -279,8 +283,8 @@ export function EditorPage() {
           )}
         </main>
         <footer className="app-footer">
-          <span>Made for deliberate trading.</span>
-          <span>All data and balances in this workspace are synthetic.</span>
+          <span>MONAD / STRATEGY STUDIO</span>
+          <span>Synthetic data · No real funds connected</span>
         </footer>
       </div>
     </div>

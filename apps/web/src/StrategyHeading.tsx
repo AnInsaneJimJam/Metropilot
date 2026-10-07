@@ -37,6 +37,7 @@ export function StrategyHeading({
     <>
       <div className="strategy-header">
         <div>
+          <h1 className="visually-hidden">{name || "Untitled strategy"}</h1>
           <div className="title-meta">
             <span className="pill">
               <span className="status-dot" />
@@ -57,7 +58,7 @@ export function StrategyHeading({
             />
           </label>
           <p className="header-caption">
-            Your strategy. Your rules. Executed exactly.
+            Define the rules. See every consequence.
           </p>
         </div>
         <div className="save-controls">
@@ -82,7 +83,9 @@ export function StrategyHeading({
             }
           >
             {saving ? "Saving…" : "Save revision"}
-            <Icon name="arrow" />
+            <span className="button-arrow">
+              <Icon name="arrow" />
+            </span>
           </button>
         </div>
       </div>
@@ -115,7 +118,9 @@ export function StrategyHeading({
         ))}
         <span className="workflow-note">
           <Icon name="shield" size={14} />
-          Bounded by design
+          {validation?.program && !validation.problems.length
+            ? "Strategy validated"
+            : "Validation required"}
         </span>
       </nav>
     </>

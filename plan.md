@@ -102,6 +102,8 @@ Tooling fix — Codex, 2026-10-03: owns root runtime manifest/lockfile and setup
 
 ## Local control workspace — 2026-10-08
 
+Visual redesign — Codex, 2026-10-08: owns `apps/web/` presentation, Blockly theme and this evidence note on `codex/user-app-control-api`. Rebuilt as a graphite strategy workbench with selected parameters first, AST-derived market/trigger/run scope, mineral Blockly colors and readable fields, matching rehearsal charts, restrained motion and reduced-motion support. Phone-sized screens start with rule forms. Language, API and financial boundaries are preserved. [Figma visual direction](https://www.figma.com/design/t3uXhn26g3TvM0GmjRhk6u). Evidence: 267 checks pass with no skipped PostgreSQL tests; production build passes; CUA verifies keyboard threshold edits update scope, revision 4 saves and reopens, mobile Saved drawer and Rules, one crossing/one simulated settlement, no page overflow at 320/768/1024px and desktop composition at 1440px. No fresh-page console errors. Existing Playwright runner remains unrun.
+
 Branch `codex/user-app-control-api`, cloned fork in `monad-hack-fork`, baseline `fe710ce` (fork/upstream both current).
 
 - [x] Fastify validation/save routes, schema-derived control contracts and migration 0002: tenant ownership, immutable revisions, exact paper configuration limits, transactional idempotency and optimistic concurrency.

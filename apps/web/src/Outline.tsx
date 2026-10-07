@@ -261,7 +261,7 @@ export function Outline({
     <section aria-labelledby="outline-heading">
       <h2 id="outline-heading">Rule inspector</h2>
       <p className="muted">
-        Select a block on the canvas, or choose a rule below.
+        Select any block to edit its parameters.
       </p>
       <div ref={form} role="group" aria-labelledby="outline-edit-heading">
         <h3 id="outline-edit-heading">

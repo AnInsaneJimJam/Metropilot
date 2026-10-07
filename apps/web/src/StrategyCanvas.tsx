@@ -2,6 +2,7 @@ import type { RefObject, ReactNode } from "react";
 import type { Experience } from "@monad-hack/strategy";
 import type { Validation } from "./validation.ts";
 import { StrategyPanel } from "./StrategyPanel.tsx";
+import { Icon } from "./Icon.tsx";
 export function StrategyCanvas({
   visible,
   canvas,
@@ -34,8 +35,12 @@ export function StrategyCanvas({
       <div className="canvas-column">
         <div className="canvas-toolbar">
           <div>
-            <h2>Strategy canvas</h2>
-            <p>Connect a trigger to the actions it should take.</p>
+            <span className="canvas-label">
+              <Icon name="layers" size={15} />
+              <h2>Strategy canvas</h2>
+              <span className="canvas-version">strategy/1</span>
+            </span>
+            <p>Compose your logic. Select a block to fine-tune it.</p>
           </div>
           <div className="segmented" aria-label="Editor view">
             <button
@@ -63,7 +68,9 @@ export function StrategyCanvas({
         <div className="canvas-footer">
           <span>
             <span className="status-dot" />
-            strategy/1
+            {validation?.program
+              ? `${validation.program.bounds.steps} steps · ${validation.program.bounds.intents} trade${validation.program.bounds.intents === 1 ? "" : "s"} per run`
+              : "Waiting for valid rules"}
           </span>
           <button className="link" onClick={onFit}>
             Fit canvas

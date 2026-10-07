@@ -47,8 +47,8 @@ export function PriceChart({
     >
       <defs>
         <linearGradient id="price-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#3d7155" stopOpacity=".12" />
-          <stop offset="100%" stopColor="#3d7155" stopOpacity="0" />
+          <stop offset="0%" stopColor="#d3f36b" stopOpacity=".12" />
+          <stop offset="100%" stopColor="#d3f36b" stopOpacity="0" />
         </linearGradient>
         <clipPath id="played">
           <rect x="0" y="0" width={x(block)} height="310" />
@@ -58,7 +58,7 @@ export function PriceChart({
         const p = min + ((max - min) * i) / 4;
         return (
           <g key={i}>
-            <line x1="62" x2="880" y1={y(p)} y2={y(p)} stroke="#e5e8e2" />
+            <line x1="62" x2="880" y1={y(p)} y2={y(p)} stroke="#314047" />
             <text x="50" y={y(p) + 4} textAnchor="end">
               {p.toFixed(1)}
             </text>
@@ -72,18 +72,18 @@ export function PriceChart({
             x2="880"
             y1={y(threshold)}
             y2={y(threshold)}
-            stroke="#a57947"
+            stroke="#e4ba7d"
             strokeDasharray="5 5"
           />
-          <text x="880" y={y(threshold) - 9} textAnchor="end" fill="#916536">
+          <text x="880" y={y(threshold) - 9} textAnchor="end" fill="#e4ba7d">
             Threshold {threshold}
           </text>
         </g>
       )}
-      <path d={path} fill="none" stroke="#d2dad3" strokeWidth="2" />
+      <path d={path} fill="none" stroke="#41545d" strokeWidth="2" />
       <g clipPath="url(#played)">
         <path d={`${path} L${x(last)} 250 L62 250 Z`} fill="url(#price-fill)" />
-        <path d={path} fill="none" stroke="#3d7155" strokeWidth="2.5" />
+        <path d={path} fill="none" stroke="#d3f36b" strokeWidth="2.5" />
       </g>
       {fired.map((e, i) => (
         <g key={i}>
@@ -92,11 +92,11 @@ export function PriceChart({
             x2={x(e.block)}
             y1="40"
             y2="250"
-            stroke="#3d7155"
+            stroke="#d3f36b"
             strokeDasharray="2 4"
           />
-          <circle cx={x(e.block)} cy="32" r="11" fill="#355e45" />
-          <text x={x(e.block)} y="36" textAnchor="middle" fill="white">
+          <circle cx={x(e.block)} cy="32" r="11" fill="#d3f36b" />
+          <text x={x(e.block)} y="36" textAnchor="middle" fill="#152018">
             {i + 1}
           </text>
         </g>
@@ -106,7 +106,7 @@ export function PriceChart({
         x2={x(block)}
         y1="50"
         y2="250"
-        stroke="#829185"
+        stroke="#b7c9d0"
         opacity=".5"
       />
       {[0, 1, 2, 3, 4].map((i) => (

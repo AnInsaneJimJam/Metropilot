@@ -4,7 +4,7 @@ import type { ValueType } from '@monad-hack/strategy';
 import { asset, assetOptions, assetSymbol, connectorOptions, feedOptions, feedQuoteLabel, modelOptions, priceUnitOptions, readConnectorOptions, readOperationOptions, recordFieldOptions } from '../catalog.ts';
 import { bindName, currentMinute, humanAmount, humanDecimal, humanPrice, text, utcTimestamp } from './fields.ts';
 
-export const COLOUR = { root: '#344e42', trigger: '#a3723c', action: '#58738a', logic: '#737e50', value: '#64847a', data: '#82758e' } as const;
+export const COLOUR = { root: '#343d40', trigger: '#535c36', action: '#354e5b', logic: '#534764', value: '#34564b', data: '#5c4657' } as const;
 /** Warning ID for checks the block can make on its own fields. Live compiler errors use COMPILER_WARNING. */
 export const LOCAL_WARNING = 'local';
 export const COMPILER_WARNING = 'compiler';

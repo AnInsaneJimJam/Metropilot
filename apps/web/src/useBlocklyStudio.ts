@@ -34,7 +34,7 @@ export function useBlocklyStudio(
       ...injectOptions,
       theme,
       renderer: "zelos",
-      grid: { spacing: 24, length: 1, colour: "#ccd3ce", snap: false },
+      grid: { spacing: 24, length: 1, colour: "#394145", snap: false },
       zoom: { controls: true, startScale: 0.85, minScale: 0.35, maxScale: 1.5 },
     });
     if (PRESETS[0]) loadPreset(ws, PRESETS[0]);

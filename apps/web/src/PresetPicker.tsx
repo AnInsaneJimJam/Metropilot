@@ -16,12 +16,14 @@ export function PresetPicker({
         </button>
       </div>
       <p>Examples to edit, not investment recommendations.</p>
-      <div>
+      <div className="preset-grid">
         {PRESETS.map((p, i) => (
           <button key={p.id} onClick={() => onPick(p.id)}>
             <span className="eyebrow">0{i + 1}</span>
-            <h3>{p.title}</h3>
-            <p>{p.summary}</p>
+            <span>
+              <h3>{p.title}</h3>
+              <p>{p.summary}</p>
+            </span>
             <Icon name="arrow" />
           </button>
         ))}

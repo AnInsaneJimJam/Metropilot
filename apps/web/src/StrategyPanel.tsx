@@ -20,9 +20,10 @@ export function StrategyPanel({
   return (
     <aside className="editor-panel" aria-label="Strategy checks">
       <div className="panel-heading">
-        <span className="eyebrow">INSPECTOR</span>
+        <span className="eyebrow">CONFIGURATION</span>
         <Icon name="settings" />
       </div>
+      {outline}
       <section className="check-section" aria-labelledby="check-heading">
         <h2 id="check-heading">Strategy checks</h2>
         <div
@@ -56,8 +57,7 @@ export function StrategyPanel({
           </ul>
         ) : (
           <p className="muted">
-            Types, connections and run limits checked. The server checks again
-            on save.
+            Connections and limits checked. Verified again on save.
           </p>
         )}
       </section>
@@ -80,7 +80,6 @@ export function StrategyPanel({
             : "Expanded run limits · same hard safety checks"}
         </p>
       </fieldset>
-      {outline}
       <details className="technical">
         <summary>Compiler details</summary>
         <dl className="bounds">
