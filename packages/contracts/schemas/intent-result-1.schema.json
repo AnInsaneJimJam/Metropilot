@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/intent-result-1.schema.json",
+  "title": "IntentResult",
+  "description": "Safe executor representation of one logical intent, intent-result/1 (docs/specs/executor.md sections 4 and 7). Excludes signed bytes, raw provider responses, secret refs and calldata. Paper results carry a synthetic fill ID and never a transaction hash. Poll GET /internal/v1/intents/{intentId} while the state is not terminal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "intentId",
+    "logicalKey",
+    "mode",
+    "state",
+    "createdAt",
+    "updatedAt",
+    "action"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "intent-result/1"
+    },
+    "intentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "logicalKey": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "mode": {
+      "$ref": "common.schema.json#/$defs/mode"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "rejected",
+        "reserved",
+        "prepared",
+        "signing",
+        "signed",
+        "submitted",
+        "included",
+        "finalized",
+        "settled",
+        "reconciling",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "createdAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "updatedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "action": {
+      "title": "FrozenAction",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connectorRef",
+        "connectorVersion",
+        "tokenInRef",
+        "tokenOutRef",
+        "maxSlippageBps"
+      ],
+      "properties": {
+        "connectorRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "connectorVersion": {
+          "$ref": "common.schema.json#/$defs/semver"
+        },
+        "tokenInRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "tokenOutRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "maxSlippageBps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "resolvedInputAtomic": {
+          "$ref": "common.schema.json#/$defs/positiveAtomicAmount",
+          "description": "Frozen input once the executor resolved the amount rule."
+        }
+      },
+      "description": "Frozen action summary."
+    },
+    "reason": {
+      "title": "IntentReason",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "EXECUTOR_CAPABILITY_INVALID",
+            "EXECUTOR_STALE_GENERATION",
+            "EXECUTOR_DEPLOYMENT_INACTIVE",
+            "EXECUTOR_INTENT_CONFLICT",
+            "EXECUTOR_AST_MISMATCH",
+            "EXECUTOR_CONNECTOR_DISABLED",
+            "EXECUTOR_ASSET_NOT_ALLOWED",
+            "EXECUTOR_AMOUNT_EXCEEDED",
+            "EXECUTOR_DAILY_LIMIT_EXCEEDED",
+            "EXECUTOR_NATIVE_RESERVE_LOW",
+            "EXECUTOR_STALE_OBSERVATION",
+            "EXECUTOR_QUOTE_INVALID",
+            "EXECUTOR_SLIPPAGE_EXCEEDED",
+            "EXECUTOR_GAS_LIMIT_EXCEEDED",
+            "EXECUTOR_ALLOWANCE_UNSAFE",
+            "EXECUTOR_SIMULATION_FAILED",
+            "EXECUTOR_INSUFFICIENT_BUDGET",
+            "EXECUTOR_RECONCILIATION_REQUIRED",
+            "EXECUTOR_PROVIDER_UNAVAILABLE"
+          ]
+        },
+        "message": {
+          "$ref": "common.schema.json#/$defs/safeText"
+        }
+      },
+      "description": "Stable rejection or failure reason."
+    },
+    "paperFillId": {
+      "$ref": "common.schema.json#/$defs/hash32",
+      "description": "Deterministic synthetic fill identity (paper only)."
+    },
+    "transactionHash": {
+      "$ref": "common.schema.json#/$defs/hash32",
+      "description": "Public transaction hash (live only), present once submitted."
+    },
+    "settlement": {
+      "title": "IntentSettlement",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputAtomic",
+        "outputAtomic"
+      ],
+      "properties": {
+        "inputAtomic": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        },
+        "outputAtomic": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        },
+        "gasAtomic": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        }
+      },
+      "description": "Actual amounts after trusted interpretation; settled state only."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "enum": [
+              "rejected",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "required": [
+          "reason"
+        ]
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "const": "settled"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "required": [
+          "settlement"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "settlement"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "const": "paper"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "transactionHash"
+          ]
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "paperFillId"
+          ]
+        }
+      }
+    }
+  ]
+}

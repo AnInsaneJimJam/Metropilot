@@ -84,6 +84,25 @@ describe('normative spec examples', () => {
   }
 });
 
+describe('normative examples in multi-example specs', () => {
+  // These specs hold several JSON blocks; the example is the block that declares the given schemaVersion.
+  const examples: [string, ContractKind, string, string][] = [
+    ['docs/specs/executor.md', 'actionIntent', 'action-intent/1', 'spec-swap-fixed.json'],
+    ['docs/specs/agent-runtime.md', 'runtimeAssignment', 'runtime-assignment/1', 'paper-price-crossing.json'],
+  ];
+  for (const [doc, kind, version, fixture] of examples) {
+    test(`${doc} ${version} example is the ${kind} fixture and parses`, () => {
+      const blocks = [...readFileSync(join(repoRoot, doc), 'utf8').matchAll(/```json\n([\s\S]*?)```/g)]
+        .map((match) => match[1]!)
+        .filter((text) => text.includes(`"schemaVersion": "${version}"`));
+      assert.equal(blocks.length, 1, `${doc} should contain exactly one ${version} example`);
+      assert.deepEqual(JSON.parse(blocks[0]!), readJson(join(packageDir, 'fixtures', kind, 'valid', fixture)));
+      const result = parse(kind, blocks[0]!);
+      assert.ok(result.ok, JSON.stringify(!result.ok && result.issues));
+    });
+  }
+});
+
 describe('parse', () => {
   const example = readFileSync(join(packageDir, 'fixtures', 'strategy', 'valid', 'spec-threshold-sale.json'), 'utf8');
 
@@ -141,6 +160,10 @@ describe('schema hygiene', () => {
     const openPayloads = new Set([
       'https://monad-hack.example/schemas/event-1.schema.json#/properties/payload',
       'https://monad-hack.example/schemas/audit-event-1.schema.json#/properties/payload',
+      // Recorded read/AI records: typed by the interpreter against the node's declared result (recordOf).
+      'https://monad-hack.example/schemas/run-result-1.schema.json#/properties/result',
+      'https://monad-hack.example/schemas/run-state-1.schema.json#/properties/recorded/properties/result',
+      'https://monad-hack.example/schemas/broker-result-1.schema.json#/properties/value',
     ]);
     const open: string[] = [];
     for (const schema of all) {
@@ -197,7 +220,24 @@ describe('schema hygiene', () => {
     const versioned = all.filter((schema) => (schema['properties'] as Node | undefined)?.['schemaVersion']);
     assert.deepEqual(
       versioned.map((schema) => ((schema['properties'] as Node)['schemaVersion'] as Node)['const']).sort(),
-      ['audit-event/1', 'deployment/1', 'event/1', 'strategy/1'],
+      [
+        'action-intent/1',
+        'assignment-offer/1',
+        'assignment-poll/1',
+        'audit-event/1',
+        'broker-request/1',
+        'broker-result/1',
+        'deployment/1',
+        'event/1',
+        'intent-result/1',
+        'run-complete/1',
+        'run-result/1',
+        'run-state/1',
+        'run-wait/1',
+        'runtime-assignment/1',
+        'strategy/1',
+        'timeline-entry/1',
+      ],
     );
     for (const schema of versioned) assert.ok((schema['required'] as string[]).includes('schemaVersion'));
   });

@@ -15,6 +15,18 @@ const refs = {
   event: 'event-1.schema.json',
   auditEvent: 'audit-event-1.schema.json',
   assetIdentity: 'common.schema.json#/$defs/assetIdentity',
+  actionIntent: 'action-intent-1.schema.json',
+  intentResult: 'intent-result-1.schema.json',
+  runtimeAssignment: 'runtime-assignment-1.schema.json',
+  assignmentPoll: 'assignment-poll-1.schema.json',
+  assignmentOffer: 'assignment-offer-1.schema.json',
+  runWait: 'run-wait-1.schema.json',
+  runResult: 'run-result-1.schema.json',
+  runComplete: 'run-complete-1.schema.json',
+  runState: 'run-state-1.schema.json',
+  timelineEntry: 'timeline-entry-1.schema.json',
+  brokerRequest: 'broker-request-1.schema.json',
+  brokerResult: 'broker-result-1.schema.json',
 };
 const root = {
   title: 'GeneratedContractMap',
@@ -27,5 +39,11 @@ await writeFile(new URL('./generated-contracts.ts', import.meta.url), await comp
   cwd: fileURLToPath(new URL('../schemas/', import.meta.url)),
   strictIndexSignatures: true,
   maxItems: -1,
-  $refOptions: { resolve: { http: false } },
+  // Runtime contracts reuse strategy definitions (Amount, RunCheckpoint, Binding) by the strategy schema's $id.
+  $refOptions: {
+    resolve: {
+      http: false,
+      strategy: { order: 1, canRead: /^https:\/\/monad-hack\.local\/strategy\/1/, read: () => JSON.stringify(schema) },
+    },
+  },
 }));

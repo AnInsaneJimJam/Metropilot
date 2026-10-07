@@ -1,0 +1,16 @@
+{
+  "description": "A recorded result belongs to a waiting checkpoint",
+  "expect": {
+    "fieldPath": "",
+    "keyword": "dependentRequired"
+  },
+  "document": {
+    "schemaVersion": "run-state/1",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "recorded": {
+      "operationKey": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "outcome": "settled"
+    },
+    "observationRefs": []
+  }
+}

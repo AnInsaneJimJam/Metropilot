@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/assignment-offer-1.schema.json",
+  "title": "AssignmentOffer",
+  "description": "Control API answer to an assignment poll, assignment-offer/1. assigned carries exactly one assignment; none means poll again; drain means stop taking work and exit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "disposition"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "assignment-offer/1"
+    },
+    "disposition": {
+      "type": "string",
+      "enum": [
+        "assigned",
+        "none",
+        "drain"
+      ]
+    },
+    "assignment": {
+      "$ref": "runtime-assignment-1.schema.json"
+    }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "disposition": {
+        "const": "assigned"
+      }
+    },
+    "required": [
+      "disposition"
+    ]
+  },
+  "then": {
+    "required": [
+      "assignment"
+    ]
+  },
+  "else": {
+    "not": {
+      "required": [
+        "assignment"
+      ]
+    }
+  }
+}

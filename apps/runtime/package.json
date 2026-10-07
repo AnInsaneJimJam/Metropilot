@@ -2,5 +2,12 @@
   "name": "@monad-hack/runtime",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "demo": "pnpm --dir ../.. runtime:demo"
+  },
+  "dependencies": {
+    "@monad-hack/contracts": "workspace:*",
+    "@monad-hack/strategy": "workspace:*"
+  }
 }

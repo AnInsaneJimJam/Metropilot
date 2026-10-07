@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/run-complete-1.schema.json",
+  "title": "RunComplete",
+  "description": "Commit a terminal interpreter checkpoint (completed or failed), run-complete/1. Conditional on the current checkpoint and fencing token.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "assignmentId",
+    "fencingToken",
+    "checkpoint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "run-complete/1"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "assignmentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "fencingToken": {
+      "$ref": "common.schema.json#/$defs/fencingToken"
+    },
+    "checkpoint": {
+      "$ref": "https://monad-hack.local/strategy/1#/$defs/RunCheckpoint"
+    }
+  }
+}

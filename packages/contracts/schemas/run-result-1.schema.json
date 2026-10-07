@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/run-result-1.schema.json",
+  "title": "RunResult",
+  "description": "Record one host result, run-result/1. Idempotent by operation key: the same result again returns the stored one; a different outcome for a recorded key is a 409 conflict. pending results are recorded too so the API can schedule a resume.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "assignmentId",
+    "fencingToken",
+    "operationKey",
+    "outcome"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "run-result/1"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "assignmentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "fencingToken": {
+      "$ref": "common.schema.json#/$defs/fencingToken"
+    },
+    "operationKey": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "settled",
+        "rejected",
+        "failed",
+        "acknowledged",
+        "recorded",
+        "timeout",
+        "refused"
+      ]
+    },
+    "resultRef": {
+      "$ref": "common.schema.json#/$defs/uuidv7",
+      "description": "Broker result or executor intent ID that proves this outcome."
+    },
+    "result": {
+      "type": "object",
+      "description": "Plain recorded record for read and ai.decide (for example {price, observedAt} or {decision, summary}); typed by the interpreter against the node's declared result."
+    },
+    "receivedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "const": "recorded"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "required": [
+          "result",
+          "resultRef"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "result"
+          ]
+        }
+      }
+    }
+  ]
+}

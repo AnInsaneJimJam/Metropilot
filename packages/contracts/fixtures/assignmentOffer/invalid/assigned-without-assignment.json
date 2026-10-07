@@ -1,0 +1,11 @@
+{
+  "description": "assigned carries exactly one assignment",
+  "expect": {
+    "fieldPath": "/assignment",
+    "keyword": "required"
+  },
+  "document": {
+    "schemaVersion": "assignment-offer/1",
+    "disposition": "assigned"
+  }
+}

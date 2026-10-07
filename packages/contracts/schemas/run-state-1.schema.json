@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/run-state-1.schema.json",
+  "title": "RunState",
+  "description": "Authoritative run state returned to a runtime, run-state/1: the accepted checkpoint (absent for a new run) and the recorded result for its waiting operation when one exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "observationRefs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "run-state/1"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "checkpoint": {
+      "$ref": "https://monad-hack.local/strategy/1#/$defs/RunCheckpoint"
+    },
+    "recorded": {
+      "title": "RecordedHostResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationKey",
+        "outcome"
+      ],
+      "properties": {
+        "operationKey": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "settled",
+            "rejected",
+            "failed",
+            "acknowledged",
+            "recorded",
+            "timeout",
+            "refused"
+          ]
+        },
+        "resultRef": {
+          "$ref": "common.schema.json#/$defs/uuidv7",
+          "description": "Broker result or executor intent ID that proves this outcome."
+        },
+        "result": {
+          "type": "object",
+          "description": "Plain recorded record for read and ai.decide (for example {price, observedAt} or {decision, summary}); typed by the interpreter against the node's declared result."
+        },
+        "receivedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      },
+      "description": "Recorded result of the waiting operation."
+    },
+    "observationRefs": {
+      "description": "Broker result IDs recorded so far in this run, in order; the runtime cites them in ActionIntent.observationRefs.",
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.schema.json#/$defs/uuidv7"
+      }
+    }
+  },
+  "dependentRequired": {
+    "recorded": [
+      "checkpoint"
+    ]
+  }
+}

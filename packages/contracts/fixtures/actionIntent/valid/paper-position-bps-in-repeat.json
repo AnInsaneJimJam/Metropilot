@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "action-intent/1",
+  "logicalKey": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+  "nodeId": "sell_tenth",
+  "iterationPath": [
+    1
+  ],
+  "connectorRef": "paper.uniswap",
+  "connectorVersion": "1.0.0",
+  "action": "swap.exactInput",
+  "tokenInRef": "paper.WETH",
+  "tokenOutRef": "paper.USD",
+  "amount": {
+    "kind": "positionBps",
+    "bps": 1000
+  },
+  "maxSlippageBps": 50,
+  "observationRefs": []
+}

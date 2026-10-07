@@ -1,0 +1,29 @@
+{
+  "description": "Checkpoints are closed",
+  "expect": {
+    "fieldPath": "/checkpoint/secret",
+    "keyword": "additionalProperties"
+  },
+  "document": {
+    "schemaVersion": "run-complete/1",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "assignmentId": "019a0000-0000-7000-8000-000000000201",
+    "fencingToken": "17",
+    "checkpoint": {
+      "schemaVersion": "strategy-run/2",
+      "strategyHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "deploymentRevision": "019a0000-0000-7000-8000-000000000202/3",
+      "triggerId": "crossing",
+      "sourceEventKey": "chain:10143:0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:4",
+      "frames": [],
+      "steps": 2,
+      "intents": 1,
+      "aiCalls": 0,
+      "activeMillis": 3,
+      "bindings": [],
+      "status": "completed",
+      "secret": "x"
+    }
+  }
+}

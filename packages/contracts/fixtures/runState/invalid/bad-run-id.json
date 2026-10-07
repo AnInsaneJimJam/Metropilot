@@ -1,0 +1,12 @@
+{
+  "description": "Run IDs are the interpreter's 0x SHA-256 run key",
+  "expect": {
+    "fieldPath": "/runId",
+    "keyword": "pattern"
+  },
+  "document": {
+    "schemaVersion": "run-state/1",
+    "runId": "run-1",
+    "observationRefs": []
+  }
+}

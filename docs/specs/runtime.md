@@ -2,6 +2,8 @@
 
 Version: 1.0 design baseline. Owners: API lifecycle worker, isolated runtime, privileged executor, infrastructure.
 
+This specification defines cross-component lifecycle, execution and recovery semantics. The implementation-level contract and build plan for `apps/runtime` is [agent runtime](agent-runtime.md); the privileged action boundary is [executor](executor.md).
+
 ## Lifecycle and generations
 
 Agent configuration lifecycle: `draft → validated → provisioning → running → pausing → paused → provisioning` for resume, and `provisioning/running → failed`, `paused/failed → stopping → stopped`. Funding readiness is a separate field; paper mode never waits for a live deposit. A stopped agent can launch a new deployment; stopped generations never revive. Deletion tombstones configuration only after pending effects are reconciled and funds disposition is known.
@@ -15,6 +17,8 @@ Provisioning records desired state and an idempotent cloud-operation key before 
 `jobs` rows carry logical key, kind, payload version, tenant/agent, status, attempt, availableAt, leaseOwner, leaseUntil and fencing token. Claim ready rows atomically with `FOR UPDATE SKIP LOCKED`, update lease/token, then commit. Heartbeat every 10 seconds for a 30-second lease. Result writes compare the current token; stale workers lose authority. Long waits become persisted states and release worker slots.
 
 One active run per agent, with a 1,000-event backlog ceiling. Serialize trigger-state changes and run creation. Duplicate event and run keys are constrained in the DB. Market price observations may coalesce to latest under load **before acceptance**, while chain financial/reconciliation events must be durably retained. Mark dropped/coalesced observations and reset crossing baselines after gaps. Never silently delete deposits, transactions or unsettled intents to shed load.
+
+Price observations arrive push-first from finalized pool events, with a heartbeat read only for quiet feeds ([D32](../decisions.md)). Fan-out selects active `trigger_state` rows by feed reference for the current generation, then locks each row, applies the shared `transitionPrice` and creates any run in the same transaction. Measure each latency stage before publishing figures ([D34](../decisions.md)).
 
 Schedule slots use UTC and immutable anchor/interval. On recovery, coalesce missed slots to the most recent still-fresh one; do not replay hours of purchases. Default schedule freshness is one interval with a maximum of five minutes. Accepted runs keep recorded context. External market context must be refreshed before a later financial action if it is stale.
 

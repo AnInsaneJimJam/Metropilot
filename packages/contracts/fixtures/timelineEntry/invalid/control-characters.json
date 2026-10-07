@@ -1,0 +1,27 @@
+{
+  "description": "Messages are user-safe text",
+  "expect": {
+    "fieldPath": "/message",
+    "keyword": "pattern"
+  },
+  "document": {
+    "schemaVersion": "timeline-entry/1",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "assignmentId": "019a0000-0000-7000-8000-000000000201",
+    "fencingToken": "17",
+    "operationKey": "0x1313131313131313131313131313131313131313131313131313131313131313",
+    "nodeId": "record_result",
+    "message": "line\u0000break",
+    "inputs": {
+      "price": {
+        "kind": "literal",
+        "valueType": "Price",
+        "value": {
+          "baseAssetRef": "paper.WETH",
+          "quoteUnit": "USD",
+          "decimal": "2501"
+        }
+      }
+    }
+  }
+}

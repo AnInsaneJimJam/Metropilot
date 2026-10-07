@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "action-intent/1",
+  "logicalKey": "0x4b7fbfb8f69f3c6f54df9db29a6402e2cff87ffed9dd94f62da27c34568c7bc4",
+  "runId": "0xb956dcf10050a6ff918cfabf6f09c0a4c21995f3295e4f186101718e5b810e08",
+  "nodeId": "buy_weth",
+  "iterationPath": [],
+  "connectorRef": "monad.uniswap",
+  "connectorVersion": "1.0.0",
+  "action": "swap.exactInput",
+  "tokenInRef": "monad.USDC",
+  "tokenOutRef": "monad.WETH",
+  "amount": {
+    "kind": "fixed",
+    "atomic": "5000000"
+  },
+  "maxSlippageBps": 50,
+  "observationRefs": [
+    "019a0000-0000-7000-8000-000000000111"
+  ]
+}
