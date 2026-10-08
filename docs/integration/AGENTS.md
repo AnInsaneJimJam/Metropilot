@@ -10,5 +10,6 @@ Every guide names the conformance kit that proves an integration and keeps its e
 - [x] INT-1 / G4: control API owner passes the [control API conformance kit](../../apps/runtime/src/conformance/control-api.ts) against the real service through the runtime HTTP client.
   - Done 2026-10-08 (branch `feat/runtime-control-api`): kit green through `HttpControlApi` → internal Fastify app → PostgreSQL in [runtime-control.test.ts](../../tests/runtime-control.test.ts); `REQUIRE_DB=1 pnpm check` 426 pass, 0 skipped. Hosted deployment is separate (INF-3).
 - [ ] INT-2 / G4: executor owner passes the [executor conformance kit](../../apps/runtime/src/conformance/executor.ts) against the paper executor through the runtime HTTP client.
+  - Rehearsal 2026-10-08: kit 7/7 against the real paper executor over HTTP and PostgreSQL through a test-only client applying the [§3 mapping](runtime-http-clients.md#3-one-error-mapping-both-sides-implement-it) ([`tests/executor-conformance.test.ts`](../../tests/executor-conformance.test.ts)). Not ticked: needs the runtime client (INT-0) and control-API authority.
 
 Tick only with a linked passing run against the real service; the local stand-ins passing their own kits is not integration evidence.

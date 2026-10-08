@@ -182,6 +182,10 @@ describe('database', { skip }, () => {
       await rejects(db.query(`insert into policies (tenant_id, agent_id, version, limits) values ($1, $2, 1, '{}')`, [seedTenantId, otherAgent]), '23503');
     });
 
+    test('a simulation account cannot attach to another tenant’s agent', async () => {
+      await rejects(db.query(`insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, '019a0000-0000-7000-8000-0000000000af', $2, 1)`, [seedTenantId, otherAgent]), '23503');
+    });
+
     test('IDs must be UUIDv7', async () => {
       await rejects(db.query(`insert into tenants (id, auth_subject) values ('3f2b8c1e-9d4a-4f6b-8e2c-1a2b3c4d5e6f', 'synthetic|v4')`), '23514');
     });
@@ -249,6 +253,26 @@ describe('database', { skip }, () => {
       await rejects(db.query(`delete from catalog_versions where ref = 'paper.uniswap'`), 'P0001');
       const { rowCount } = await db.query(`update catalog_versions set disabled_reason = 'test withdrawal' where ref = 'paper.USD'`);
       assert.equal(rowCount, 1);
+    });
+
+    test('executor paper records keep their invariants (0004)', async () => {
+      const { request } = paperSeed();
+      const account = '019a0000-0000-7000-8000-0000000000b0';
+      await db.query('insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, $2, $3, 1)', [seedTenantId, account, request.agentId]);
+      await rejects(db.query(`insert into simulation_balances (tenant_id, account_id, asset_ref, available) values ($1, $2, 'paper.WETH', -1)`, [seedTenantId, account]), '23514');
+      const intent = (id: string, mode: string, state: string, key = '0x' + id.slice(-2).repeat(32)) => db.query(
+        `insert into intents (tenant_id, id, agent_id, deployment_id, generation, mode, simulation_account_id, run_id, node_id, iteration_path,
+           logical_key, request_hash, request, action, input_atomic, state, created_at, updated_at)
+         values ($1, $2, $3, '019a0000-0000-7000-8000-0000000000b1', 1, $4, $5, $6, 'sell', '[]', $7, $6, '{}', '{}', 1, $8, now(), now())`,
+        [seedTenantId, id, request.agentId, mode, account, '0x' + 'ab'.repeat(32), key, state],
+      );
+      // Live intents need wallets and transaction attempts (later migration); a settled row needs its fill.
+      await rejects(intent('019a0000-0000-7000-8000-0000000000b2', 'live', 'reserved'), '23514');
+      await rejects(intent('019a0000-0000-7000-8000-0000000000b3', 'paper', 'settled'), '23514');
+      await rejects(intent('019a0000-0000-7000-8000-0000000000b4', 'paper', 'rejected'), '23514');
+      await intent('019a0000-0000-7000-8000-0000000000b5', 'paper', 'reserved');
+      // One logical effect: a second intent with the same logical key is refused.
+      await rejects(intent('019a0000-0000-7000-8000-0000000000b6', 'paper', 'reserved', '0x' + 'b5'.repeat(32)), '23505');
     });
 
     test('catalog modes are limited to paper and live', async () => {

@@ -2,5 +2,11 @@
   "name": "@monad-hack/policy",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@monad-hack/contracts": "workspace:*"
+  }
 }

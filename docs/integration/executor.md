@@ -4,6 +4,8 @@ This guide is for the owner of `apps/executor`. It covers only the runtime-facin
 
 Status 2026-10-07: the runtime builds and sends `ActionIntent`s and handles every result state. It runs against an in-memory paper executor, [`PaperExecutor`](../../apps/runtime/src/local/paper-executor.ts), which shows the expected behavior in about a hundred lines. Run `pnpm runtime:demo` to see admission, duplicates, crash recovery and settlement.
 
+Status 2026-10-08: the real paper executor exists in [`apps/executor/src`](../../apps/executor/src/) (HTTP boundary, PostgreSQL store from migration `0004_executor_paper.sql`, pure policy in [`packages/policy`](../../packages/policy/src/action-policy.ts)). It passes the [conformance kit](../../apps/runtime/src/conformance/executor.ts) over HTTP against PostgreSQL in [`tests/executor-conformance.test.ts`](../../tests/executor-conformance.test.ts), through a test-only client that applies the §3 error mapping, and the G4 paper scenarios in [`tests/executor-paper.test.ts`](../../tests/executor-paper.test.ts). It has no process entry yet: deployment authority comes from the control API (section 3a).
+
 **Not built yet: the runtime's HTTP clients and process entry point.** Until they exist, nothing calls your service; read [runtime HTTP clients](runtime-http-clients.md), especially the error mapping (§3: your `409` bodies need an `error-1` code the client can read) and the retry rules (§4: the runtime retries the identical intent after a timeout).
 
 ## 1. When the runtime calls you
@@ -46,6 +48,39 @@ logicalKey    0xb8f0dade82e733f451a1d1db26f95505adb0830b983a10a316dd8d423a39bc3c
 
 Generation is a decimal **string**. Each repeat iteration is a distinct intent because `iterationPath` differs. The control API uses the same value as this operation's key, so one financial action has one key everywhere.
 
+## 3a. Capability and deployment authority
+
+Two inputs the control API owner provides; until then the executor tests use in-memory stand-ins ([`testing.ts`](../../apps/executor/src/testing.ts)).
+
+**Capability** ([D35](../decisions.md)): `Authorization: Bearer <token>`, a compact HS256 token signed with a secret shared only by the control API and the executor. Claims are closed and checked exactly as in [`capability.ts`](../../apps/executor/src/capability.ts) (`signCapability` is the reference issuer):
+
+```json
+{
+  "aud": "executor",
+  "tenantId": "019a0000-0000-7000-8000-000000000000",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "deploymentId": "019a0000-0000-7000-8000-000000000202",
+  "generation": "3",
+  "mode": "paper",
+  "actions": ["swap.exactInput"],
+  "connectors": { "paper.uniswap": "1.0.0" },
+  "runId": "0xb956dcf10050a6ff918cfabf6f09c0a4c21995f3295e4f186101718e5b810e08",
+  "iat": 1791460800,
+  "exp": 1791461100,
+  "jti": "019a0000-0000-7000-8000-000000000999"
+}
+```
+
+`runId` is optional; when present the capability is valid for that run only. `exp - iat` is at most 300 seconds. A live capability answers `403 CAPABILITY_DISABLED` while the executor is paper-only.
+
+**Deployment authority:** the executor calls `AuthoritySource.current(tenantId, deploymentId)` ([`authorization.ts`](../../apps/executor/src/authorization.ts)) on every admission and again before each fill, so a pause takes effect before the capability expires. It returns the current generation, mode, desired state (`active`, `paused`, `stopping`, `stopped`), strategy revision ID, policy version, network ref, connector pins and, for paper, the simulation account ID. The approved AST, policy limits and catalog readiness are then read from `strategy_revisions`, `policies` and `catalog_versions`. Implement it over the `deployments` table; throwing means unavailable (`503`, nothing admitted).
+
+Gap as of 2026-10-09 (`0003_runtime_control.sql`, `63d353e`): that table's `desired_state` is `running`/`paused`/`stopped`, while `DesiredState` here is `active`/`paused`/`stopping`/`stopped`, and it has no policy version, network ref or simulation account. The control API's `authorityFor(runId)` returns only deployment, generation, mode and an `active` flag. The owners agree the mapping and the missing columns before the adapter is written.
+
+The per-assignment bearer in `assignment-offer/2` (`capabilityGrant`) authenticates the runtime to the control API only; it is not this executor capability, which the control API does not issue yet ([runtime HTTP clients §5](runtime-http-clients.md#5-gaps-and-how-they-were-settled)).
+
+The paper executor also needs recorded market data (`MarketData` in [`paper.ts`](../../apps/executor/src/paper.ts)) until broker results are persisted and referenced through `observationRefs`.
+
 ## 4. Admission behavior the runtime relies on
 
 | Situation | Answer |
@@ -78,6 +113,8 @@ Rules that matter to the runtime: `settlement` (actual input and output) only in
 
 The runtime does not poll you while an intent is pending. When your reconciliation reaches a definitive state (`settled`, `rejected`, `failed`), tell the control API, for example through an outbox row the API worker consumes, with the run ID, the logical key (which is the operation key) and the intent ID. The control API records the result and issues a resume assignment ([control API guide section 7](control-api.md#7-resuming-after-a-pending-operation)). The stand-in wires this as `onSettled → settleOperation`.
 
+Implemented as the `executor_outbox` table (migration `0002`): every state change commits, in the same transaction, a `transaction.stateChanged` row with `run_id`, `logical_key`, `intent_id` and `payload.state` (plus `policy.denied`, `reservation.changed` and `ledger.settled` rows). The API worker resumes runs from definitive `transaction.stateChanged` rows, assigns the tenant audit sequence and sets `published_at`; only an unpublished row may be marked, and nothing else in a row can change. Note: `audit-event/1` types `runId` as a UUIDv7 while runs use a 32-byte hash; the contract owner must reconcile that before these rows become audit events.
+
 ## 7. Paper mode expectations
 
 Follow [executor.md section 8](../specs/executor.md#8-paper-execution). The stand-in derives the synthetic fill ID as `contentHash({schemaVersion: "paper-fill/1", logicalKey, adapter: "paper-adapter/1"})`, so a replay returns the same fill. It applies exact floor arithmetic with a declared 30 bps fee and rejects rather than fabricates a fill when the virtual balance is short.
@@ -86,12 +123,14 @@ Follow [executor.md section 8](../specs/executor.md#8-paper-execution). The stan
 
 The [executor conformance kit](../../apps/runtime/src/conformance/executor.ts) checks closed results, idempotent duplicates, body conflicts, key recomputation, closed request bodies, distinct repeat iterations, durable rejections and stale-generation refusal. The stand-in passes it in [`conformance.test.ts`](../../apps/runtime/src/conformance.test.ts).
 
-To run it against your service you need the runtime's executor client, which is **not written yet** ([runtime HTTP clients](runtime-http-clients.md)); it will map your statuses exactly as in [§3 there](runtime-http-clients.md#3-one-error-mapping-both-sides-implement-it). Provide an `ExecutorHarness` whose `arrangeRun` creates an authorized paper run with at least 1 `paper.WETH` available and whose `revoke` pauses it.
+To run it against your service you need the runtime's executor client, which is **not written yet** ([runtime HTTP clients](runtime-http-clients.md)); it will map your statuses exactly as in [§3 there](runtime-http-clients.md#3-one-error-mapping-both-sides-implement-it). Provide an `ExecutorHarness` whose `arrangeRun` creates an authorized paper run of `EXECUTOR_CONFORMANCE_STRATEGY` with at least 1 `paper.WETH` available and whose `revoke` pauses it.
+
+The kit exports `EXECUTOR_CONFORMANCE_STRATEGY` (2026-10-08) because a real executor matches each intent against the deployed AST (executor spec §5 steps 7–9): the repeat test uses node `sell_small` inside a two-iteration repeat and the insufficient-input test uses node `sell_too_much`, so every intent the kit sends is one the approved strategy can produce. The in-memory stand-in does not check the AST and is unaffected.
 
 ## 9. Owner checklist
 
-- [ ] `POST /internal/v1/intents` and `GET /internal/v1/intents/{intentId}` with closed `action-intent/1` / `intent-result/1` validation.
-- [ ] Logical key recomputed from the capability; canonical-body idempotency; conflict and stale-generation answers as in section 4.
-- [ ] Result states and fields as in section 5; no transaction hash in paper.
-- [ ] Definitive results of pending intents reported to the control API for resume.
-- [ ] Conformance kit green against the real paper executor ([INT-2](AGENTS.md)).
+- [x] `POST /internal/v1/intents` and `GET /internal/v1/intents/{intentId}` with closed `action-intent/1` / `intent-result/1` validation. Evidence 2026-10-08: [`server.ts`](../../apps/executor/src/server.ts); boundary cases in [`executor-paper.test.ts`](../../tests/executor-paper.test.ts) (`REQUIRE_DB=1 pnpm check` 421/421, four consecutive runs; 481/481 on 2026-10-09 after merging `63d353e`).
+- [x] Logical key recomputed from the capability; canonical-body idempotency; conflict and stale-generation answers as in section 4. Evidence: same file (scope, duplicate, concurrent-duplicate, pause and stale-generation cases).
+- [x] Result states and fields as in section 5; no transaction hash in paper. Evidence: every answer is validated against `intent-result/1` before it is sent; paper rows have no transaction-hash column.
+- [ ] Definitive results of pending intents reported to the control API for resume. Executor side done (`executor_outbox`, section 6); the API worker consumer is open (G3).
+- [ ] Conformance kit green against the real paper executor ([INT-2](AGENTS.md)). Rehearsed 2026-10-08 over HTTP + PostgreSQL through a test-only client ([`executor-conformance.test.ts`](../../tests/executor-conformance.test.ts), 7/7); open until the runtime's real client (INT-0) and control-API authority exist.

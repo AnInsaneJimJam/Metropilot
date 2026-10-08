@@ -505,6 +505,8 @@ This layout is a starting point, not permission to create empty abstraction fold
 4. Implement paper fill/settlement and intent status endpoint.
 5. Prove duplicate delivery and crash/replay safety with a real PostgreSQL test.
 
+Status 2026-10-08: steps 1–5 implemented for paper in [`apps/executor`](../../apps/executor/src/) on migration `0004_executor_paper.sql`, with deployment authority and recorded market data behind ports until the control API provides them (its `deployments` table exists since `0003_runtime_control.sql` but is not yet sufficient); see the [integration guide](../integration/executor.md#3a-capability-and-deployment-authority) and decisions D35–D36.
+
 ### Phase C — G5 financial foundation
 
 1. Add per-asset balanced ledger and multi-asset reservations.

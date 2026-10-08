@@ -7,6 +7,7 @@ Evaluate immutable intent plus explicit current context. Combine limits using th
 ## Checklist
 
 - [ ] POL-1 / G5: define typed context/verdict/reasons for action authorization.
+  - Progress 2026-10-08: paper-scope [`evaluateAction`](src/action-policy.ts) with contract reason codes, most-restrictive limit combination and deny-on-missing context; checks in [`action-policy.test.ts`](src/action-policy.test.ts). Remaining for G5/G8: quote/reference deviation, gas, allowance and live wallet context.
 - [ ] POL-2 / G5: enforce ownership/generation/mode/capability/chain/recipient/amount limits.
 - [ ] POL-3 / G8: enforce quote age, reference price deviation, slippage, gas and approval bounds.
 - [ ] POL-4 / G5,G8: combine platform/user/connector/strategy limits and include pending holds.

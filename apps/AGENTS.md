@@ -12,6 +12,7 @@ Scope: independently started processes and website builds. Read [architecture](.
   - Progress 2026-10-03: `apps/api` has its first source (config, migration runner, paper seed, DB tests), run through root `pnpm db:*`/`pnpm check`; still no server start entry (G3).
   - G1 portion done 2026-10-03 (commit `5d94ea3`, green hosted CI): entries exist for every app with source (`apps/web` scripts; `apps/api` via root `pnpm db:*`). Remaining: start entries for api, runtime, executor and docs as each gets source.
   - Progress 2026-10-07: `apps/runtime` has source and `pnpm runtime:demo` (root) / `pnpm --filter @monad-hack/runtime demo`; its tests run in root `pnpm check`. Its process entry (`main.ts` with HTTP clients) arrives with the first real service.
+  - Progress 2026-10-08: `apps/executor` has source and tests in root `pnpm check`; its process entry waits for the control API's deployment authority (see [executor checklist](executor/AGENTS.md)).
 - [ ] APPS-2 / G4: prove process credentials/network access match architecture.
 - [ ] APPS-3 / G7–G8: verify the end-to-end contracts across apps without private source imports.
 

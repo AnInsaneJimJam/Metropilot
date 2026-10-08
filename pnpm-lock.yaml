@@ -206,7 +206,21 @@ importers:
 
   apps/docs: {}
 
-  apps/executor: {}
+  apps/executor:
+    dependencies:
+      '@monad-hack/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@monad-hack/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
 
   apps/runtime:
     dependencies:
@@ -267,7 +281,11 @@ importers:
         specifier: 3.0.1
         version: 3.0.1(ajv@8.20.0)
 
-  packages/policy: {}
+  packages/policy:
+    dependencies:
+      '@monad-hack/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/strategy:
     dependencies:
