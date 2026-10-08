@@ -60,6 +60,7 @@ async function freshPool(): Promise<pg.Pool> {
   const pool = new pg.Pool({ connectionString: urlFor(name), max: 8 });
   // pool.end() resolves before idle sockets close; the forced drop below may kill them (see app.test.ts).
   pool.on('connect', (client) => client.on('error', () => {}));
+  pool.on('error', () => {}); // idle-client errors are re-emitted here (see app.test.ts)
   pools.push(pool);
   return pool;
 }

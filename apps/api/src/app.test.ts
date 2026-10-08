@@ -58,6 +58,8 @@ describe("control API / real PostgreSQL", { skip: !url }, () => {
     // pool.end() resolves before idle sockets close; the forced drop in after() can then kill them.
     // Without a listener that becomes an uncaught exception attributed to whichever test opened the socket.
     pool.on("connect", (client) => client.on("error", () => {}));
+    // Idle-client errors are re-emitted on the pool; without a pool listener they throw.
+    pool.on("error", () => {});
     const c = new pg.Client({ connectionString: u.toString() });
     await c.connect();
     await migrate(c);
