@@ -26,7 +26,9 @@ test('network and provider outage retries preserve exact bytes and use new trace
 
 test('permanent errors, invalid and oversized responses are never retried', async () => {
   for (const [status, body, code] of [
-    [409, '{}', 'CONFLICT'], [401, '{}', 'REVOKED'],
+    [409, JSON.stringify({ requestId: '019a0000-0000-7000-8000-000000000001', code: 'IDEMPOTENCY_CONFLICT', message: 'Conflict', retryable: false }), 'CONFLICT'],
+    [401, JSON.stringify({ requestId: '019a0000-0000-7000-8000-000000000001', code: 'UNAUTHENTICATED', message: 'Unauthorized', retryable: false }), 'REVOKED'],
+    [500, '{}', 'RESULT_INVALID'], [503, '{}', 'RESULT_INVALID'],
     [500, JSON.stringify({ requestId: '019a0000-0000-7000-8000-000000000001', code: 'INTERNAL_ERROR', message: 'Internal failure', retryable: false }), 'RESULT_INVALID'],
     [200, JSON.stringify({ ...answer, operationKey: '0x' + 'ff'.repeat(32) }), 'RESULT_INVALID'],
     [200, ' '.repeat(65537), 'RESULT_INVALID'],
@@ -43,7 +45,7 @@ test('expired capability refreshes once without changing the operation', async (
   const bodies: unknown[] = [];
   const broker = new HttpBroker({ origin: 'http://localhost:4000', capability: async () => `cap-${refreshes}`, forgetCapability: () => { refreshes++; }, fetch: async (_url, init) => {
     bodies.push(init!.body); calls++;
-    return new Response(JSON.stringify(answer), { status: 401 });
+    return new Response(JSON.stringify({ requestId: '019a0000-0000-7000-8000-000000000001', code: 'UNAUTHENTICATED', message: 'Unauthorized', retryable: false }), { status: 401 });
   } });
   await assert.rejects(broker.request(request), isCode('REVOKED'));
   assert.equal(calls, 2); assert.equal(refreshes, 1); assert.equal(bodies[0], bodies[1]);

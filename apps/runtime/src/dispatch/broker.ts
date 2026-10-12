@@ -53,7 +53,8 @@ export class HttpBroker implements Broker {
           refreshed = true; this.options.forgetCapability(); attempt--; continue;
         }
         const error = parse('error', text);
-        throw runtimeErrorFor(response.status, error.ok ? error.value.code : undefined);
+        if (!error.ok) throw new RuntimeError('RESULT_INVALID', 'Broker error answer does not match its contract.');
+        throw runtimeErrorFor(response.status, error.value.code);
       } catch (error) {
         if (error instanceof RuntimeError && error.code !== 'UNAVAILABLE') throw error;
         if (attempt === attempts - 1) throw new RuntimeError('UNAVAILABLE', 'Broker unreachable or timed out; retain the same operation key.');
