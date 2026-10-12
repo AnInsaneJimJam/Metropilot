@@ -214,6 +214,9 @@ importers:
 
   apps/executor:
     dependencies:
+      '@monad-hack/accounting':
+        specifier: workspace:*
+        version: link:../../packages/accounting
       '@monad-hack/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

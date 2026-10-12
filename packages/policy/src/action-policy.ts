@@ -129,6 +129,12 @@ export interface ActionContext {
   readonly signerReady?: boolean;
   /** An unknown effect or balance discrepancy is open for this agent. */
   readonly reconciliationOpen?: boolean;
+  /**
+   * Evaluation phase (executor.md section 6). Admission has no quote, fee estimate or approval plan yet, so in
+   * live mode those blocks and signer readiness are required only at `signing` (the default, strictest phase).
+   * A block supplied at admission is still checked.
+   */
+  readonly phase?: 'admission' | 'signing';
 }
 
 export type Verdict =
@@ -201,6 +207,7 @@ export function evaluateAction(context: ActionContext): Verdict {
   }
 
   const live = context.mode === 'live';
+  const signing = live && context.phase !== 'admission';
   if (context.reconciliationOpen) deny('EXECUTOR_RECONCILIATION_REQUIRED', 'An unresolved effect or balance difference blocks new actions.');
 
   // POL-2: ownership, generation and funding identity.
@@ -214,7 +221,7 @@ export function evaluateAction(context: ActionContext): Verdict {
     if (id.capabilityGeneration !== id.currentGeneration) deny('EXECUTOR_STALE_GENERATION', 'The deployment generation is no longer authorized.');
   }
   if (live && context.branchEvidenceVerified !== true) deny('EXECUTOR_AST_MISMATCH', 'Branch evidence for this action is not verified.');
-  if (live && context.signerReady !== true) deny('EXECUTOR_PROVIDER_UNAVAILABLE', 'The wallet provider is not ready to sign.');
+  if (signing && context.signerReady !== true) deny('EXECUTOR_PROVIDER_UNAVAILABLE', 'The wallet provider is not ready to sign.');
 
   // POL-2: chain and recipient. The strategy never names a recipient: the payout goes to the agent wallet.
   const chain = context.chain;
@@ -231,7 +238,7 @@ export function evaluateAction(context: ActionContext): Verdict {
   // POL-3: quote freshness, consistency, computed slippage and reference deviation.
   const quote = context.quote;
   if (!quote) {
-    if (live) deny('EXECUTOR_QUOTE_INVALID', 'No executable quote is available.');
+    if (signing) deny('EXECUTOR_QUOTE_INVALID', 'No executable quote is available.');
   } else {
     const maxAge = limits.maxQuoteAgeSeconds;
     if (maxAge === undefined || quote.quotedAtMillis > context.nowMillis || context.nowMillis - quote.quotedAtMillis > maxAge * 1000 || context.nowMillis >= quote.expiresAtMillis) {
@@ -255,7 +262,7 @@ export function evaluateAction(context: ActionContext): Verdict {
   // POL-3: gas ceiling and native reserve.
   const gas = context.gas;
   if (!gas) {
-    if (live) deny('EXECUTOR_GAS_LIMIT_EXCEEDED', 'The fee ceiling is not known.');
+    if (signing) deny('EXECUTOR_GAS_LIMIT_EXCEEDED', 'The fee ceiling is not known.');
   } else {
     if (gas.ceilingAtomic <= 0n || limits.maxGasAtomic === undefined || gas.ceilingAtomic > limits.maxGasAtomic) deny('EXECUTOR_GAS_LIMIT_EXCEEDED', 'The fee ceiling is above the approved limit.');
     if (gas.availableNativeAtomic - gas.ceilingAtomic < (limits.minNativeReserveAtomic ?? 0n)) deny('EXECUTOR_NATIVE_RESERVE_LOW', 'Paying this fee would break the native gas reserve.');
@@ -264,7 +271,7 @@ export function evaluateAction(context: ActionContext): Verdict {
   // POL-3: approvals are exact-amount, to an approved spender, never unlimited or permit-based.
   const allowance = context.allowance;
   if (!allowance) {
-    if (live) deny('EXECUTOR_ALLOWANCE_UNSAFE', 'The approval requirement is not known.');
+    if (signing) deny('EXECUTOR_ALLOWANCE_UNSAFE', 'The approval requirement is not known.');
   } else if (allowance.required) {
     const spender = allowance.spender?.toLowerCase();
     const amount = allowance.approvalAtomic;

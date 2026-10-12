@@ -130,6 +130,16 @@ Implemented as the `executor_outbox` table (migration `0004`): every state chang
 
 Follow [executor.md section 8](../specs/executor.md#8-paper-execution). The stand-in derives the synthetic fill ID as `contentHash({schemaVersion: "paper-fill/1", logicalKey, adapter: "paper-adapter/1"})`, so a replay returns the same fill. It applies exact floor arithmetic with a declared 30 bps fee and rejects rather than fabricates a fill when the virtual balance is short.
 
+## 7a. Live intents on the funds ledger (2026-10-12)
+
+Live capabilities are refused (403) unless the executor is wired with `live` ([`LiveConfig`](../../apps/executor/src/live.ts)). With it, admission for a live deployment on the configured network:
+
+- resolves the agent's custodial wallet (`wallets`, migration 0007) and the input from available **trading** inventory on the ledger;
+- evaluates `action-policy/2` at the `admission` phase (identity, chain/recipient = agent wallet, notional, branch evidence, freezes); quote, gas, allowance and signer readiness are required at the signing phase;
+- reserves token-in plus the native gas ceiling in one `packages/accounting` reservation keyed `intent:<logicalKey>`, counted in the agent/tenant/platform UTC-day windows, and records the intent, verdict and outbox together. A ledger refusal records `rejected` with `EXECUTOR_INSUFFICIENT_BUDGET`, `EXECUTOR_DAILY_LIMIT_EXCEEDED` or `EXECUTOR_RECONCILIATION_REQUIRED`.
+
+The signing pipeline (#39–#41) must move live intents only through `LiveIntents`: `markSigning` (after the signing-phase verdict; holds stop expiring), `markSubmitted`, `markReconciling`, `settleFinalized` (actual input/output/gas from the finalized receipt; revert charges gas only) or `cancel` (before any external authorization). `reconcile()` cancels undispatched live intents of paused, stopped or replaced deployments and expired holds. Paper intents, holds and fills are unchanged.
+
 ## 8. Proving compatibility
 
 The [executor conformance kit](../../apps/runtime/src/conformance/executor.ts) checks closed results, idempotent duplicates, body conflicts, key recomputation, closed request bodies, distinct repeat iterations, durable rejections and stale-generation refusal. The stand-in passes it in [`conformance.test.ts`](../../apps/runtime/src/conformance.test.ts).

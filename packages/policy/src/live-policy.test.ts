@@ -96,6 +96,15 @@ test('each missing live block denies instead of defaulting; paper keeps its beha
   assert.equal(evaluateAction({ ...paper, identity: { ...live.identity!, currentGeneration: '9' } }).allow, false);
 });
 
+test('admission phase: quote, gas, allowance and signer come later; identity, chain, notional and branch evidence are required now', () => {
+  const { quote: _q, gas: _g, allowance: _a, signerReady: _s, ...admission } = live;
+  assert.equal(evaluateAction({ ...admission, phase: 'admission' }).allow, true);
+  assert.equal(evaluateAction(admission).allow, false, 'signing (the default) requires every block');
+  const { identity: _i, ...noIdentity } = admission;
+  assert.equal(evaluateAction({ ...noIdentity, phase: 'admission' }).allow, false);
+  assert.equal(evaluateAction({ ...admission, phase: 'admission', gas: { ceilingAtomic: 501n, availableNativeAtomic: 10_000n } }).allow, false, 'a supplied block is still checked');
+});
+
 test('limits combine by the most restrictive value: minima, the largest reserve, intersected allowlists', () => {
   const combined = combineLimits([
     { maxGasAtomic: 900n, minNativeReserveAtomic: 50n, allowedSpenders: [ROUTER, WALLET], allowedChainIds: [10143, 143], maxQuoteAgeSeconds: 30 },
