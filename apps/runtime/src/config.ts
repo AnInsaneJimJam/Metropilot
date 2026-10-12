@@ -35,3 +35,31 @@ export function parseConfig(env: Readonly<Record<string, string | undefined>>): 
   };
   return { runtimeId: id, mode, imageDigest, heartbeatMillis: int('RUNTIME_HEARTBEAT_MS', 10_000, 100, 30_000), pollWaitSeconds: int('RUNTIME_POLL_WAIT_SECONDS', 25, 0, 30) };
 }
+
+export interface ServiceEndpoints {
+  readonly controlApiOrigin: string;
+  readonly executorOrigin: string;
+  /** No API Broker service exists yet: `synthetic` answers reads and AI from scripts, paper only. */
+  readonly broker: 'synthetic';
+  /** Development workload identity header for the poll (gate E02 selects the real mechanism). */
+  readonly devWorkloadHeader: boolean;
+}
+
+/** Internal service origins: bare origins; plain http only on loopback. */
+export function parseEndpoints(env: Readonly<Record<string, string | undefined>>, mode: 'paper' | 'live'): ServiceEndpoints {
+  const origin = (name: string): string => {
+    const raw = env[name];
+    let url: URL;
+    try {
+      url = new URL(raw ?? '');
+    } catch {
+      throw new RuntimeError('ASSIGNMENT_INVALID', `${name} must be a URL origin.`);
+    }
+    const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+    if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) throw new RuntimeError('ASSIGNMENT_INVALID', `${name} must be a bare origin.`);
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) throw new RuntimeError('ASSIGNMENT_INVALID', `${name} must use https outside loopback.`);
+    return url.origin;
+  };
+  if (env['RUNTIME_BROKER'] !== 'synthetic' || mode !== 'paper') throw new RuntimeError('ASSIGNMENT_INVALID', 'Only RUNTIME_BROKER=synthetic in paper mode is available until the API Broker exists.');
+  return { controlApiOrigin: origin('RUNTIME_CONTROL_API_ORIGIN'), executorOrigin: origin('RUNTIME_EXECUTOR_ORIGIN'), broker: 'synthetic', devWorkloadHeader: env['RUNTIME_DEV_WORKLOAD'] === '1' };
+}

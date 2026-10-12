@@ -3,6 +3,8 @@ import pg from "pg";
 import { databaseUrl } from "./config.ts";
 import { createApp } from "./app.ts";
 import { ControlStore } from "./store.ts";
+import { LifecycleService } from "./lifecycle.ts";
+import { RuntimeControlStore } from "./runtime-control/store.ts";
 
 // Explicitly local-only until the production identity adapter and HTTPS deployment are supplied.
 if (
@@ -20,10 +22,15 @@ const pool = new pg.Pool({
 // An idle client losing its connection must not crash the process; the next query reconnects.
 pool.on("error", (error) => console.error(`database pool error: ${error.name}`));
 const store = new ControlStore(pool);
+// Deployments pin this runtime image; local runtimes run with the same RUNTIME_IMAGE_DIGEST (or this default).
+const runtimeImageDigest = process.env["RUNTIME_IMAGE_DIGEST"] ?? "0x" + "5a".repeat(32);
+if (!/^0x[0-9a-f]{64}$/.test(runtimeImageDigest)) throw new Error("RUNTIME_IMAGE_DIGEST must be a 0x SHA-256 digest.");
+const lifecycle = new LifecycleService({ pool, runtime: new RuntimeControlStore({ pool }), runtimeImageDigest });
 const tenant = await store.tenant("local-control-workspace");
 const sessions = new Map<string, number>();
 const app = createApp({
   store,
+  lifecycle,
   origin: "http://127.0.0.1:5173",
   authenticate: async (cookie) => {
     const token = cookie

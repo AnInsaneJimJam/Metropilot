@@ -191,17 +191,19 @@ describe('database', { skip }, () => {
     });
   });
 
-  describe('runtime control (0003)', () => {
+  describe('runtime control (0003, 0005)', () => {
     const H = (b: string) => '0x' + b.repeat(32);
     const deployment = '019a0000-0000-7000-8000-0000000002d1';
+    const account = '019a0000-0000-7000-8000-0000000002d9';
     const runId = H('7a');
     before(async () => {
       await seedPaper(db);
       const { agentId, strategyRevisionId } = paperSeed().request;
+      await db.query('insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, $2, $3, 9)', [seedTenantId, account, agentId]);
       await db.query(
-        `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest)
-         values ($1, $2, $3, $4, 'paper', $5, $5, '{}', $5)`,
-        [seedTenantId, deployment, agentId, strategyRevisionId, H('aa')],
+        `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest, network_ref, policy_version, budget_version, resource_profile_ref, simulation_account_id)
+         values ($1, $2, $3, $4, 'paper', $5, $5, '{}', $5, 'paper-monad', 1, 1, 'paper-small-v1', $6)`,
+        [seedTenantId, deployment, agentId, strategyRevisionId, H('aa'), account],
       );
       await db.query(
         `insert into runs (tenant_id, run_id, deployment_id, generation, deployment_revision, trigger_id, source_event_key, trigger)
@@ -214,9 +216,9 @@ describe('database', { skip }, () => {
       const { strategyRevisionId } = paperSeed().request;
       await rejects(
         db.query(
-          `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest)
-           values ($1, '019a0000-0000-7000-8000-0000000002d2', '019a0000-0000-7000-8000-0000000002d3', $2, 'paper', $3, $3, '{}', $3)`,
-          [seedTenantId, strategyRevisionId, H('aa')],
+          `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest, network_ref, policy_version, budget_version, resource_profile_ref, simulation_account_id)
+           values ($1, '019a0000-0000-7000-8000-0000000002d2', '019a0000-0000-7000-8000-0000000002d3', $2, 'paper', $3, $3, '{}', $3, 'paper-monad', 1, 1, 'paper-small-v1', $4)`,
+          [seedTenantId, strategyRevisionId, H('aa'), account],
         ),
         '23503',
       );
@@ -227,6 +229,27 @@ describe('database', { skip }, () => {
       await rejects(db.query(`insert into runs (tenant_id, run_id, deployment_id, generation, deployment_revision, trigger_id, source_event_key, trigger) values ($1, $2, $3, 1, 'r', 't', 'e', '{}')`, [seedTenantId, runId, deployment]), '23505');
       await db.query(`insert into run_assignments (assignment_id, tenant_id, run_id, fencing_token) values ('019a0000-0000-7000-8000-0000000002e1', $1, $2, 1)`, [seedTenantId, runId]);
       await rejects(db.query(`insert into run_assignments (assignment_id, tenant_id, run_id, fencing_token) values ('019a0000-0000-7000-8000-0000000002e2', $1, $2, 1)`, [seedTenantId, runId]), '23505');
+    });
+
+    test('lifecycle (0005): one open deployment per agent, paper needs its account, audit events are immutable', async () => {
+      const { agentId, strategyRevisionId } = paperSeed().request;
+      await rejects(
+        db.query(
+          `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest, network_ref, policy_version, budget_version, resource_profile_ref, simulation_account_id)
+           values ($1, '019a0000-0000-7000-8000-0000000002d4', $2, $3, 'paper', $4, $4, '{}', $4, 'paper-monad', 1, 1, 'paper-small-v1', $5)`,
+          [seedTenantId, agentId, strategyRevisionId, H('aa'), account],
+        ),
+        '23505',
+      );
+      await rejects(db.query(`update deployments set simulation_account_id = null where id = $1`, [deployment]), '23514');
+      await rejects(db.query(`update deployments set desired_state = 'running' where id = $1`, [deployment]), '23514');
+      await db.query(
+        `insert into audit_events (tenant_id, sequence, agent_id, actor_kind, trace_id, type, payload, occurred_at, source)
+         values ($1, 1, $2, 'controlPlane', $3, 'run.stateChanged', '{}', now(), 'test:1')`,
+        [seedTenantId, agentId, 'ab'.repeat(16)],
+      );
+      await rejects(db.query(`delete from audit_events where source = 'test:1'`), 'P0001');
+      await rejects(db.query(`insert into audit_events (tenant_id, sequence, actor_kind, trace_id, type, payload, occurred_at, source) values ($1, 2, 'user', $2, 'run.step', '{}', now(), 'test:2')`, [seedTenantId, 'ab'.repeat(16)]), '23514');
     });
 
     test('artifacts and timeline entries are immutable', async () => {
@@ -260,6 +283,12 @@ describe('database', { skip }, () => {
       const account = '019a0000-0000-7000-8000-0000000000b0';
       await db.query('insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, $2, $3, 1)', [seedTenantId, account, request.agentId]);
       await rejects(db.query(`insert into simulation_balances (tenant_id, account_id, asset_ref, available) values ($1, $2, 'paper.WETH', -1)`, [seedTenantId, account]), '23514');
+      // Intents belong to a real deployment (0005); a stopped one does not collide with the agent's open deployment.
+      await db.query(
+        `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest, network_ref, policy_version, budget_version, resource_profile_ref, simulation_account_id, desired_state)
+         values ($1, '019a0000-0000-7000-8000-0000000000b1', $2, $3, 'paper', $4, $4, '{}', $4, 'paper-monad', 1, 1, 'paper-small-v1', $5, 'stopped')`,
+        [seedTenantId, request.agentId, request.strategyRevisionId, '0x' + 'aa'.repeat(32), account],
+      );
       const intent = (id: string, mode: string, state: string, key = '0x' + id.slice(-2).repeat(32)) => db.query(
         `insert into intents (tenant_id, id, agent_id, deployment_id, generation, mode, simulation_account_id, run_id, node_id, iteration_path,
            logical_key, request_hash, request, action, input_atomic, state, created_at, updated_at)

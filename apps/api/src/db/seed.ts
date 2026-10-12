@@ -41,6 +41,14 @@ export function paperSeed() {
     })),
     paperAsset('paper.WETH', 18),
     paperAsset('paper.USD', 6),
+    paperAsset('paper.MON', 18),
+    // The second paper venue and the synthetic model profile the presets use (strategy syntheticCatalog).
+    { kind: 'connector', ref: 'paper.kuru', version: '1.0.0', modes: paper, definition: { networkRef: request.networkRef, capabilities: ['price.read', 'swap.quote', 'swap.exactInput'] } },
+    {
+      kind: 'feed', ref: 'paper.weth-usd-kuru', version: '1.0.0', modes: paper,
+      definition: { networkRef: request.networkRef, baseAssetRef: 'paper.WETH', quoteUnit: 'USD', source: 'recorded' },
+    },
+    { kind: 'modelProfile', ref: 'paper.kimi', version: '1.0.0', modes: paper, definition: { provider: 'synthetic', note: 'Scripted answers; no model is called.' } },
     {
       kind: 'feed',
       ref: 'paper.weth-usd',

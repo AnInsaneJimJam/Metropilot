@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./capability": "./src/capability.ts",
     "./schemas/*.json": "./schemas/*.json",
     "./fixtures/*.json": "./fixtures/*.json",
     "./package.json": "./package.json"

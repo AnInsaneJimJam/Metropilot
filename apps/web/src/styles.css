@@ -1929,3 +1929,92 @@ summary:hover {
     font-size: 16px;
   }
 }
+/* Operate: lifecycle controls, runs and live activity. */
+.operate-page {
+  animation: stage-enter 500ms var(--ease) both;
+}
+.operate-facts {
+  margin: 18px 0 6px;
+}
+.operate-plan {
+  margin: 20px 0 6px;
+}
+.operate-plan h4 {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.operate-plan ul,
+.operate-runs,
+.operate-steps,
+.operate-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.operate-plan li {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.operate-actions {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0 8px;
+  flex-wrap: wrap;
+}
+.operate-runs-heading {
+  margin-top: 28px;
+}
+.operate-run {
+  display: flex;
+  width: 100%;
+  gap: 14px;
+  align-items: center;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 12px 0;
+}
+.run-status {
+  min-width: 82px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.run-completed {
+  color: var(--signal);
+}
+.run-failed,
+.run-revoked {
+  color: var(--error);
+}
+.operate-steps {
+  padding: 8px 0 14px 96px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.operate-steps li {
+  padding: 3px 0;
+}
+.operate-events {
+  margin-top: 12px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+.operate-events li {
+  display: grid;
+  grid-template-columns: 68px 1fr;
+  gap: 8px;
+  font-size: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+@media (max-width: 680px) {
+  .operate-steps {
+    padding-left: 12px;
+  }
+}

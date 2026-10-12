@@ -218,7 +218,7 @@ Routes below are the proposed `agent-runtime/1` interface. They become implement
 | `POST /internal/v1/runs/{runId}/complete` | Commit completed/failed interpreter outcome (`run-complete/1`) | Conditional on current checkpoint/fencing token |
 | `POST /internal/v1/runs/{runId}/timeline` | Append a bounded user-safe runtime event (`timeline-entry/1`) | Idempotent and redacted; not an authority or result store |
 | `POST /internal/v1/runtime/heartbeat` | Renew assignment lease and report health (`runtime-heartbeat/1` → `runtime-lease/1`; also extends the capability) | Reject stale fencing token; cannot revive a revoked generation |
-| `POST /internal/v1/runtime/capabilities:refresh` | Obtain narrowed fresh audience-scoped service capabilities (not implemented: the control API capability is extended by the heartbeat; broker/executor audiences are open) | Recheck desired state, generation and run |
+| `POST /internal/v1/runtime/capabilities:exchange` | Exchange the control capability for an audience-scoped one (`audience-capability/1`; executor today, D38) | Current lease of an active generation only; scoped to the run; never longer than the control capability. The control capability itself is extended by the heartbeat |
 
 Implemented 2026-10-08 in `apps/api/src/runtime-control/` (migration 0003); see the [control API guide](../integration/control-api.md). The API performs the database transaction. The runtime never simulates atomicity by making unrelated HTTP writes and assuming they committed together.
 

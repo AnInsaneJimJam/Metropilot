@@ -105,6 +105,17 @@ export function createInternalApp(options: InternalAppOptions) {
   runWrite('complete', 'runComplete', (doc) => store.complete(doc));
   runWrite('timeline', 'timelineEntry', (doc) => store.timeline(doc));
 
+  // Exchange the control capability for an executor-audience capability (D38). The runtime never holds
+  // the signing secret; the token is scoped to this run and expires with (or before) the control capability.
+  app.post('/internal/v1/runtime/capabilities::exchange', async (request, reply) => {
+    const { scope } = await capability(request);
+    const asked = request.body as { audience?: unknown } | null;
+    if (!asked || typeof asked !== 'object' || Object.keys(asked).join() !== 'audience' || asked.audience !== 'executor') {
+      throw new RunControlError('SCHEMA_INVALID', 'Ask for exactly {"audience": "executor"}.');
+    }
+    return reply.header('cache-control', 'no-store').send(await store.issueExecutorCapability(scope));
+  });
+
   app.post('/internal/v1/runtime/heartbeat', async (request, reply) => {
     const { scope, bearer } = await capability(request);
     const beat = body('runtimeHeartbeat', request.body);

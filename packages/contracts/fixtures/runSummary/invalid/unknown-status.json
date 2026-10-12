@@ -1,0 +1,17 @@
+{
+  "description": "Run statuses are a closed set",
+  "expect": {
+    "fieldPath": "/status",
+    "keyword": "enum"
+  },
+  "document": {
+    "schemaVersion": "run-summary/1",
+    "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "deploymentId": "019a0000-0000-7000-8000-000000000501",
+    "generation": "1",
+    "triggerId": "daily",
+    "status": "done",
+    "createdAt": "2026-10-12T12:00:00.000Z",
+    "updatedAt": "2026-10-12T12:00:00.000Z"
+  }
+}

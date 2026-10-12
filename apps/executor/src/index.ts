@@ -1,5 +1,5 @@
-// Assembles the paper executor. The process entry (main.ts) arrives when the control API provides the
-// deployment AuthoritySource and recorded market data (G3); until then tests and local harnesses wire them.
+// Assembles the paper executor. main.ts wires PostgresAuthority (deployments) and PostgresMarketData
+// (market_observations); tests may wire in-memory stand-ins instead.
 import type { Server } from 'node:http';
 import type pg from 'pg';
 import type { ActionLimits } from '@monad-hack/policy';
@@ -45,3 +45,6 @@ export { PAPER_ADAPTER_VERSION, PAPER_ASSUMPTIONS } from './paper.ts';
 export type { MarketData, RecordedQuote } from './paper.ts';
 export { ExecutorService } from './service.ts';
 export { ExecutorStore } from './store.ts';
+export { PostgresAuthority } from './authority.ts';
+export { PostgresMarketData } from './market.ts';
+export type { FeedPair } from './market.ts';

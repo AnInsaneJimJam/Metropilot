@@ -1,7 +1,7 @@
 import type { Validation } from "./validation.ts";
 import type { SavedAgent } from "./api.ts";
 import { Icon } from "./Icon.tsx";
-export type Stage = "build" | "rehearse" | "review";
+export type Stage = "build" | "rehearse" | "review" | "operate";
 export function StrategyHeading({
   name,
   dirty,
@@ -103,14 +103,14 @@ export function StrategyHeading({
         </div>
       )}
       <nav className="stage-tabs" aria-label="Strategy workflow">
-        {(["build", "rehearse", "review"] as const).map((s, i) => (
+        {(["build", "rehearse", "review", "operate"] as const).map((s, i) => (
           <button
             key={s}
             aria-current={stage === s ? "step" : undefined}
             onClick={() => onStage(s)}
           >
             <span>0{i + 1}</span>
-            {s === "build" ? "Build" : s === "rehearse" ? "Rehearse" : "Review"}
+            {s === "build" ? "Build" : s === "rehearse" ? "Rehearse" : s === "review" ? "Review" : "Operate"}
             {s === "build" &&
               validation?.program &&
               !validation.problems.length && <Icon name="check" size={14} />}

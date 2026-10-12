@@ -3,6 +3,7 @@ import { validate } from "@monad-hack/contracts";
 import { LanguageError, syntheticCatalog } from "@monad-hack/strategy";
 import { ControlError, newId, validateDraft } from "./control.ts";
 import type { ControlStore } from "./store.ts";
+import type { LifecycleService } from "./lifecycle.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -50,7 +51,13 @@ export interface ApiOptions {
   authenticate: (cookie: string | undefined) => Promise<string | undefined>;
   origin: string;
   localSession?: () => Promise<{ cookie: string; tenant: string }>;
+  /** Deployment lifecycle and history (API-2, API-6); absent means launch is unavailable. */
+  lifecycle?: LifecycleService;
+  /** How often an open event stream checks for new audit events. */
+  streamPollMillis?: number;
 }
+
+const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export function createApp(options: ApiOptions) {
   const app = Fastify({
     bodyLimit: 512 * 1024,
@@ -180,7 +187,8 @@ export function createApp(options: ApiOptions) {
       mode: "paper",
       synthetic: true,
       catalog: syntheticCatalog,
-      capabilities: { save: true, cloudExecution: false, live: false },
+      capabilities: { save: true, deploy: Boolean(options.lifecycle), cloudExecution: false, live: false },
+      ...(options.lifecycle ? { paperVersions: await options.lifecycle.paperVersions() } : {}),
     }));
     routes.get(
       "/v1/agents",
@@ -285,6 +293,106 @@ export function createApp(options: ApiOptions) {
       const result = await save(request, true);
       reply.header("ETag", `"${result.version}"`);
       return result;
+    });
+    const lifecycle = () => {
+      if (!options.lifecycle)
+        throw new ControlError(503, "PROVIDER_UNAVAILABLE", "Launching is not available on this server.");
+      return options.lifecycle;
+    };
+    const agentId = (request: FastifyRequest) => {
+      const id = (request.params as { id: string }).id;
+      if (!UUIDV7.test(id)) throw new ControlError(404, "NOT_FOUND", "Strategy not found.");
+      return id;
+    };
+    const idempotencyKey = (request: FastifyRequest) => {
+      const key = request.headers["idempotency-key"];
+      if (typeof key !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(key))
+        throw new ControlError(400, "MALFORMED_REQUEST", "A valid Idempotency-Key is required.");
+      return key;
+    };
+    const page = (request: FastifyRequest) => {
+      const q = request.query as { limit?: string };
+      if (q.limit !== undefined && !/^([1-9]|[1-9][0-9]|100)$/.test(q.limit))
+        throw new ControlError(400, "MALFORMED_REQUEST", "limit must be 1–100.");
+      return Number(q.limit ?? 25);
+    };
+    routes.post("/v1/agents/:id/estimates", async (request) => {
+      const body = (request.body ?? {}) as { strategyRevisionId?: unknown };
+      if (typeof body !== "object" || Object.keys(body).some((k) => k !== "strategyRevisionId") || (body.strategyRevisionId !== undefined && (typeof body.strategyRevisionId !== "string" || !UUIDV7.test(body.strategyRevisionId))))
+        throw new ControlError(400, "SCHEMA_INVALID", "Send {} or {strategyRevisionId}.");
+      return lifecycle().estimate(requestTenant(request), agentId(request), body.strategyRevisionId as string | undefined);
+    });
+    routes.post("/v1/agents/:id/deployments", async (request, reply) => {
+      const operation = await lifecycle().launch(requestTenant(request), agentId(request), request.body, idempotencyKey(request));
+      reply.code(202).header("Location", `/v1/operations/${operation.id}`);
+      return operation;
+    });
+    for (const kind of ["pause", "resume", "stop"] as const) {
+      routes.post(`/v1/agents/:id/${kind}`, async (request, reply) => {
+        const operation = await lifecycle().control(requestTenant(request), agentId(request), kind, idempotencyKey(request));
+        reply.code(202).header("Location", `/v1/operations/${operation.id}`);
+        return operation;
+      });
+    }
+    routes.get("/v1/operations/:id", async (request) =>
+      lifecycle().operation(requestTenant(request), (request.params as { id: string }).id));
+    routes.get("/v1/agents/:id/deployment", async (request) =>
+      lifecycle().deployment(requestTenant(request), agentId(request)));
+    routes.get("/v1/agents/:id/runs", async (request) => {
+      const cursor = (request.query as { cursor?: string }).cursor;
+      return lifecycle().runs(requestTenant(request), agentId(request), page(request), cursor);
+    });
+    routes.get("/v1/runs/:runId", async (request) =>
+      lifecycle().run(requestTenant(request), (request.params as { runId: string }).runId));
+    const cursorOf = (request: FastifyRequest): bigint => {
+      const header = request.headers["last-event-id"];
+      const raw = typeof header === "string" ? header : (request.query as { after?: string }).after ?? "0";
+      if (!/^(0|[1-9][0-9]{0,19})$/.test(raw)) throw new ControlError(400, "MALFORMED_REQUEST", "Invalid event cursor.");
+      return BigInt(raw);
+    };
+    routes.get("/v1/agents/:id/events", async (request) => {
+      const tenant = requestTenant(request);
+      const id = agentId(request);
+      await lifecycle().assertAgent(tenant, id);
+      const items = await lifecycle().events(tenant, id, cursorOf(request), page(request));
+      return { items, nextCursor: items.length ? String(items.at(-1)!.sequence) : null };
+    });
+    // Server-sent events from the durable audit stream; Last-Event-ID resumes. Delivery never controls execution.
+    routes.get("/v1/agents/:id/stream", async (request, reply) => {
+      const tenant = requestTenant(request);
+      const id = agentId(request);
+      const service = lifecycle();
+      await service.assertAgent(tenant, id);
+      let cursor = cursorOf(request);
+      reply.hijack();
+      const out = reply.raw;
+      out.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        connection: "keep-alive",
+      });
+      out.write(": stream open\n\n");
+      let open = true;
+      request.raw.on("close", () => {
+        open = false;
+      });
+      let idle = 0;
+      while (open) {
+        try {
+          for (const event of await service.events(tenant, id, cursor, 100)) {
+            out.write(`id: ${String(event.sequence)}\nevent: audit\ndata: ${JSON.stringify(event)}\n\n`);
+            cursor = BigInt(String(event.sequence));
+            idle = 0;
+          }
+        } catch {
+          out.write("event: unavailable\ndata: {}\n\n");
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, options.streamPollMillis ?? 500));
+        if (++idle % 30 === 0) out.write(": keep-alive\n\n");
+      }
+      out.end();
     });
   });
   return app;

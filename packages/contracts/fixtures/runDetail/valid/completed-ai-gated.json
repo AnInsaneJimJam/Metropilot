@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "run-detail/1",
+  "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+  "deploymentId": "019a0000-0000-7000-8000-000000000501",
+  "generation": "1",
+  "triggerId": "daily",
+  "status": "completed",
+  "createdAt": "2026-10-12T12:00:00.000Z",
+  "updatedAt": "2026-10-12T12:00:00.000Z",
+  "trigger": {
+    "acceptedAt": "2026-10-12T12:00:00.000Z",
+    "runCreatedAt": "2026-10-12T12:00:00.000Z"
+  },
+  "operations": [
+    {
+      "operationKey": "0x1212121212121212121212121212121212121212121212121212121212121212",
+      "kind": "read",
+      "nodeId": "read_market",
+      "iterationPath": [],
+      "outcome": "recorded",
+      "resultRef": "019a0000-0000-7000-8000-000000000401",
+      "updatedAt": "2026-10-12T12:00:00.000Z"
+    }
+  ],
+  "timeline": [
+    {
+      "nodeId": "record_purchase",
+      "message": "AI allowed the paper purchase; it settled.",
+      "createdAt": "2026-10-12T12:00:00.000Z"
+    }
+  ]
+}

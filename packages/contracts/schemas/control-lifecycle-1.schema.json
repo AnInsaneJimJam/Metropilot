@@ -1,0 +1,419 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/control-lifecycle-1.schema.json",
+  "title": "Control lifecycle documents",
+  "description": "User-facing lifecycle and history responses (docs/specs/api-and-data.md section 4): paper estimates, deployment operations, the current deployment and run views. Not a document on its own; each $def carries its schemaVersion.",
+  "$defs": {
+    "PaperEstimate": {
+      "title": "PaperEstimate",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "agentId",
+        "strategyRevisionId",
+        "budgetVersion",
+        "policyVersion",
+        "mode",
+        "runsPerDay",
+        "worstCaseAiCallsPerDay",
+        "createdAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "paper-estimate/1"
+        },
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "agentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "strategyRevisionId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "budgetVersion": {
+          "$ref": "common.schema.json#/$defs/recordVersion"
+        },
+        "policyVersion": {
+          "$ref": "common.schema.json#/$defs/recordVersion"
+        },
+        "mode": {
+          "const": "paper"
+        },
+        "runsPerDay": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "worstCaseAiCallsPerDay": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300000
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "expiresAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      },
+      "description": "Paper run estimate from the strategy's trigger cadence and worst-case bounds. Not a priced quote, billing estimate or ledger reservation (paper uses sponsored quota)."
+    },
+    "DeploymentOperation": {
+      "title": "DeploymentOperation",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "agentId",
+        "kind",
+        "state",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "deployment-operation/1"
+        },
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "agentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "deploymentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "kind": {
+          "enum": [
+            "deploy",
+            "pause",
+            "resume",
+            "stop"
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "succeeded",
+            "failed"
+          ]
+        },
+        "error": {
+          "title": "OperationError",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "$ref": "common.schema.json#/$defs/safeText"
+            },
+            "message": {
+              "$ref": "common.schema.json#/$defs/safeText"
+            }
+          }
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      },
+      "description": "Asynchronous lifecycle operation (GET /v1/operations/{id})."
+    },
+    "AgentDeployment": {
+      "title": "AgentDeployment",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "agentId",
+        "deploymentId",
+        "generation",
+        "mode",
+        "desiredState",
+        "strategyRevisionId",
+        "manifestHash",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "agent-deployment/1"
+        },
+        "agentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "deploymentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "generation": {
+          "$ref": "common.schema.json#/$defs/generation"
+        },
+        "mode": {
+          "$ref": "common.schema.json#/$defs/mode"
+        },
+        "desiredState": {
+          "enum": [
+            "active",
+            "paused",
+            "stopping",
+            "stopped"
+          ]
+        },
+        "strategyRevisionId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "manifestHash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "simulationAccountId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      },
+      "description": "Current deployment of an agent (GET /v1/agents/{id}/deployment)."
+    },
+    "RunSummary": {
+      "title": "RunSummary",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "deploymentId",
+        "generation",
+        "triggerId",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "run-summary/1"
+        },
+        "runId": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "deploymentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "generation": {
+          "$ref": "common.schema.json#/$defs/generation"
+        },
+        "triggerId": {
+          "$ref": "common.schema.json#/$defs/identifier"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "assigned",
+            "waiting",
+            "completed",
+            "failed",
+            "revoked"
+          ]
+        },
+        "error": {
+          "title": "RunErrorView",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "$ref": "common.schema.json#/$defs/safeText"
+            },
+            "message": {
+              "$ref": "common.schema.json#/$defs/safeText"
+            },
+            "nodeId": {
+              "$ref": "common.schema.json#/$defs/identifier"
+            }
+          }
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "RunDetail": {
+      "title": "RunDetail",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "deploymentId",
+        "generation",
+        "triggerId",
+        "status",
+        "createdAt",
+        "updatedAt",
+        "trigger",
+        "operations",
+        "timeline"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "run-detail/1"
+        },
+        "runId": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "deploymentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "generation": {
+          "$ref": "common.schema.json#/$defs/generation"
+        },
+        "triggerId": {
+          "$ref": "common.schema.json#/$defs/identifier"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "assigned",
+            "waiting",
+            "completed",
+            "failed",
+            "revoked"
+          ]
+        },
+        "error": {
+          "title": "RunErrorView",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "$ref": "common.schema.json#/$defs/safeText"
+            },
+            "message": {
+              "$ref": "common.schema.json#/$defs/safeText"
+            },
+            "nodeId": {
+              "$ref": "common.schema.json#/$defs/identifier"
+            }
+          }
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "trigger": {
+          "title": "RunTriggerView",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "acceptedAt",
+            "runCreatedAt"
+          ],
+          "properties": {
+            "observedAt": {
+              "$ref": "common.schema.json#/$defs/timestamp"
+            },
+            "acceptedAt": {
+              "$ref": "common.schema.json#/$defs/timestamp"
+            },
+            "runCreatedAt": {
+              "$ref": "common.schema.json#/$defs/timestamp"
+            }
+          }
+        },
+        "operations": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "title": "RunOperationView",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "operationKey",
+              "kind",
+              "nodeId",
+              "iterationPath",
+              "updatedAt"
+            ],
+            "properties": {
+              "operationKey": {
+                "$ref": "common.schema.json#/$defs/hash32"
+              },
+              "kind": {
+                "$ref": "common.schema.json#/$defs/hostOperationKind"
+              },
+              "nodeId": {
+                "$ref": "common.schema.json#/$defs/identifier"
+              },
+              "iterationPath": {
+                "$ref": "common.schema.json#/$defs/iterationPath"
+              },
+              "outcome": {
+                "enum": [
+                  "pending",
+                  "settled",
+                  "rejected",
+                  "failed",
+                  "acknowledged",
+                  "recorded",
+                  "timeout",
+                  "refused"
+                ]
+              },
+              "resultRef": {
+                "$ref": "common.schema.json#/$defs/uuidv7"
+              },
+              "updatedAt": {
+                "$ref": "common.schema.json#/$defs/timestamp"
+              }
+            }
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "title": "TimelineView",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "nodeId",
+              "message",
+              "createdAt"
+            ],
+            "properties": {
+              "nodeId": {
+                "$ref": "common.schema.json#/$defs/identifier"
+              },
+              "message": {
+                "$ref": "common.schema.json#/$defs/safeText"
+              },
+              "createdAt": {
+                "$ref": "common.schema.json#/$defs/timestamp"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

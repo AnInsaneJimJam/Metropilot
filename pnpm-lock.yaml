@@ -214,6 +214,9 @@ importers:
       '@monad-hack/policy':
         specifier: workspace:*
         version: link:../../packages/policy
+      '@monad-hack/strategy':
+        specifier: workspace:*
+        version: link:../../packages/strategy
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -279,7 +282,7 @@ importers:
         version: 8.20.0
       ajv-formats:
         specifier: 3.0.1
-        version: 3.0.1(ajv@8.20.0)
+        version: 3.0.1
 
   packages/policy:
     dependencies:
@@ -1544,10 +1547,6 @@ snapshots:
   abstract-logging@2.0.1: {}
 
   ajv-formats@3.0.1:
-    optionalDependencies:
-      ajv: 8.20.0
-
-  ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
       ajv: 8.20.0
 

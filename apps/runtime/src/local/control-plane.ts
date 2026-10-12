@@ -130,7 +130,7 @@ export class LocalControlPlane implements ControlApi {
     this.#queue.splice(0, this.#queue.length, ...this.#queue.filter((a) => this.runs.get(a.run.runId)?.status !== 'revoked'));
     deployment.generation += 1;
     deployment.active = true;
-    for (const row of this.#triggerState) if (row.deploymentId === deploymentId) Object.assign(row, { generation: deployment.generation, active: true, crossing: {} });
+    for (const row of this.#triggerState) if (row.deploymentId === deploymentId) Object.assign(row, { generation: deployment.generation, active: true, crossing: {} }) // lastSlot kept: no slot re-runs;
   }
 
   /** Tell polling runtimes to drain (offer disposition `drain`). */

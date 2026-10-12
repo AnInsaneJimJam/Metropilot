@@ -1,0 +1,13 @@
+{
+  "description": "Executor capabilities are compact JWS tokens",
+  "expect": {
+    "fieldPath": "/token",
+    "keyword": "pattern"
+  },
+  "document": {
+    "schemaVersion": "audience-capability/1",
+    "audience": "executor",
+    "token": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+    "expiresAt": "2026-10-12T12:05:00.000Z"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "audience-capability/1",
+  "audience": "executor",
+  "token": "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJleGVjdXRvciJ9.c2lnbmF0dXJl",
+  "expiresAt": "2026-10-12T12:05:00.000Z"
+}

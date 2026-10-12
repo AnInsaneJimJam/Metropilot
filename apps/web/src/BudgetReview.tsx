@@ -48,10 +48,12 @@ export function BudgetReview({
   budget,
   onBudget,
   validation,
+  onOperate,
 }: {
   budget: SaveRequest["budget"];
   onBudget: (b: SaveRequest["budget"]) => void;
   validation: Validation | undefined;
+  onOperate: () => void;
 }) {
   const issue = paperBudgetIssue(
     budget,
@@ -158,13 +160,13 @@ export function BudgetReview({
       <div className="execution-gate">
         <span className="status-dot amber" />
         <div>
-          <h3>Cloud execution is not connected yet</h3>
+          <h3>Paper launch runs on the local stack</h3>
           <p>
-            Save this revision now. Deployment, pause and exit become available
-            when the runtime and executor are connected.
+            Save this revision, then launch, pause and stop it in Operate. Cloud
+            hosting and live trading are not connected yet.
           </p>
         </div>
-        <button disabled>Deploy agent</button>
+        <button onClick={onOperate}>Go to Operate</button>
       </div>
     </section>
   );
