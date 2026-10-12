@@ -16,7 +16,7 @@ const codes = (context: Partial<ActionContext>): string[] => {
 };
 
 test('allows at every limit boundary', () => {
-  assert.deepEqual(evaluateAction(base), { allow: true, policyVersion: 'action-policy/1' });
+  assert.deepEqual(evaluateAction(base), { allow: true, policyVersion: 'action-policy/2' });
 });
 
 test('limits combine by the most restrictive value', () => {

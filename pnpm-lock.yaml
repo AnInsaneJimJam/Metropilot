@@ -187,9 +187,15 @@ importers:
 
   apps/api:
     dependencies:
+      '@monad-hack/accounting':
+        specifier: workspace:*
+        version: link:../../packages/accounting
       '@monad-hack/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@monad-hack/custody':
+        specifier: workspace:*
+        version: link:../../packages/custody
       '@monad-hack/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
@@ -271,7 +277,18 @@ importers:
         specifier: 8.3.2
         version: 8.3.2(@types/node@24.19.0)
 
-  packages/accounting: {}
+  packages/accounting:
+    dependencies:
+      '@monad-hack/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
 
   packages/connectors: {}
 
@@ -283,6 +300,22 @@ importers:
       ajv-formats:
         specifier: 3.0.1
         version: 3.0.1
+
+  packages/custody:
+    dependencies:
+      '@monad-hack/accounting':
+        specifier: workspace:*
+        version: link:../accounting
+      '@monad-hack/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
 
   packages/policy:
     dependencies:

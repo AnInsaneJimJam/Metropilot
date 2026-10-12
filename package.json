@@ -23,7 +23,8 @@
     "runtime:demo": "pnpm generate && node apps/runtime/src/demo.ts",
     "api:runtime": "pnpm generate && LOCAL_RUNTIME_CONTROL=1 node --env-file-if-exists=.env apps/api/src/runtime-control/server.ts",
     "executor:dev": "pnpm generate && LOCAL_EXECUTOR=1 node --env-file-if-exists=.env apps/executor/src/main.ts",
-    "stack:dev": "pnpm generate && node scripts/stack-dev.mjs"
+    "stack:dev": "pnpm generate && node scripts/stack-dev.mjs",
+    "custody:proof": "node --env-file-if-exists=.env scripts/custody-proof.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.0",

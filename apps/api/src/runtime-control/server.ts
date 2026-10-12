@@ -39,7 +39,7 @@ const worker = setInterval(() => {
     const now = new Date().toISOString();
     return store.ingestPrice({ sourceEventKey: `synthetic:${now}`, feedRef: 'paper.weth-usd', price: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal: (price / 100).toFixed(2).replace(/\.?0+$/, '') }, observedAt: now, receivedAt: now });
   })() : Promise.resolve([]);
-  Promise.all([tick, store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox()])
+  Promise.all([tick, store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.meterHosting()])
     .catch((error: unknown) => console.error(`worker tick failed: ${(error as Error).name}`))
     .finally(() => { busy = false; });
 }, 1_000);

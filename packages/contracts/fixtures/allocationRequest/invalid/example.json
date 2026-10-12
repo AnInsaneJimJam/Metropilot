@@ -1,0 +1,17 @@
+{
+  "description": "Unallocated is the remainder, not a target",
+  "expect": {
+    "fieldPath": "/targets/0/bucket",
+    "keyword": "enum"
+  },
+  "document": {
+    "assetRef": "live.USD",
+    "expectedBudgetVersion": 2,
+    "targets": [
+      {
+        "bucket": "unallocated",
+        "amount": "1"
+      }
+    ]
+  }
+}

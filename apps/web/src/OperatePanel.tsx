@@ -3,6 +3,7 @@ import type { GeneratedContractMap, Statement } from "@monad-hack/contracts";
 import { api, ApiError } from "./api.ts";
 import type { SavedAgent } from "./api.ts";
 import type { Validation } from "./validation.ts";
+import { FundsPanel } from "./FundsPanel.tsx";
 
 type Deployment = GeneratedContractMap["agentDeployment"];
 type RunSummary = GeneratedContractMap["runSummary"];
@@ -36,7 +37,7 @@ function describe(e: AuditEvent): string {
   const p = e.payload as Record<string, unknown>;
   switch (e.type) {
     case "deployment.stateChanged":
-      return `Deployment ${String(p["from"])} → ${String(p["to"])} (generation ${String(p["generation"])})`;
+      return `Deployment ${String(p["from"])} → ${String(p["to"])} (generation ${String(p["generation"])})${p["reason"] ? ` · ${String(p["reason"])}` : ""}`;
     case "run.stateChanged":
       return `Run ${String(p["to"])}${p["errorCode"] ? ` · ${String(p["errorCode"])}` : ""}`;
     case "run.step":
@@ -73,6 +74,7 @@ export function OperatePanel({
   const [detail, setDetail] = useState<RunDetail>();
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [versions, setVersions] = useState<Versions>();
+  const [custody, setCustody] = useState<{ enabled: boolean; localFaucet: boolean }>({ enabled: false, localFaucet: false });
   const [estimate, setEstimate] = useState<Estimate>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -102,7 +104,12 @@ export function OperatePanel({
   }, [refresh]);
 
   useEffect(() => {
-    void api<{ paperVersions?: Versions }>("/catalog").then((c) => setVersions(c.paperVersions)).catch(() => undefined);
+    void api<{ paperVersions?: Versions; capabilities?: { custody?: boolean; localFaucet?: boolean } }>("/catalog")
+      .then((c) => {
+        setVersions(c.paperVersions);
+        setCustody({ enabled: Boolean(c.capabilities?.custody), localFaucet: Boolean(c.capabilities?.localFaucet) });
+      })
+      .catch(() => undefined);
   }, []);
 
   // Live activity: the browser resumes with Last-Event-ID after a reconnect.
@@ -311,6 +318,7 @@ export function OperatePanel({
               ))}
             </ul>
           )}
+          {custody.enabled && agentId && <FundsPanel agentId={agentId} localFaucet={custody.localFaucet} />}
         </div>
         <aside className="review-aside">
           <span className="eyebrow">LIVE ACTIVITY</span>
