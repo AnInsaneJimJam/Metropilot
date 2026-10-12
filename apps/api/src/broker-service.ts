@@ -241,7 +241,7 @@ export class PaperBrokerService {
           result: result.value,
           ...(result.receivedAt ? { receivedAt: result.receivedAt } : {}),
         });
-        if (checked.checkpoint.status === "failed")
+        if (checked.checkpoint.status === "failed" && checked.checkpoint.error?.nodeId === request.nodeId)
           return refuse(
             "BROKER_OUTPUT_INVALID",
             "The broker answer does not match the declared result type.",
@@ -286,7 +286,7 @@ export class PaperBrokerService {
       if (
         !parse("brokerResult", JSON.stringify(answer)).ok ||
         !checked ||
-        checked.checkpoint.status === "failed"
+        (checked.checkpoint.status === "failed" && checked.checkpoint.error?.nodeId === request.nodeId)
       )
         answer = {
           schemaVersion: "broker-result/1",
