@@ -15,6 +15,7 @@
     "db:migrate": "node --env-file-if-exists=.env apps/api/src/db/cli.ts migrate",
     "db:seed": "node --env-file-if-exists=.env apps/api/src/db/cli.ts seed",
     "db:seed:live": "node --env-file-if-exists=.env apps/api/src/db/cli.ts seed-live",
+    "db:prune": "node --env-file-if-exists=.env apps/api/src/db/cli.ts prune",
     "db:down": "docker compose --project-directory . -f infra/compose.yaml down",
     "db:reset": "docker compose --project-directory . -f infra/compose.yaml down --volumes",
     "generate": "node packages/contracts/src/generate.mjs",

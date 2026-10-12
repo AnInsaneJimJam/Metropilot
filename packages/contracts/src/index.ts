@@ -43,6 +43,8 @@ export { schema as strategySchema };
 export { canonicalize, contentHash } from './canonical.ts';
 export { intentKey, operationKey } from './keys.ts';
 export type { OperationIdentity } from './keys.ts';
+export { describeReason, reasons } from './reasons.ts';
+export type { ControlReasonCode, DescribedReason, ReasonText, UserReasonCode } from './reasons.ts';
 
 // Run documents embed the language core's checkpoint; type it with the strategy schema's own RunCheckpoint so
 // the interpreter's values flow through without casts (the two generators differ only in index signatures).

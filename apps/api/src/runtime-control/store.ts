@@ -9,7 +9,7 @@ import { AccountingError, chargeHostingSlice, currentRateCard, sliceIndexAt } fr
 import { createHash, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { contentHash, validate } from '@monad-hack/contracts';
-import type { AssignmentOfferV2, AssignmentPoll, AudienceCapability, ContractDocumentMap, RunComplete, RunResult, RunState, RunWait, RuntimeAssignment, TimelineEntry } from '@monad-hack/contracts';
+import type { AssignmentOfferV2, AssignmentPoll, AudienceCapability, ContractDocumentMap, RunComplete, RunResult, RunState, RunWait, RuntimeAssignment, TimelineEntry, UserReasonCode } from '@monad-hack/contracts';
 import { MAX_CAPABILITY_SECONDS, signCapability } from '@monad-hack/contracts/capability';
 import { compileStrategy, LanguageError, runIdentity, scheduleSlot, transitionPrice } from '@monad-hack/strategy';
 import type { Catalog, CompiledStrategy, CrossingState, PriceObservation } from '@monad-hack/strategy';
@@ -338,10 +338,17 @@ export class RuntimeControlStore {
         try {
           decision = transitionPrice(trigger, state.crossing as CrossingState, observation, now);
         } catch (error) {
-          if (error instanceof LanguageError) return { deploymentId: row.deployment_id, triggerId: row.trigger_id, reason: `refused:${error.code}` };
-          throw error;
+          if (!(error instanceof LanguageError)) throw error;
+          // Language error codes are error-1 codes; reasons.test.ts checks every one the language core raises.
+          await this.#skipped(c, state, row.trigger_id, observation.sourceEventKey, error.code as UserReasonCode);
+          return { deploymentId: row.deployment_id, triggerId: row.trigger_id, reason: `refused:${error.code}` };
         }
         await c.query('update trigger_state set crossing = $3 where deployment_id = $1 and trigger_id = $2', [row.deployment_id, row.trigger_id, decision.state]);
+        // A crossing held back by the cooldown, or a price too old to act on, is a blocked run the user should see;
+        // baseline, no-crossing and out-of-order observations are routine and stay out of the stream.
+        if (decision.reason === 'cooldown' || decision.reason === 'stale') {
+          await this.#skipped(c, state, row.trigger_id, observation.sourceEventKey, decision.reason === 'cooldown' ? 'TRIGGER_COOLDOWN' : 'STALE_DATA');
+        }
         if (!decision.fire) return { deploymentId: row.deployment_id, triggerId: row.trigger_id, reason: decision.reason };
         const runId = await this.#createRun(c, state, row.trigger_id, observation.sourceEventKey, {
           ...(observation.observationRef ? { observationRef: observation.observationRef } : {}), observedAt: observation.observedAt, acceptedAt: now, runCreatedAt: now,
@@ -853,8 +860,15 @@ export class RuntimeControlStore {
       [d.id, d.generation],
     );
     for (const run of open.rows) {
-      await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId: d.id, runId: run.run_id, actor, type: 'run.stateChanged', payload: { from: run.status, to: 'revoked' }, source: `run:${run.run_id}:revoked` });
+      await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId: d.id, runId: run.run_id, actor, type: 'run.stateChanged', payload: { from: run.status, to: 'revoked', reasonCode: 'GENERATION_REVOKED' }, source: `run:${run.run_id}:revoked` });
     }
+  }
+
+  /** An observation.skipped event for a trigger observation that did not start a run, with a vocabulary reason (#19). */
+  async #skipped(c: pg.PoolClient, state: { tenant_id: string; deployment_id: string; generation: number }, triggerId: string, sourceEventKey: string, reasonCode: UserReasonCode): Promise<void> {
+    const agent = await c.query<{ agent_id: string }>('select agent_id from deployments where tenant_id = $1 and id = $2', [state.tenant_id, state.deployment_id]);
+    const key = sha(`${state.deployment_id}\n${state.generation}\n${triggerId}\n${sourceEventKey}`);
+    await this.#audit(c, { tenantId: state.tenant_id, agentId: agent.rows[0]!.agent_id, deploymentId: state.deployment_id, actor: { kind: 'controlPlane' }, type: 'observation.skipped', payload: { triggerId, generation: state.generation, reasonCode }, source: `skip:${key}` });
   }
 
   /** Append one audit-event/2 row with the next per-tenant sequence; a repeated source is a no-op. */

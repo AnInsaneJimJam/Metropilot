@@ -468,6 +468,48 @@ describe('database', { skip }, () => {
       await rejects(intent('019a0000-0000-7000-8000-0000000000b6', 'paper', 'reserved', '0x' + 'b5'.repeat(32)), '23505');
     });
 
+    test('audit retention (0008): only prune_audit_events deletes, only an old prefix, never money rows', async () => {
+      const tenant = '019a0000-0000-7000-8000-0000000000e1';
+      await db.query(`insert into tenants (id, auth_subject) values ($1, 'retention-check')`, [tenant]);
+      const old = new Date(Date.now() - 40 * 86_400_000).toISOString();
+      const recent = new Date().toISOString();
+      const intent = '019a0000-0000-7000-8000-0000000000e2';
+      // 1–2 old; 3 old money row (intent-linked); 4 recent; 5 old but published after 4 (out of time order); 6 old.
+      const rows: [number, string, string, string | null][] = [
+        [1, 'run.step', old, null], [2, 'policy.denied', old, null], [3, 'transaction.stateChanged', old, intent],
+        [4, 'run.step', recent, null], [5, 'run.step', old, null], [6, 'run.step', old, null],
+      ];
+      await db.query('insert into tenant_streams (tenant_id, last_sequence) values ($1, 6)', [tenant]);
+      for (const [sequence, type, at, intentId] of rows) {
+        await db.query(
+          `insert into audit_events (tenant_id, sequence, intent_id, actor_kind, trace_id, type, payload, occurred_at, source) values ($1, $2, $3, 'system', $4, $5, '{}', $6, $7)`,
+          [tenant, sequence, intentId, 'ab'.repeat(16), type, at, `retention-check:${sequence}`],
+        );
+      }
+      await rejects(db.query(`update audit_events set payload = '{"x":1}' where tenant_id = $1`, [tenant]), 'P0001');
+      await rejects(db.query('delete from audit_events where tenant_id = $1 and sequence = 1', [tenant]), 'P0001');
+      await rejects(db.query(`select prune_audit_events($1, now())`, [tenant]), 'P0001');
+      // Even with the prune flag set by hand, a money row is never deleted.
+      await db.query('begin');
+      await db.query(`select set_config('app.audit_prune', 'on', true)`);
+      await rejects(db.query('delete from audit_events where tenant_id = $1 and sequence = 3', [tenant]), 'P0001');
+      await db.query('rollback');
+
+      const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const pruned = await db.query<{ removed: string }>('select prune_audit_events($1, $2) as removed', [tenant, cutoff]);
+      // Only the prefix before the first recent event (4) is eligible. 1 goes; 2 (a policy denial) and 3 (intent-linked)
+      // are money records and stay; 5 and 6 follow a newer event and stay.
+      assert.equal(pruned.rows[0]!.removed, '1');
+      const left = await db.query<{ sequence: string }>('select sequence from audit_events where tenant_id = $1 order by sequence', [tenant]);
+      assert.deepEqual(left.rows.map((r) => Number(r.sequence)), [2, 3, 4, 5, 6]);
+      const stream = await db.query<{ retained_after: string }>('select retained_after from tenant_streams where tenant_id = $1', [tenant]);
+      assert.equal(stream.rows[0]!.retained_after, '1');
+      // Repeating is a no-op; the floor never moves back, and appends still work afterwards.
+      assert.equal((await db.query<{ removed: string }>('select prune_audit_events($1, $2) as removed', [tenant, cutoff])).rows[0]!.removed, '0');
+      assert.equal((await db.query('select retained_after from tenant_streams where tenant_id = $1', [tenant])).rows[0]!.retained_after, '1');
+      await rejects(db.query('update tenant_streams set retained_after = 7 where tenant_id = $1', [tenant]), '23514');
+    });
+
     test('catalog modes are limited to paper and live', async () => {
       await rejects(
         db.query(`insert into catalog_versions (kind, ref, version, modes, content_hash, definition) values ('network', 'x', '1.0.0', '{mainnet}', $1, '{}')`, ['0x' + 'ab'.repeat(32)]),

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { describeReason } from "@monad-hack/contracts";
 import type { GeneratedContractMap, Statement } from "@monad-hack/contracts";
 import { api, ApiError } from "./api.ts";
 import type { SavedAgent } from "./api.ts";
@@ -32,6 +33,13 @@ function needs(body: readonly Statement[], out = { connectors: new Map<string, S
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
+/** " · Title: explanation" for a reason code from the shared vocabulary (#19); unknown codes keep their code. */
+function because(code: unknown): string {
+  if (typeof code !== "string" || !code) return "";
+  const reason = describeReason(code);
+  return ` · ${reason.title}: ${reason.explanation}${reason.known ? "" : ` (${code})`}`;
+}
+
 /** One readable line per audit event; payloads are already redacted server-side. */
 function describe(e: AuditEvent): string {
   const p = e.payload as Record<string, unknown>;
@@ -39,19 +47,21 @@ function describe(e: AuditEvent): string {
     case "deployment.stateChanged":
       return `Deployment ${String(p["from"])} → ${String(p["to"])} (generation ${String(p["generation"])})${p["reason"] ? ` · ${String(p["reason"])}` : ""}`;
     case "run.stateChanged":
-      return `Run ${String(p["to"])}${p["errorCode"] ? ` · ${String(p["errorCode"])}` : ""}`;
+      return `Run ${String(p["to"])}${because(p["reasonCode"] ?? p["errorCode"])}`;
+    case "observation.skipped":
+      return `No run for ${String(p["triggerId"])}${because(p["reasonCode"])}`;
     case "run.step":
       return `${String(p["kind"])} on ${String(p["nodeId"])}: ${String(p["outcome"] ?? p["stage"])}`;
     case "timeline.entry":
       return String(p["message"]);
     case "transaction.stateChanged":
-      return `Paper trade ${String(p["state"])}${p["reason"] ? ` · ${String(p["reason"])}` : ""}`;
+      return `Paper trade ${String(p["state"])}${because(p["reason"] ?? p["conflict"])}`;
     case "ledger.settled":
       return "Virtual balances settled";
     case "reservation.changed":
       return `Virtual hold ${String(p["state"])}`;
     case "policy.denied":
-      return `Blocked by policy · ${String(p["reason"])}`;
+      return `Trade blocked${because(p["reason"])}`;
     default:
       return e.type;
   }
@@ -78,6 +88,7 @@ export function OperatePanel({
   const [estimate, setEstimate] = useState<Estimate>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [trimmed, setTrimmed] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!agentId) return;
@@ -100,6 +111,7 @@ export function OperatePanel({
     setEvents([]);
     setDetail(undefined);
     setEstimate(undefined);
+    setTrimmed(false);
     void refresh();
   }, [refresh]);
 
@@ -112,7 +124,9 @@ export function OperatePanel({
       .catch(() => undefined);
   }, []);
 
-  // Live activity: the browser resumes with Last-Event-ID after a reconnect.
+  // Live activity: the browser resumes with Last-Event-ID after a reconnect. A reset means retention removed events
+  // after our cursor; the server already moved Last-Event-ID to the oldest kept event, so the automatic reconnect
+  // continues from there. Reload state and run history, and say that older activity is gone rather than absent.
   useEffect(() => {
     if (!agentId || !connected) return;
     const source = new EventSource(`/v1/agents/${agentId}/stream`);
@@ -120,6 +134,10 @@ export function OperatePanel({
       const event = JSON.parse((message as MessageEvent<string>).data) as AuditEvent;
       setEvents((previous) => (previous.some((e) => e.sequence === event.sequence) ? previous : [event, ...previous].slice(0, 60)));
       if (event.type === "run.stateChanged" || event.type === "deployment.stateChanged") void refresh();
+    });
+    source.addEventListener("reset", () => {
+      setTrimmed(true);
+      void refresh();
     });
     return () => source.close();
   }, [agentId, connected, refresh]);
@@ -293,34 +311,47 @@ export function OperatePanel({
             <div className="empty-state">No runs yet. A run starts when the trigger fires.</div>
           ) : (
             <ul className="operate-runs">
-              {runs.map((r) => (
-                <li key={r.runId}>
-                  <button className="operate-run" aria-expanded={detail?.runId === r.runId} onClick={() => void open(r.runId)}>
-                    <span className={`run-status run-${r.status}`}>{r.status}</span>
-                    <span>{r.triggerId}</span>
-                    <span className="muted">{time(r.createdAt)}</span>
-                    {r.error && <span className="status-error">{r.error.code}</span>}
-                  </button>
-                  {detail?.runId === r.runId && (
-                    <ol className="operate-steps">
-                      {detail.operations.map((o) => (
-                        <li key={o.operationKey}>
-                          <code>{o.kind}</code> {o.nodeId} · {o.outcome ?? "dispatching"}
-                        </li>
-                      ))}
-                      {detail.timeline.map((t) => (
-                        <li key={`${t.nodeId}:${t.createdAt}`}>“{t.message}”</li>
-                      ))}
-                    </ol>
-                  )}
-                </li>
-              ))}
+              {runs.map((r) => {
+                const why = r.error && describeReason(r.error.code);
+                return (
+                  <li key={r.runId}>
+                    <button className="operate-run" aria-expanded={detail?.runId === r.runId} onClick={() => void open(r.runId)}>
+                      <span className={`run-status run-${r.status}`}>{r.status}</span>
+                      <span>{r.triggerId}</span>
+                      <span className="muted">{time(r.createdAt)}</span>
+                      {why && (
+                        <span className="status-error" title={`${why.explanation} (${why.code})`}>
+                          {why.title}
+                        </span>
+                      )}
+                    </button>
+                    {detail?.runId === r.runId && (
+                      <ol className="operate-steps">
+                        {r.error && why && (
+                          <li>
+                            {r.error.message} {why.userAction}
+                          </li>
+                        )}
+                        {detail.operations.map((o) => (
+                          <li key={o.operationKey}>
+                            <code>{o.kind}</code> {o.nodeId} · {o.outcome ?? "dispatching"}
+                          </li>
+                        ))}
+                        {detail.timeline.map((t) => (
+                          <li key={`${t.nodeId}:${t.createdAt}`}>“{t.message}”</li>
+                        ))}
+                      </ol>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
           {custody.enabled && agentId && <FundsPanel agentId={agentId} localFaucet={custody.localFaucet} />}
         </div>
         <aside className="review-aside">
           <span className="eyebrow">LIVE ACTIVITY</span>
+          {trimmed && <p className="note">Older activity was removed by retention; showing events from the oldest kept one.</p>}
           {events.length === 0 ? (
             <p className="note">Waiting for events…</p>
           ) : (

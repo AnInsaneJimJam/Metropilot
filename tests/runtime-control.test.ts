@@ -225,6 +225,22 @@ describe('paper runs end to end over HTTP and PostgreSQL', { skip }, () => {
     assert.equal((await s.supervisor().cycle()).outcome, 'completed');
   });
 
+  test('a crossing held back by the cooldown is an observation.skipped event with a readable reason (#19)', async () => {
+    const s = await paperStack();
+    await deployPreset(s.pool, s.store, 'threshold_sale');
+    const observe = async (key: string, decimal: string) => {
+      await new Promise((r) => setTimeout(r, 5));
+      const now = new Date().toISOString();
+      return s.store.ingestPrice({ sourceEventKey: key, feedRef: 'paper.weth-usd', price: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal }, observedAt: now, receivedAt: now });
+    };
+    const reasons = [];
+    for (const [key, decimal] of [['c1', '2499'], ['c2', '2501'], ['c3', '2499'], ['c4', '2502'], ['c4', '2502']] as const) reasons.push(...(await observe(key, decimal)).map((f) => f.reason));
+    assert.deepEqual(reasons, ['baseline', 'crossing', 'no-crossing', 'cooldown', 'out-of-order']);
+    const skipped = await s.pool.query<{ payload: { triggerId: string; reasonCode: string } }>(`select payload from audit_events where type = 'observation.skipped'`);
+    assert.deepEqual(skipped.rows.map((r) => [r.payload.triggerId, r.payload.reasonCode]), [['crossing', 'TRIGGER_COOLDOWN']], 'routine and repeated observations add nothing');
+    assert.equal((await s.runs()).length, 1);
+  });
+
   test('a pending swap releases the runtime; settlement records it and the resume completes the run', async () => {
     const s = await paperStack({ autoSettle: false });
     await deployPreset(s.pool, s.store, 'ai_gated_purchase');

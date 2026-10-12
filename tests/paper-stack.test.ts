@@ -17,6 +17,7 @@ import { verifyCapability } from '../packages/contracts/src/capability.ts';
 import { contentHash, validate } from '../packages/contracts/src/index.ts';
 import { PRESETS, syntheticCatalog, workspaceFromStrategy } from '../packages/strategy/src/index.ts';
 import { createApp } from '../apps/api/src/app.ts';
+import { pruneAudit } from '../apps/api/src/db/cli.ts';
 import { migrate } from '../apps/api/src/db/migrate.ts';
 import { seedPaper } from '../apps/api/src/db/seed.ts';
 import { LifecycleService } from '../apps/api/src/lifecycle.ts';
@@ -310,6 +311,56 @@ describe('paper stack end to end', { skip }, () => {
     assert.ok(BigInt(after[0]!) > BigInt(first[0]!), 'resumes strictly after the cursor');
   });
 
+  test('retention (#19): a pruned cursor gets a reset on REST and SSE; resuming from it has no gap or duplicate', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    // Three events older than the 30-day retention, written through the stream sequence like any other.
+    const old = new Date(Date.now() - 40 * 86_400_000).toISOString();
+    for (const n of [1, 2, 3]) {
+      const seq = await s.pool.query<{ last_sequence: string }>(
+        `insert into tenant_streams (tenant_id, last_sequence) values ($1, 1) on conflict (tenant_id) do update set last_sequence = tenant_streams.last_sequence + 1 returning last_sequence`, [s.tenant]);
+      await s.pool.query(
+        `insert into audit_events (tenant_id, sequence, agent_id, actor_kind, trace_id, type, payload, occurred_at, source) values ($1, $2, $3, 'controlPlane', $4, 'run.step', '{}', $5, $6)`,
+        [s.tenant, seq.rows[0]!.last_sequence, agentId, 'cd'.repeat(16), old, `old-event-${n}`]);
+    }
+    await s.launch(agentId, request);
+    await s.call('POST', `/agents/${agentId}/pause`, undefined, { 'idempotency-key': 'pause-retention' });
+    const before = (await s.call('GET', `/agents/${agentId}/events?limit=100`)).json.items.map((e: any) => e.sequence);
+    assert.deepEqual(before.slice(0, 3), ['1', '2', '3']);
+
+    assert.deepEqual(await pruneAudit(s.pool, 30), { tenants: 1, removed: 3 });
+    const kept = before.slice(3);
+    // REST: a cursor inside the pruned range is refused with where to resume; no cursor and the floor both read the rest.
+    const expired = await s.call('GET', `/agents/${agentId}/events?after=1`);
+    assert.equal(expired.status, 410);
+    assert.ok(validate('error', expired.json).ok, JSON.stringify(expired.json));
+    assert.equal(expired.json.code, 'CURSOR_EXPIRED');
+    assert.equal(expired.json.details.resumeFrom, '3');
+    assert.deepEqual((await s.call('GET', `/agents/${agentId}/events?limit=100`)).json.items.map((e: any) => e.sequence), kept);
+    assert.deepEqual((await s.call('GET', `/agents/${agentId}/events?after=3&limit=100`)).json.items.map((e: any) => e.sequence), kept);
+
+    // SSE: the reset names the floor (also as its id, so a browser reconnect resumes there) and ends the stream.
+    const stream = async (lastEventId: string, until: (text: string) => boolean) => {
+      const controller = new AbortController();
+      const response = await fetch(`${s.userOrigin}/v1/agents/${agentId}/stream`, { headers: { cookie: 'me', 'last-event-id': lastEventId }, signal: controller.signal });
+      const reader = response.body!.getReader();
+      let text = '';
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        text += new TextDecoder().decode(chunk.value);
+        if (until(text)) break;
+      }
+      controller.abort();
+      return text;
+    };
+    const reset = await stream('2', () => false);
+    assert.match(reset, /^id: 3\nevent: reset\ndata: \{"code":"CURSOR_EXPIRED","resumeFrom":"3"\}$/m);
+    assert.doesNotMatch(reset, /event: audit/);
+    const resumed = await stream('3', (text) => [...text.matchAll(/^id: (\d+)$/gm)].length >= kept.length);
+    assert.deepEqual([...resumed.matchAll(/^id: (\d+)$/gm)].map((m) => m[1]), kept, 'every kept event exactly once');
+  });
+
   test('a pending fill releases the runtime; reconcile → outbox → resume completes the run', async () => {
     const s = await stack({ dispatchInline: false });
     await s.observe();
@@ -356,6 +407,8 @@ describe('paper stack end to end', { skip }, () => {
     assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.generation, '2');
     assert.deepEqual(await s.runtimeStore.tickSchedules(), [], 'a resume does not re-run the slot the old generation ran');
     assert.equal((await s.call('GET', `/agents/${agentId}/runs`)).json.items[0].status, 'revoked');
+    const revoked = await s.pool.query<{ reason: string }>(`select payload ->> 'reasonCode' as reason from audit_events where type = 'run.stateChanged' and payload ->> 'to' = 'revoked'`);
+    assert.deepEqual(revoked.rows.map((r) => r.reason), ['GENERATION_REVOKED'], 'a revoked run carries a vocabulary reason');
     const stopped = await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-000001' });
     assert.equal(stopped.status, 202);
     assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'stopped');

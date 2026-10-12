@@ -445,8 +445,13 @@ export function createApp(options: ApiOptions) {
             cursor = BigInt(String(event.sequence));
             idle = 0;
           }
-        } catch {
-          out.write("event: unavailable\ndata: {}\n\n");
+        } catch (error) {
+          // Retention removed events after the cursor (D44): tell the client to reload history and resume from the
+          // floor. The id line moves the browser's Last-Event-ID there, so its automatic reconnect has no gap.
+          if (error instanceof ControlError && error.code === "CURSOR_EXPIRED") {
+            const resumeFrom = (error.details as { details: { resumeFrom: string } }).details.resumeFrom;
+            out.write(`id: ${resumeFrom}\nevent: reset\ndata: ${JSON.stringify({ code: error.code, resumeFrom })}\n\n`);
+          } else out.write("event: unavailable\ndata: {}\n\n");
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, options.streamPollMillis ?? 500));

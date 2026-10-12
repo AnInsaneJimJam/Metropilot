@@ -241,13 +241,28 @@ export class LifecycleService {
     };
   }
 
-  /** audit-event/2 rows for the agent after a sequence (the SSE cursor), oldest first. */
+  /**
+   * audit-event/2 rows for the agent after a sequence (the SSE cursor), oldest first. Cursor 0 means "from the
+   * oldest kept event". A cursor below the tenant's retention floor throws CURSOR_EXPIRED with the sequence to
+   * resume from (D44): events after it may have been pruned, and an empty page must not imply none occurred.
+   */
   async events(tenantId: string, agentId: string, after: bigint, limit: number): Promise<Record<string, unknown>[]> {
+    // One statement, one snapshot: the floor and the page cannot straddle a concurrent prune.
     const { rows } = await this.#pool.query(
-      'select * from audit_events where tenant_id = $1 and agent_id = $2 and sequence > $3 order by sequence limit $4',
+      `with floor as (select coalesce((select retained_after from tenant_streams where tenant_id = $1), 0) as retained_after)
+       select floor.retained_after as floor_sequence, e.* from floor
+       left join lateral (
+         select * from audit_events
+         where tenant_id = $1 and agent_id = $2 and sequence > greatest($3::bigint, floor.retained_after)
+         order by sequence limit $4
+       ) e on true`,
       [tenantId, agentId, after.toString(), limit],
     );
-    return rows.map((e) => ({
+    const floor = BigInt(rows[0].floor_sequence);
+    if (after > 0n && after < floor) {
+      throw new ControlError(410, 'CURSOR_EXPIRED', 'Older activity was removed by retention; reload history and resume from the oldest kept event.', { details: { resumeFrom: floor.toString() } });
+    }
+    return rows.filter((e) => e.sequence !== null).map((e) => ({
       schemaVersion: 'audit-event/2', sequence: String(e.sequence), tenantId: e.tenant_id,
       ...(e.agent_id ? { agentId: e.agent_id } : {}), ...(e.deployment_id ? { deploymentId: e.deployment_id } : {}),
       ...(e.run_id ? { runId: e.run_id } : {}), ...(e.intent_id ? { intentId: e.intent_id } : {}),

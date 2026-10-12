@@ -35,7 +35,7 @@ The runtime never reads your database, never subscribes to events and has no tim
 | `deployments` (0005 columns) | Network ref, policy and budget versions, resource profile, model pins, estimate, simulation account, `manifest` and `manifest_hash`; `desired_state` is `active`/`paused`/`stopping`/`stopped` ([D37](../decisions.md)) | Paper ⇔ simulation account; at most one non-stopped deployment per agent; FKs to `policies`, `estimates`, `simulation_accounts` |
 | `deployment_operations` | Asynchronous lifecycle operations (`deploy`, `pause`, `resume`, `stop`) | Idempotency rows live in `control_requests` |
 | `market_observations` | Finalized price observations from `ingestPrice`; the executor's recorded market | Primary key `(feed_ref, source_event_key)` |
-| `tenant_streams`, `audit_events` | Per-tenant audit stream (`audit-event/2`), written in the same transaction as each change | Immutable; `unique(source)` makes republishing a no-op |
+| `tenant_streams`, `audit_events` | Per-tenant audit stream (`audit-event/2`), written in the same transaction as each change; `retained_after` is the retention floor (0008) | Immutable except `prune_audit_events` (never money rows); `unique(source)` makes republishing a no-op |
 
 Normalized source events (`events`) are not part of this migration; ingestion owns them.
 
@@ -57,7 +57,8 @@ Then, for each row, in its own transaction:
 2. Call `transitionPrice(trigger, crossingState, observation, now)` from `@monad-hack/strategy`. Do not reimplement crossing, staleness or cooldown in SQL.
 3. `UPDATE trigger_state` with the returned state.
 4. If `fire`: insert the run (with `ON CONFLICT (run_id) DO NOTHING`) and its first assignment.
-5. Commit.
+5. If the reason is `cooldown` or `stale`, or `transitionPrice` refused the observation, append an `observation.skipped` audit event with a vocabulary `reasonCode` (`TRIGGER_COOLDOWN`, `STALE_DATA`, or the language error code) so the user sees the blocked run (D44). Routine `baseline`, `no-crossing` and `out-of-order` results are not recorded.
+6. Commit.
 
 Schedules are the same with `scheduleSlot(trigger, now, lastSlot)`; the source event key is `schedule:<slot>`.
 
@@ -160,8 +161,8 @@ Implemented in [`apps/api/src/lifecycle.ts`](../../apps/api/src/lifecycle.ts) an
 | `GET /v1/agents/{id}/deployment` | `agent-deployment/1`: the open deployment, else the latest |
 | `GET /v1/agents/{id}/runs?limit&cursor` | `run-summary/1` items, newest first |
 | `GET /v1/runs/{runId}` | `run-detail/1`: trigger stage times, operations with outcomes, timeline entries |
-| `GET /v1/agents/{id}/events?after&limit` | `audit-event/2` items after a sequence, oldest first |
-| `GET /v1/agents/{id}/stream` | Server-sent `audit` events (`id:` is the sequence); `Last-Event-ID` resumes; delivery never controls execution |
+| `GET /v1/agents/{id}/events?after&limit` | `audit-event/2` items after a sequence, oldest first; a cursor below the retention floor → `410 CURSOR_EXPIRED` with `details.resumeFrom` |
+| `GET /v1/agents/{id}/stream` | Server-sent `audit` events (`id:` is the sequence); `Last-Event-ID` resumes; a pruned cursor gets `event: reset` (`id:` = `resumeFrom`) and the stream closes; delivery never controls execution |
 | `GET /v1/catalog` | Adds `paperVersions`: enabled paper connector and model profile versions, for building a launch request |
 
 Evidence: [`tests/paper-stack.test.ts`](../../tests/paper-stack.test.ts) runs launch → schedule → runtime (HTTP clients) → real paper executor → outbox → history and stream, plus pending fills, runtime death after admission, pause/resume/stop and launch validation, on PostgreSQL.
