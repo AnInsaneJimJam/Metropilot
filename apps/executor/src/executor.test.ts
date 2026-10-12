@@ -28,7 +28,7 @@ test('capability round-trips and rejects tampering, expiry, wrong audience and l
   const widened = Buffer.from(JSON.stringify({ ...claims, generation: '4' })).toString('base64url');
   assert.throws(() => verifyCapability(`${header}.${widened}.${signature}`, secret, NOW), /signature/);
   assert.throws(() => signCapability({ ...claims, exp: NOW + 301 }, secret), /lifetime/);
-  assert.throws(() => signCapability({ ...claims, aud: 'broker' as 'executor' }, secret), /aud/);
+  assert.throws(() => verifyCapability(signCapability({ ...claims, aud: 'broker' }, secret), secret, NOW), /audience/);
   assert.throws(() => signCapability({ ...claims, wallet: '0x00' } as Capability, secret), /wallet/);
   const none = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
   assert.throws(() => verifyCapability(`${none}.${token.split('.')[1]}.`, secret, NOW), /HS256/);

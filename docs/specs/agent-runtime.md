@@ -218,7 +218,7 @@ Routes below are the proposed `agent-runtime/1` interface. They become implement
 | `POST /internal/v1/runs/{runId}/complete` | Commit completed/failed interpreter outcome (`run-complete/1`) | Conditional on current checkpoint/fencing token |
 | `POST /internal/v1/runs/{runId}/timeline` | Append a bounded user-safe runtime event (`timeline-entry/1`) | Idempotent and redacted; not an authority or result store |
 | `POST /internal/v1/runtime/heartbeat` | Renew assignment lease and report health (`runtime-heartbeat/1` → `runtime-lease/1`; also extends the capability) | Reject stale fencing token; cannot revive a revoked generation |
-| `POST /internal/v1/runtime/capabilities:exchange` | Exchange the control capability for an audience-scoped one (`audience-capability/1`; executor today, D38) | Current lease of an active generation only; scoped to the run; never longer than the control capability. The control capability itself is extended by the heartbeat |
+| `POST /internal/v1/runtime/capabilities:exchange` | Exchange the control capability for an audience-scoped one (`audience-capability/1`; executor or broker, D38) | Current lease of an active generation only; scoped to the run; never longer than the control capability. The control capability itself is extended by the heartbeat |
 
 Implemented 2026-10-08 in `apps/api/src/runtime-control/` (migration 0003); see the [control API guide](../integration/control-api.md). The API performs the database transaction. The runtime never simulates atomicity by making unrelated HTTP writes and assuming they committed together.
 
@@ -235,7 +235,7 @@ The broker returns one of:
 
 The runtime must not automatically submit a fresh model call after an ambiguous timeout. Reads may use bounded retries only under the retry rules in [runtime](runtime.md), with the same logical command identity and freshness deadline.
 
-Persisted answers (`persisted-broker-result/1`) are read by ID through the broker store with tenant/deployment/generation/run scope. Migration 0006 stores immutable answers with operation, node, typed value, timestamps and bounded provenance. A durable operation claim precedes provider dispatch. Concurrent/restarted identical requests return the stored answer without dispatch; conflicting input returns `IDEMPOTENCY_CONFLICT`. Reconciliation appends an answer and updates only the operation pointer. HTTP access and provider adapters are separate work.
+Persisted answers (`persisted-broker-result/1`) are read by ID through the broker store with tenant/deployment/generation/run scope. Migration 0006 stores immutable answers with operation, node, typed value, timestamps and bounded provenance. A durable operation claim precedes provider dispatch. Concurrent/restarted identical requests return the stored answer without dispatch; conflicting input returns `IDEMPOTENCY_CONFLICT`. Reconciliation appends an answer and updates only the operation pointer. The paper broker route `POST /internal/v1/broker/requests` accepts only broker-audience capabilities issued by the control exchange. Admission checks the current assignment lease, generation and waiting command. Reads use fresh recorded observations; `paper.kimi` remains an explicitly synthetic profile. Terminal reconciliation is consumed by the control worker so restart does not lose resume work. Real provider adapters and metering remain #8/#9.
 
 ### Executor
 

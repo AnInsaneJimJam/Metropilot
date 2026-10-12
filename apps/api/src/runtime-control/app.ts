@@ -1,3 +1,5 @@
+import { ControlError } from '../control.ts';
+import { PaperBrokerService } from '../broker-service.ts';
 // Internal runtime-facing HTTP API (docs/specs/agent-runtime.md §7, docs/integration/control-api.md §5).
 // Two credentials: workload identity for the assignment poll (pluggable; the selected mechanism is gate E02),
 // and a per-assignment bearer capability for everything else. A capability authorizes exactly one assignment
@@ -11,6 +13,7 @@ import type { CapabilityScope, RuntimeControlStore } from './store.ts';
 
 export interface InternalAppOptions {
   readonly store: RuntimeControlStore;
+  readonly broker?: PaperBrokerService;
   /** Resolve the calling runtime from workload authentication; undefined refuses the poll. */
   readonly authenticateWorkload: (headers: FastifyRequest['headers']) => string | undefined;
   /** Delay between assignment checks while a long-poll is held open (no connection is held while waiting). */
@@ -26,7 +29,7 @@ export function createInternalApp(options: InternalAppOptions) {
   const app = Fastify({ bodyLimit: 320 * 1024, logger: false, genReqId: uuidv7, requestIdHeader: false });
 
   app.setErrorHandler((error, request, reply) => {
-    const known = error instanceof RunControlError;
+    const known = error instanceof RunControlError || error instanceof ControlError;
     const fastify = error as { statusCode?: number; code?: unknown };
     // Only a lost or refused database connection is a retryable outage; anything else is a defect.
     const outage = !known && typeof fastify.code === 'string' && (/^(08|57P0)/.test(fastify.code) || ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT'].includes(fastify.code));
@@ -110,10 +113,10 @@ export function createInternalApp(options: InternalAppOptions) {
   app.post('/internal/v1/runtime/capabilities::exchange', async (request, reply) => {
     const { scope } = await capability(request);
     const asked = request.body as { audience?: unknown } | null;
-    if (!asked || typeof asked !== 'object' || Object.keys(asked).join() !== 'audience' || asked.audience !== 'executor') {
-      throw new RunControlError('SCHEMA_INVALID', 'Ask for exactly {"audience": "executor"}.');
+    if (!asked || typeof asked !== 'object' || Object.keys(asked).join() !== 'audience' || (asked.audience !== 'executor' && asked.audience !== 'broker')) {
+      throw new RunControlError('SCHEMA_INVALID', 'Ask for exactly one supported audience: executor or broker.');
     }
-    return reply.header('cache-control', 'no-store').send(await store.issueExecutorCapability(scope));
+    return reply.header('cache-control', 'no-store').send(await store.issueAudienceCapability(scope, asked.audience as 'executor' | 'broker'));
   });
 
   app.post('/internal/v1/runtime/heartbeat', async (request, reply) => {
@@ -124,5 +127,14 @@ export function createInternalApp(options: InternalAppOptions) {
     return reply.header('cache-control', 'no-store').send({ schemaVersion: 'runtime-lease/1', leaseExpiresAt: renewed.leaseExpiresAt, capability: { bearer, expiresAt: renewed.capabilityExpiresAt } });
   });
 
+  if (options.broker) {
+    const broker = options.broker;
+    app.post('/internal/v1/broker/requests', async (request, reply) => {
+      const doc = body('brokerRequest', request.body);
+      const bearer = request.headers.authorization?.startsWith('Bearer ') ? request.headers.authorization.slice(7) : '';
+      const result = await broker.request(bearer, doc);
+      return reply.code(result.disposition === 'pending' || result.disposition === 'unknown' ? 202 : 200).header('cache-control', 'no-store').send(result);
+    });
+  }
   return app;
 }
