@@ -246,6 +246,7 @@ describe('schema hygiene', () => {
         'event/1',
         'intent-result/1',
         'paper-estimate/1',
+        'persisted-broker-result/1',
         'run-complete/1',
         'run-detail/1',
         'run-result/1',

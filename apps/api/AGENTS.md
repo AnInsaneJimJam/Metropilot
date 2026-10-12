@@ -24,3 +24,7 @@ Own migrations by agreement with the data owner; never let parallel writers inde
 Dependencies: [contracts](../../packages/contracts/AGENTS.md), [accounting](../../packages/accounting/AGENTS.md), [connectors](../../packages/connectors/AGENTS.md). After API-2/3, [runtime](../runtime/AGENTS.md) can integrate lifecycle. Tick only with implementation and passing evidence.
 
 Progress 2026-10-08 (`codex/user-app-control-api`): local Fastify routes, server compilation, exact virtual-budget configuration checks, tenant-scoped immutable revision saves and transactional response replay are implemented. Real Postgres tests cover concurrency, ownership, reload, pagination and suspended tenants. Hosted identity and lifecycle jobs remain pending; see [slice evidence](../../plan.md#local-control-workspace--2026-10-08).
+
+## Broker-AI issue evidence
+
+- [x] BROKER-1 / #4: immutable persisted answers, scoped result-ID read contract, durable dispatch claims and identical-operation replay. Migration 0006; [persistence tests](src/broker-store.test.ts) and [migration checks](src/db/db.test.ts). Evidence 2026-10-13: `REQUIRE_DB=1 pnpm check` 525 passed, zero skipped. HTTP/provider integration remains #5.

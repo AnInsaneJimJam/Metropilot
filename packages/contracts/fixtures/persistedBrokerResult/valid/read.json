@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "persisted-broker-result/1",
+  "id": "019a0000-0000-7000-8000-000000000401",
+  "operationKey": "0x1212121212121212121212121212121212121212121212121212121212121212",
+  "runId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "nodeId": "price",
+  "kind": "read",
+  "response": {
+    "schemaVersion": "broker-result/1",
+    "operationKey": "0x1212121212121212121212121212121212121212121212121212121212121212",
+    "disposition": "completed",
+    "resultId": "019a0000-0000-7000-8000-000000000401",
+    "value": {
+      "price": {
+        "baseAssetRef": "paper.WETH",
+        "quoteUnit": "USD",
+        "decimal": "2501"
+      },
+      "observedAt": "2026-10-07T11:59:59.400Z"
+    },
+    "observedAt": "2026-10-07T11:59:59.400Z",
+    "receivedAt": "2026-10-07T11:59:59.900Z"
+  },
+  "provenance": {
+    "sourceRef": "paper.weth-usd",
+    "contentHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}

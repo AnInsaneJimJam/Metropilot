@@ -235,6 +235,8 @@ The broker returns one of:
 
 The runtime must not automatically submit a fresh model call after an ambiguous timeout. Reads may use bounded retries only under the retry rules in [runtime](runtime.md), with the same logical command identity and freshness deadline.
 
+Persisted answers (`persisted-broker-result/1`) are read by ID through the broker store with tenant/deployment/generation/run scope. Migration 0006 stores immutable answers with operation, node, typed value, timestamps and bounded provenance. A durable operation claim precedes provider dispatch. Concurrent/restarted identical requests return the stored answer without dispatch; conflicting input returns `IDEMPOTENCY_CONFLICT`. Reconciliation appends an answer and updates only the operation pointer. HTTP access and provider adapters are separate work.
+
 ### Executor
 
 For `swap.exactInput`, the runtime maps the interpreter command to `ActionIntent` and calls `POST /internal/v1/intents` exactly as specified in [executor](executor.md). It computes:

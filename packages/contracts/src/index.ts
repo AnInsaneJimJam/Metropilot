@@ -20,6 +20,7 @@ import runCompleteSchema from '../schemas/run-complete-1.schema.json' with { typ
 import runStateSchema from '../schemas/run-state-1.schema.json' with { type: 'json' };
 import timelineEntrySchema from '../schemas/timeline-entry-1.schema.json' with { type: 'json' };
 import brokerRequestSchema from '../schemas/broker-request-1.schema.json' with { type: 'json' };
+import persistedBrokerResultSchema from '../schemas/persisted-broker-result-1.schema.json' with { type: 'json' };
 import brokerResultSchema from '../schemas/broker-result-1.schema.json' with { type: 'json' };
 import assignmentOffer2Schema from '../schemas/assignment-offer-2.schema.json' with { type: 'json' };
 import artifact1Schema from '../schemas/artifact-1.schema.json' with { type: 'json' };
@@ -48,10 +49,11 @@ export type ContractDocumentMap = Omit<GeneratedContractMap, 'runWait' | 'runCom
 export type ContractKind = keyof ContractDocumentMap;
 
 export const schemaBaseUri = 'https://monad-hack.example/schemas/';
-export const schemaDocuments: readonly object[] = [schema, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, auditEvent2Schema, lifecycle];
+export const schemaDocuments: readonly object[] = [persistedBrokerResultSchema, schema, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, auditEvent2Schema, lifecycle];
 
 /** Schema reference per kind; strategy is absolute because its schema lives beside the language core. */
 export const contractRefs = {
+  persistedBrokerResult: schemaBaseUri + 'persisted-broker-result-1.schema.json',
   controlSave: control.$id + '#/$defs/SaveStrategy',
   controlAgent: control.$id + '#/$defs/SavedAgent',
   strategy: schema.$id,
@@ -88,6 +90,7 @@ export const contractRefs = {
 
 /** UTF-8 byte ceilings checked before JSON parsing (strategy-language.md section 7, runtime.md limits). */
 export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
+  persistedBrokerResult: 68 * 1024,
   controlSave: 512 * 1024,
   controlAgent: 512 * 1024,
   strategy: 256 * 1024,
