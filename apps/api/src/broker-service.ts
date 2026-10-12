@@ -1,3 +1,4 @@
+import { AiAllowance } from './ai-allowance.ts';
 import type { KimiBroker } from './kimi-broker.ts';
 import type pg from "pg";
 import { canonicalize, contentHash, parse } from "@monad-hack/contracts";
@@ -24,10 +25,12 @@ export interface PaperBrokerOptions {
 
 export class PaperBrokerService {
   readonly store: BrokerStore;
+  readonly allowance: AiAllowance;
   readonly options: PaperBrokerOptions;
   constructor(options: PaperBrokerOptions) {
     this.options = options;
     this.store = new BrokerStore(options.pool);
+    this.allowance = new AiAllowance(options.pool, options.now);
   }
 
   async request(token: string, request: BrokerRequest): Promise<BrokerResult> {
@@ -103,7 +106,7 @@ export class PaperBrokerService {
           : request.modelProfileRef!,
       contentHash: await contentHash(request),
     };
-    return this.store.execute(scope, request, provenance, async () => {
+    const answer = await this.store.execute(scope, request, provenance, async () => {
       const refuse = (
         code: NonNullable<BrokerResult["reason"]>["code"],
         message: string,
@@ -204,12 +207,20 @@ export class PaperBrokerService {
         const profile = catalog.modelProfiles[request.modelProfileRef!];
         if (!row.model_profiles[request.modelProfileRef!] || !profile || profile.mode !== 'paper')
           return refuse('BROKER_NOT_ALLOWED', 'The model profile is not enabled for this paper deployment.');
+        let ceiling = 0n;
+        const kimi = profile.provider === 'kimi' ? this.options.kimi : undefined;
         if (profile.provider === 'kimi') {
-          const kimi = this.options.kimi;
-          if (!kimi || profile.modelId !== kimi.modelId || row.model_profiles[request.modelProfileRef!] !== kimi.profileVersion)
+          if (!kimi || !kimi.adapter.enabled || profile.modelId !== kimi.modelId || row.model_profiles[request.modelProfileRef!] !== kimi.profileVersion)
             return refuse('BROKER_NOT_ALLOWED', 'The exact Kimi profile is not verified or pinned.');
+          try { ceiling = kimi.adapter.prepare(request).reservedUsdMicros; }
+          catch { return refuse('BROKER_BUDGET_EXHAUSTED', 'This AI request exceeds the bounded profile.'); }
+        } else if (profile.provider !== 'synthetic') return refuse('BROKER_NOT_ALLOWED', 'The model provider is not enabled.');
+        await this.allowance.settleKnown();
+        const allowance = await this.allowance.reserve(scope, request.operationKey, ceiling);
+        if (!allowance.allowed) return refuse('BROKER_BUDGET_EXHAUSTED', allowance.message);
+        if (kimi) {
           result = await kimi.dispatch(scope, request);
-        } else if (profile.provider === 'synthetic') {
+        } else {
           result = this.options.decide
             ? await this.options.decide(request)
             : {
@@ -230,7 +241,7 @@ export class PaperBrokerService {
                           "Synthetic summary; no model provider was called.",
                       },
               };
-        } else return refuse('BROKER_NOT_ALLOWED', 'The model provider is not enabled.');
+        }
       }
       if (!parse("brokerResult", JSON.stringify(result)).ok)
         return refuse(
@@ -252,6 +263,8 @@ export class PaperBrokerService {
       }
       return result;
     });
+    if (request.kind === 'ai.decide') await this.allowance.settleKnown();
+    return answer;
   }
 
   async reconcile(

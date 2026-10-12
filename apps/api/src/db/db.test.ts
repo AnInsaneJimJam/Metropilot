@@ -3,6 +3,7 @@
 // Skips when DATABASE_URL is unset or unreachable, unless REQUIRE_DB=1 (CI and `pnpm bootstrap`).
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -270,6 +271,31 @@ describe('database', { skip }, () => {
       await rejects(insert(seedTenantId, '175'), '23505');
       await rejects(db.query('update ai_metering set input_rate=0'), 'P0001');
       await rejects(db.query('delete from ai_metering'), 'P0001');
+    });
+
+    test('AI allowance (0008) keeps tenant ownership, UTC window and charge ceilings immutable', async () => {
+      const key=H('9b'),agent=paperSeed().request.agentId;
+      const insert=(tenant:string,amount:string)=>db.query(`insert into ai_allowance_reservations(tenant_id,operation_key,agent_id,authorized_at,authorized_day,reserved_usd_micros,state) values($1,$2,$3,now(),(now() at time zone 'UTC')::date,$4,'held')`,[tenant,key,agent,amount]);
+      await rejects(insert(seedTenantId,'100001'),'23514');
+      await rejects(insert('019a0000-0000-7000-8000-000000000099','100'),'23503');
+      await insert(seedTenantId,'100');
+      await rejects(insert(seedTenantId,'100'),'23505');
+      await rejects(db.query('update ai_allowance_reservations set reserved_usd_micros=0'),'P0001');
+      await rejects(db.query('delete from ai_allowance_reservations'),'P0001');
+      await rejects(db.query("update ai_allowance_reservations set state='settled',charged_usd_micros=101,settled_at=now()"),'23514');
+      await db.query("update ai_allowance_reservations set state='settled',charged_usd_micros=50,settled_at=now()");
+      await rejects(db.query('update ai_allowance_reservations set charged_usd_micros=0'),'P0001');
+    });
+
+    test('allowance backfill (0009) preserves an earlier unknown hold exactly once', async () => {
+      const migration = await readFile(new URL('../../migrations/0009_ai_allowance_backfill.sql',import.meta.url),'utf8');
+      const key=H('9c'),agent=paperSeed().request.agentId;
+      await db.query("insert into run_operations(tenant_id,run_id,operation_key,kind,node_id,iteration_path) values($1,$2,$3,'ai.decide','legacy_ai','[]')",[seedTenantId,runId,key]);
+      await db.query("insert into broker_operations(tenant_id,operation_key,run_id,request_hash,request) values($1,$2,$3,$4,'{\"kind\":\"ai.decide\"}')",[seedTenantId,key,runId,H('aa')]);
+      await db.query(`insert into ai_metering(tenant_id,operation_key,agent_id,model_id,rate_version,input_rate,cached_input_rate,output_rate,max_input_tokens,max_output_tokens,reserved_usd_micros,state,authorized_at) values($1,$2,$3,'synthetic-test','test/1',950000,160000,4000000,100,20,175,'reconciling','2026-10-12T23:59:59Z')`,[seedTenantId,key,agent]);
+      await db.query(migration); await db.query(migration);
+      const result=await db.query("select state,reserved_usd_micros,to_char(authorized_day,'YYYY-MM-DD') as day from ai_allowance_reservations where operation_key=$1",[key]);
+      assert.deepEqual(result.rows,[{ state:'held',reserved_usd_micros:'175',day:'2026-10-12' }]);
     });
 
     test('artifacts and timeline entries are immutable', async () => {
