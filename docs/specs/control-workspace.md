@@ -11,7 +11,7 @@ pnpm api:dev
 pnpm web:dev
 ```
 
-Open http://127.0.0.1:5173/. The development API listens on 127.0.0.1:3001 and Vite proxies `/v1`. Both `http://127.0.0.1:5173` and `http://localhost:5173` are accepted for local development. The cookie is HTTP-only and SameSite Strict; foreign origins and rebinding hosts are rejected. This entry point refuses production and requires the explicit local flag. It represents one local developer workspace, **not production authentication**. A hosted entry point must supply a verified session resolver to `createApp`, terminate HTTPS, and implement the identity integration described in [security](security.md).
+Open http://127.0.0.1:5173/. The development API listens on 127.0.0.1:3001 and Vite proxies `/v1`. Both `http://127.0.0.1:5173` and `http://localhost:5173` are accepted for local development. The cookie is HTTP-only and SameSite Strict; foreign origins and rebinding hosts are rejected. This entry point refuses production and requires the explicit local flag. It represents one local developer workspace, **not production authentication**. The hosted entry point is `pnpm api:hosted` ([hosted.ts](../../apps/api/src/hosted.ts), [D43](../decisions.md)): it requires `NODE_ENV=production`, an `https://` `PUBLIC_ORIGIN`, `PRIVY_APP_ID`, `PRIVY_VERIFICATION_KEY`, `RUNTIME_IMAGE_DIGEST` and `DATABASE_URL`, refuses `LOCAL_WORKSPACE=1`, and signs users in only through `POST /v1/auth/session` with a verified Privy token. TLS terminates at the ingress. The web app has no hosted login screen yet.
 
 ## User flow
 
@@ -19,7 +19,7 @@ Build with blocks or the keyboard rule inspector. Rehearse against clearly label
 
 The workbench uses one graphite/citron visual system across Blockly, parameters and rehearsal. Compiled scope shows the actual market, trigger and worst-case run bounds. Selected parameters precede safety checks; phone-sized screens initially use readable rule forms, with Blocks available. Motion respects reduced-motion preferences.
 
-The API reruns conversion, compilation and paper-profile checks. It stores the workspace and immutable AST revision in one transaction with the current draft pointer and replayable response. Compiler errors identify blocks. Transport failures reuse the same request key while content and version remain unchanged. New edits made during a save remain unsaved. Stale versions return a conflict; reopening the saved strategy requires confirmation before discarding local edits.
+The API reruns conversion, compilation and paper-profile checks against the paper catalog resolved from `catalog_versions` (D42); the browser editor and rehearsal keep the strategy package's synthetic catalog, which the seeded `1.1.0` rows reproduce. It stores the workspace and immutable AST revision in one transaction with the current draft pointer and replayable response. Compiler errors identify blocks. Transport failures reuse the same request key while content and version remain unchanged. New edits made during a save remain unsaved. Stale versions return a conflict; reopening the saved strategy requires confirmation before discarding local edits.
 
 ## Wire contracts
 
@@ -27,8 +27,9 @@ The API reruns conversion, compilation and paper-profile checks. It stores the w
 
 | Route | Behavior |
 | --- | --- |
-| GET `/v1/session` | Explicit local-only cookie bootstrap; absent on a production factory |
-| GET `/v1/catalog` | Synthetic paper catalog and truthful capabilities |
+| GET `/v1/session` | Explicit local-only cookie bootstrap; `401` on the hosted factory |
+| POST/DELETE `/v1/auth/session` | Hosted only: `{token}` (Privy access token) → `{mode: "hosted", expiresAt}` plus the session cookie; DELETE revokes it (`204`). `404` on the local entry point |
+| GET `/v1/catalog` | Paper catalog resolved from `catalog_versions` (synthetic data, labelled), newest usable versions and truthful capabilities |
 | GET `/v1/agents` | Authenticated drafts; limit 1–100 (default 25), UUIDv7 cursor |
 | POST `/v1/strategies/validate` | Ephemeral authoritative AST and budget checks |
 | POST `/v1/agents` | Create a draft with its first immutable revision; Idempotency-Key required |

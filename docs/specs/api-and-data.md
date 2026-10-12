@@ -71,13 +71,16 @@ The API compiles/resolves this into a `DeploymentManifest`:
 | `policyRef`, `budgetVersion`, `estimateRef` | Approved versions; current stricter policy also checked at action time |
 | `createdAt`, `configHash` | Creation timestamp and JCS/SHA-256 hash excluding the hash field itself |
 
+Implementation (2026-10-13, D42): `deployment-manifest/2` carries `catalogPins`, the exact `catalog_versions` rows (kind, ref, version, content hash) the deployment's catalog artifact (`catalogHash`) was resolved from; compilation and launch never use the synthetic catalog. A disabled or malformed selected version refuses launch with its reason, and a resume refuses when a pinned row was disabled. Paper and live registries are resolved separately.
+
 Manifest artifact is read-only and authenticated; runtime confirms its hash against the deployment record delivered by the control plane. User export strips internal credential/artifact references. Immutable deployment config does not freeze user authority forever: current revocation, budget availability, and policy tightening override it.
 
 ## 4. Public HTTP endpoints
 
 | Endpoint | Request / response behavior |
 | --- | --- |
-| `GET /v1/catalog` | Network, connector/action, model/profile, resource and rate versions; readiness and reason |
+| `POST/DELETE /v1/auth/session` | Hosted only: exchange a verified identity-provider token for an HTTP-only application session cookie / revoke it ([D43](../decisions.md)) |
+| `GET /v1/catalog` | Network, connector/action, model/profile, resource and rate versions; readiness and reason. Implemented for paper: the catalog resolved from `catalog_versions` plus the newest usable connector/model versions (D42) |
 | `POST /v1/agents` | Create draft agent; does not launch or create funded wallet |
 | `GET/PATCH /v1/agents/{id}` | Read/update mutable name and draft references with revision protection |
 | `POST /v1/agents/{id}/strategy-revisions` | Workspace/AST submission; immutable revision and validation report |
@@ -131,7 +134,7 @@ All money arithmetic is exact `numeric(78,0)` for atomic quantities with nonnega
 
 | Relation | Key columns / constraints |
 | --- | --- |
-| `tenants`, `users` | Unique external auth subject; active/suspended state |
+| `tenants`, `users` | Unique external auth subject; active/suspended state. Implemented as `tenants` plus `identities (provider, subject) → tenant` and `sessions` (token SHA-256, expiry, revocation; migration 0007, D43) |
 | `agents` | Tenant/ID, mode-independent draft refs, name, version; composite ownership key |
 | `strategy_revisions` | Tenant/ID, agent, content hash, language version, AST/workspace, validation; immutable |
 | `deployments` | Agent generation unique; manifest/hash, desired/observed state, timestamps; partial uniqueness for active generation |
@@ -178,3 +181,4 @@ These resolve gaps in sections 1–6 with the smallest choice; the schema files 
 | Byte ceilings | `parse()` checks these before JSON parsing: strategy 256 KiB, DeploymentRequest 1 MiB, source/audit event 64 KiB, error body 16 KiB, asset identity 4 KiB. |
 | Runtime contracts (2026-10-07) | `action-intent/1`, `intent-result/1`, `runtime-assignment/1`, `assignment-poll/1`, `assignment-offer/1`, `run-state/1`, `run-wait/1`, `run-result/1`, `run-complete/1`, `timeline-entry/1`, `broker-request/1`, `broker-result/1` ([agent runtime](agent-runtime.md) sections 5–8, [executor](executor.md) section 4). Shared `common` additions: `generation` and `fencingToken` (positive decimal strings), `iterationPath`, `hostOperationKind`, `boundRecord` (evaluated literals only), `safeText`, `opaqueKey`. Keys: `intentKey()` (`intent-key/1`) and `operationKey()` (`operation-key/1`; a swap's operation key is its intent key). Run documents embed the language core's `strategy-run/2` checkpoint by reference. Open payloads are limited to recorded read/AI records, which the interpreter types. Error codes gain `LEASE_FENCED`, `GENERATION_REVOKED` and `INTERNAL_ERROR` (a defect; `PROVIDER_UNAVAILABLE` only for a lost dependency). 2026-10-08: `assignment-offer/2` (adds the per-assignment `capabilityGrant`; supersedes `/1`), `artifact/1` (≤1 MiB), `runtime-heartbeat/1` and `runtime-lease/1`; tables in [migration 0003](../../apps/api/migrations/0003_runtime_control.sql). Ceilings: run-wait/complete 256 KiB, run-state 320 KiB, run-result and broker-result 64 KiB, broker-request and timeline 32 KiB, assignment documents and intent documents 16 KiB, poll 4 KiB. |
 | Lifecycle and history (2026-10-12) | `deployment-manifest/1` (first producer: the paper launch; its hash is the assignment `manifestHash`), `audience-capability/1` (executor capability exchange, D38), `audit-event/2` (supersedes `/1`: `runId` is the run hash, adds `deploymentId`, `run.stateChanged`, `timeline.entry`; D40) and the user documents of `control-lifecycle-1` (`paper-estimate/1`, `deployment-operation/1`, `agent-deployment/1`, `run-summary/1`, `run-detail/1`). The D35 capability format lives in `packages/contracts/src/capability.ts` (server-only export). Tables in [migration 0005](../../apps/api/migrations/0005_deployment_lifecycle.sql). |
+| Catalog pins (2026-10-13) | `deployment-manifest/2` supersedes `/1` for new deployments: adds required `catalogPins` (1–256 `{kind, ref, version, contentHash}`, ordered by kind then ref, one per kind and ref; the uniqueness is checked by the producer). Ceiling 64 KiB. [Migration 0006](../../apps/api/migrations/0006_catalog_pins.sql) lets `deployments.manifest` hold either version and requires non-empty pins on `/2` (D42). |

@@ -12,6 +12,8 @@ import { validate } from "@monad-hack/contracts";
 import { createApp } from "./app.ts";
 import { ControlStore } from "./store.ts";
 import { migrate } from "./db/migrate.ts";
+import { seedPaper } from "./db/seed.ts";
+import { CatalogResolver } from "./catalog.ts";
 import type { SaveStrategy, SavedAgent } from "./control.ts";
 const url = process.env["DATABASE_URL"];
 if (!url && process.env["REQUIRE_DB"] === "1")
@@ -63,13 +65,17 @@ describe("control API / real PostgreSQL", { skip: !url }, () => {
     const c = new pg.Client({ connectionString: u.toString() });
     await c.connect();
     await migrate(c);
+    await seedPaper(c);
     await c.end();
     store = new ControlStore(pool);
     alice = await store.tenant("test-alice");
     bob = await store.tenant("test-bob");
+    const resolver = new CatalogResolver();
     app = createApp({
       store,
       origin: "http://127.0.0.1:5173",
+      // Drafts compile against the seeded catalog_versions registry, as in production (issue #18).
+      catalog: async () => (await resolver.resolve(pool, { mode: "paper" })).catalog,
       authenticate: async (cookie) =>
         cookie === "alice" ? alice : cookie === "bob" ? bob : undefined,
     });
@@ -328,6 +334,7 @@ describe("control API / real PostgreSQL", { skip: !url }, () => {
     assert.equal((await app.inject({ url: "/v1/session" })).statusCode, 401);
     const local = createApp({
       store,
+      catalog: async () => syntheticCatalog,
       origin: "http://127.0.0.1:5173",
       authenticate: async () => alice,
       localSession: async () => ({
@@ -411,6 +418,7 @@ describe("control API request boundaries", () => {
     });
     const app = createApp({
       store,
+      catalog: async () => syntheticCatalog,
       origin: "http://127.0.0.1:5173",
       authenticate: async () => tenantId,
     });
@@ -456,6 +464,7 @@ describe("control API request boundaries", () => {
     let resolutions = 0;
     const app = createApp({
       store,
+      catalog: async () => syntheticCatalog,
       origin: "http://127.0.0.1:5173",
       authenticate: async () => (++resolutions === 1 ? tenantId : undefined),
     });
@@ -495,6 +504,7 @@ describe("control API request boundaries", () => {
     const store = new ControlStore(new pg.Pool());
     const app = createApp({
       store,
+      catalog: async () => syntheticCatalog,
       origin: "http://127.0.0.1:5173",
       authenticate: async () => undefined,
       localSession: async () => ({
@@ -531,6 +541,7 @@ describe("control API request boundaries", () => {
     }
     const hosted = createApp({
       store,
+      catalog: async () => syntheticCatalog,
       origin: "https://studio.example",
       authenticate: async () => undefined,
     });

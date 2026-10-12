@@ -30,6 +30,7 @@ import runtimeHeartbeat1Schema from '../schemas/runtime-heartbeat-1.schema.json'
 import runtimeLease1Schema from '../schemas/runtime-lease-1.schema.json' with { type: 'json' };
 import audienceCapabilitySchema from '../schemas/audience-capability-1.schema.json' with { type: 'json' };
 import deploymentManifestSchema from '../schemas/deployment-manifest-1.schema.json' with { type: 'json' };
+import deploymentManifest2Schema from '../schemas/deployment-manifest-2.schema.json' with { type: 'json' };
 import auditEvent2Schema from '../schemas/audit-event-2.schema.json' with { type: 'json' };
 import lifecycle from '../schemas/control-lifecycle-1.schema.json' with { type: 'json' };
 import funds from '../schemas/funds-1.schema.json' with { type: 'json' };
@@ -52,7 +53,7 @@ export type ContractDocumentMap = Omit<GeneratedContractMap, 'runWait' | 'runCom
 export type ContractKind = keyof ContractDocumentMap;
 
 export const schemaBaseUri = 'https://monad-hack.example/schemas/';
-export const schemaDocuments: readonly object[] = [persistedBrokerResultSchema, schema, connectorManifest, priceObservation, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, auditEvent2Schema, lifecycle, funds];
+export const schemaDocuments: readonly object[] = [persistedBrokerResultSchema, schema, connectorManifest, priceObservation, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, deploymentManifest2Schema, auditEvent2Schema, lifecycle, funds];
 
 /** Schema reference per kind; strategy is absolute because its schema lives beside the language core. */
 export const contractRefs = {
@@ -85,6 +86,7 @@ export const contractRefs = {
   runtimeLease: schemaBaseUri + 'runtime-lease-1.schema.json',
   audienceCapability: schemaBaseUri + 'audience-capability-1.schema.json',
   deploymentManifest: schemaBaseUri + 'deployment-manifest-1.schema.json',
+  deploymentManifest2: schemaBaseUri + 'deployment-manifest-2.schema.json',
   auditEvent2: schemaBaseUri + 'audit-event-2.schema.json',
   paperEstimate: lifecycle.$id + '#/$defs/PaperEstimate',
   deploymentOperation: lifecycle.$id + '#/$defs/DeploymentOperation',
@@ -133,6 +135,7 @@ export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
   runtimeLease: 4 * 1024,
   audienceCapability: 8 * 1024,
   deploymentManifest: 16 * 1024,
+  deploymentManifest2: 64 * 1024,
   auditEvent2: 64 * 1024,
   paperEstimate: 4 * 1024,
   deploymentOperation: 4 * 1024,

@@ -243,6 +243,7 @@ describe('schema hygiene', () => {
         'control-agent/1',
         'control-workspace/1',
         'deployment-manifest/1',
+        'deployment-manifest/2',
         'deployment-operation/1',
         'deployment/1',
         'event/1',

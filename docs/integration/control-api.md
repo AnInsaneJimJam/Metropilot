@@ -6,7 +6,7 @@ Status 2026-10-08 (branch `feat/runtime-control-api`): **the runtime-facing cont
 
 Update 2026-10-12 (branch `feat/lifecycle-executor-integration`): the user lifecycle and history are implemented too (section 11): paper estimates, `deployment/1` launches with a `deployment-manifest/1` record, pause/resume/stop, operations, run history, `audit-event/2` history and a live event stream, the executor capability exchange and the executor outbox consumer (migration [`0005`](../../apps/api/migrations/0005_deployment_lifecycle.sql)). `pnpm stack:dev` runs the whole local paper stack.
 
-What is still yours (API owner): real ingestion from Envio/RPC feeding `ingestPrice` (gate E10), the selected workload-identity mechanism for the poll (gate E02), real user authentication for the `/v1` routes, the API Broker (broker-audience capabilities), cloud provisioning (INF-3) and production hosting.
+What is still yours (API owner): real ingestion from Envio/RPC feeding `ingestPrice` (gate E10), the selected workload-identity mechanism for the poll (gate E02), the hosted web login screen (API sign-in is done, D43), the API Broker (broker-audience capabilities), cloud provisioning (INF-3) and production hosting.
 
 ## 1. Who calls whom
 
@@ -75,7 +75,7 @@ Build each [`runtime-assignment/1`](../../packages/contracts/schemas/runtime-ass
 | `lease.fencingToken` | Previous token for this run + 1, as a decimal string |
 | `lease.expiresAt` | Now + 30 s; heartbeats every 10 s extend it ([runtime.md](../specs/runtime.md)) |
 | `deployment.generation` | Current generation as a decimal string |
-| `deployment.manifestHash` | `contentHash` of the deployment's `deployment-manifest/1` record (`deployments.manifest_hash`); a deployment without one is not offered work |
+| `deployment.manifestHash` | `contentHash` of the deployment's `deployment-manifest/2` record (`/1` for deployments launched before migration 0006; D42) (`deployments.manifest_hash`); a deployment without one is not offered work |
 | `deployment.runtimeImageDigest` | Digest of the pinned runtime image; the runtime refuses any other |
 | `deployment.connectorVersions` | Manifest pins `{connectorRef: "MAJOR.MINOR.PATCH"}` for every connector the strategy uses |
 | `run.triggerId` | The strategy's own trigger ID (for example `crossing`), never a UUID |

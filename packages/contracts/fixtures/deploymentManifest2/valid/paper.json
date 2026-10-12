@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "deployment-manifest/2",
+  "deploymentId": "019a0000-0000-7000-8000-000000000501",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "mode": "paper",
+  "networkRef": "paper-monad",
+  "strategyRevisionId": "019a0000-0000-7000-8000-000000000002",
+  "strategyHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "catalogHash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "catalogPins": [
+    {
+      "kind": "asset",
+      "ref": "paper.USD",
+      "version": "1.1.0",
+      "contentHash": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "kind": "connector",
+      "ref": "paper.uniswap",
+      "version": "1.1.0",
+      "contentHash": "0xc1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+    },
+    {
+      "kind": "feed",
+      "ref": "paper.weth-usd",
+      "version": "1.1.0",
+      "contentHash": "0xf1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
+    },
+    {
+      "kind": "network",
+      "ref": "paper-monad",
+      "version": "1.1.0",
+      "contentHash": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+    },
+    {
+      "kind": "resourceProfile",
+      "ref": "paper-small-v1",
+      "version": "1.0.0",
+      "contentHash": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+    }
+  ],
+  "connectorVersions": {
+    "paper.uniswap": "1.1.0"
+  },
+  "modelProfiles": {},
+  "resourceProfileRef": "paper-small-v1",
+  "runtimeImageDigest": "0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+  "budgetVersion": 1,
+  "policyVersion": 1,
+  "estimateId": "019a0000-0000-7000-8000-000000000003",
+  "simulationAccountId": "019a0000-0000-7000-8000-000000000502"
+}

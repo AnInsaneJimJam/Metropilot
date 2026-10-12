@@ -9,10 +9,11 @@ import { AccountingError, chargeHostingSlice, currentRateCard, sliceIndexAt } fr
 import { createHash, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { contentHash, validate } from '@monad-hack/contracts';
-import type { AssignmentOfferV2, AssignmentPoll, AudienceCapability, DeploymentManifest, RunComplete, RunResult, RunState, RunWait, RuntimeAssignment, TimelineEntry } from '@monad-hack/contracts';
+import type { AssignmentOfferV2, AssignmentPoll, AudienceCapability, ContractDocumentMap, RunComplete, RunResult, RunState, RunWait, RuntimeAssignment, TimelineEntry } from '@monad-hack/contracts';
 import { MAX_CAPABILITY_SECONDS, signCapability } from '@monad-hack/contracts/capability';
 import { compileStrategy, LanguageError, runIdentity, scheduleSlot, transitionPrice } from '@monad-hack/strategy';
 import type { Catalog, CompiledStrategy, CrossingState, PriceObservation } from '@monad-hack/strategy';
+import type { CatalogPin } from '../catalog.ts';
 
 /** error-1 codes this store raises, with their HTTP status. */
 export const CONTROL_STATUS = {
@@ -59,6 +60,8 @@ export interface DeployInput {
   readonly strategyRevisionId: string;
   readonly mode: 'paper' | 'live';
   readonly catalog: Catalog;
+  /** The catalog_versions rows `catalog` was resolved from (CatalogResolver); recorded in the manifest. */
+  readonly catalogPins: readonly CatalogPin[];
   readonly connectorVersions: Readonly<Record<string, string>>;
   readonly runtimeImageDigest: string;
   readonly networkRef: string;
@@ -166,14 +169,17 @@ export class RuntimeControlStore {
     if ((input.mode === 'paper') !== Boolean(input.simulationAccountId)) throw new RunControlError('SCHEMA_INVALID', 'Paper deployments need a simulation account; live deployments must not have one.');
     const deploymentId = uuidv7();
     const catalogHash = await contentHash(input.catalog);
-    const manifest: DeploymentManifest = {
-      schemaVersion: 'deployment-manifest/1', deploymentId, agentId: input.agentId, mode: input.mode, networkRef: input.networkRef,
-      strategyRevisionId: input.strategyRevisionId, strategyHash: program.hash, catalogHash,
+    const [firstPin, ...otherPins] = input.catalogPins;
+    if (!firstPin) throw new RunControlError('SCHEMA_INVALID', 'A deployment pins at least one catalog entry.');
+    if (new Set(input.catalogPins.map((p) => `${p.kind}:${p.ref}`)).size !== input.catalogPins.length) throw new RunControlError('SCHEMA_INVALID', 'A catalog entry is pinned twice.');
+    const manifest: ContractDocumentMap['deploymentManifest2'] = {
+      schemaVersion: 'deployment-manifest/2', deploymentId, agentId: input.agentId, mode: input.mode, networkRef: input.networkRef,
+      strategyRevisionId: input.strategyRevisionId, strategyHash: program.hash, catalogHash, catalogPins: [{ ...firstPin }, ...otherPins.map((p) => ({ ...p }))],
       connectorVersions: { ...input.connectorVersions }, modelProfiles: { ...input.modelProfiles }, resourceProfileRef: input.resourceProfileRef,
       runtimeImageDigest: input.runtimeImageDigest, budgetVersion: input.budgetVersion, policyVersion: input.policyVersion, estimateId: input.estimateId,
       ...(input.simulationAccountId ? { simulationAccountId: input.simulationAccountId } : {}),
     };
-    if (!validate('deploymentManifest', manifest).ok) throw new RunControlError('SCHEMA_INVALID', 'The deployment manifest is invalid.');
+    if (!validate('deploymentManifest2', manifest).ok) throw new RunControlError('SCHEMA_INVALID', 'The deployment manifest is invalid.');
     const manifestHash = await contentHash(manifest);
     await c.query(
       `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest,
@@ -813,7 +819,7 @@ export class RuntimeControlStore {
       [runId],
     );
     const row = rows[0]!;
-    // The deployment-manifest/1 hash; deployments made before migration 0005 have none and are not offered work.
+    // The deployment-manifest/1 or /2 hash; deployments made before migration 0005 have none and are not offered work.
     if (!row.manifest_hash) throw new RunControlError('NOT_FOUND', 'Deployment has no manifest.');
     const manifestHash = row.manifest_hash;
     return {

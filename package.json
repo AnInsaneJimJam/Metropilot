@@ -21,6 +21,7 @@
     "web:dev": "pnpm --filter @monad-hack/web dev",
     "strategy:demo": "pnpm generate && node packages/strategy/src/demo.ts",
     "api:dev": "pnpm generate && node --env-file-if-exists=.env apps/api/src/server.ts",
+    "api:hosted": "pnpm generate && node apps/api/src/hosted.ts",
     "runtime:demo": "pnpm generate && node apps/runtime/src/demo.ts",
     "api:runtime": "pnpm generate && LOCAL_RUNTIME_CONTROL=1 node --env-file-if-exists=.env apps/api/src/runtime-control/server.ts",
     "executor:dev": "pnpm generate && LOCAL_EXECUTOR=1 node --env-file-if-exists=.env apps/executor/src/main.ts",

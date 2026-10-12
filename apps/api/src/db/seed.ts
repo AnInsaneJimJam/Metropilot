@@ -5,6 +5,7 @@ import { catalogSeeds } from '@monad-hack/connectors/registry';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { contentHash, validate, type DeploymentRequest, type Strategy } from '@monad-hack/contracts';
+import { syntheticCatalog } from '@monad-hack/strategy';
 import type pg from 'pg';
 
 const fixture = (path: string): unknown =>
@@ -64,8 +65,45 @@ export function paperSeed() {
       modes: paper,
       definition: { note: 'Synthetic paper profile; CPU/memory sizing is measured at G4.' },
     },
+    ...completePaperCatalog(),
   ];
   return { request, strategy, catalog: [...catalog, ...catalogSeeds()] };
+}
+
+/**
+ * Version 1.1.0 of every paper entry: the complete definitions the API compiles against (issue #18, D42). The 1.0.0
+ * rows above predate this format and stay for the records and executor fixtures that pin them; catalog rows are
+ * immutable, so completing them means publishing new versions. Built from the strategy package's synthetic
+ * catalog so the database registry and the offline rehearsal catalog cannot drift. Existing keys the executor
+ * reads (connector networkRef/capabilities, asset identity) keep their meaning.
+ */
+function completePaperCatalog(): CatalogSeed[] {
+  const c = JSON.parse(JSON.stringify(syntheticCatalog)) as typeof syntheticCatalog;
+  const paper = ['paper'];
+  const version = '1.1.0';
+  return [
+    ...Object.entries(c.networks).map(([ref, n]) => ({
+      kind: 'network', ref, version, modes: paper, definition: { registry: 'paper', finality: 'simulated', ...n },
+    })),
+    ...Object.entries(c.assets).map(([ref, a]) => ({
+      kind: 'asset', ref, version, modes: paper,
+      definition: { identity: { kind: 'paper', networkRef: a.networkRef, assetRef: ref }, decimals: a.decimals, ...(a.native ? { native: true } : {}) },
+    })),
+    ...Object.entries(c.connectors).map(([ref, k]) => ({
+      kind: 'connector', ref, version, modes: paper,
+      definition: {
+        networkRef: k.networkRef, capabilities: ['price.read', 'swap.quote', 'swap.exactInput'],
+        adapterVersion: k.version, venue: k.venue, actions: k.actions, reads: c.reads[ref] ?? {},
+      },
+    })),
+    ...Object.entries(c.feeds).map(([ref, f]) => ({
+      kind: 'feed', ref, version, modes: paper, definition: { networkRef: c.connectors[f.connectorRef]!.networkRef, ...f },
+    })),
+    ...Object.entries(c.modelProfiles).map(([ref, m]) => ({
+      kind: 'modelProfile', ref, version, modes: paper,
+      definition: { provider: m.provider, modelId: m.modelId, maxTimeoutSeconds: m.maxTimeoutSeconds, maxOutputTokens: m.maxOutputTokens, note: 'Scripted answers; no model is called.' },
+    })),
+  ];
 }
 
 /** Insert the paper seed in one transaction. Re-running is a no-op; a conflicting existing row is an error. */

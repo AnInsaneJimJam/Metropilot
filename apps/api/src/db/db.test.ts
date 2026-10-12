@@ -125,8 +125,8 @@ describe('database', { skip }, () => {
     assert.equal(await one('select 1 from strategy_revisions where tenant_id = $1 and agent_id = $2 and id = $3', [seedTenantId, request.agentId, request.strategyRevisionId]), 1);
     assert.equal(await one('select 1 from estimates where tenant_id = $1 and agent_id = $2 and id = $3 and strategy_revision_id = $4', [seedTenantId, request.agentId, request.estimateId, request.strategyRevisionId]), 1);
     assert.equal(await one('select 1 from policies where tenant_id = $1 and agent_id = $2 and version = $3', [seedTenantId, request.agentId, request.policyVersion]), 1);
-    assert.equal(await one(`select 1 from catalog_versions where kind = 'network' and ref = $1 and $2 = any(modes)`, [request.networkRef, request.mode]), 1);
-    assert.equal(await one(`select 1 from catalog_versions where kind = 'resourceProfile' and ref = $1 and $2 = any(modes)`, [request.resourceProfileRef, request.mode]), 1);
+    assert.equal(await one(`select distinct ref from catalog_versions where kind = 'network' and ref = $1 and $2 = any(modes)`, [request.networkRef, request.mode]), 1);
+    assert.equal(await one(`select distinct ref from catalog_versions where kind = 'resourceProfile' and ref = $1 and $2 = any(modes)`, [request.resourceProfileRef, request.mode]), 1);
     for (const selection of request.connectorSelections) {
       const { rows } = await db.query<{ definition: { capabilities: string[] } }>(
         `select definition from catalog_versions where kind = 'connector' and ref = $1 and version = $2`,
@@ -223,6 +223,17 @@ describe('database', { skip }, () => {
       await rejects(db.query(`insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, '019a0000-0000-7000-8000-0000000000af', $2, 1)`, [seedTenantId, otherAgent]), '23503');
     });
 
+    test('identities (0007): one tenant per provider subject; a session cannot name another tenant', async () => {
+      await db.query(`insert into identities (provider, subject, tenant_id) values ('privy', 'did:privy:cm0dbcheck00001', $1)`, [otherTenant]);
+      await rejects(db.query(`insert into identities (provider, subject, tenant_id) values ('privy', 'did:privy:cm0dbcheck00001', $1)`, [seedTenantId]), '23505');
+      const session = (tenant: string, hash = randomBytes(32), expires = "now() + interval '1 hour'") =>
+        db.query(`insert into sessions (token_hash, tenant_id, provider, subject, expires_at) values ($1, $2, 'privy', 'did:privy:cm0dbcheck00001', ${expires})`, [hash, tenant]);
+      await rejects(session(seedTenantId), '23503');
+      await rejects(session(otherTenant, randomBytes(16)), '23514');
+      await rejects(session(otherTenant, randomBytes(32), 'now()'), '23514');
+      await session(otherTenant);
+    });
+
     test('IDs must be UUIDv7', async () => {
       await rejects(db.query(`insert into tenants (id, auth_subject) values ('3f2b8c1e-9d4a-4f6b-8e2c-1a2b3c4d5e6f', 'synthetic|v4')`), '23514');
     });
@@ -259,6 +270,17 @@ describe('database', { skip }, () => {
         ),
         '23503',
       );
+    });
+
+    test('catalog pins (0006): a deployment-manifest/2 must carry its catalog pins; /1 stays valid', async () => {
+      const set = (manifest: unknown) => db.query('update deployments set manifest = $2 where id = $1', [deployment, manifest]);
+      await rejects(set({}), '23514');
+      await rejects(set({ schemaVersion: 'deployment-manifest/2' }), '23514');
+      await rejects(set({ schemaVersion: 'deployment-manifest/2', catalogPins: [] }), '23514');
+      await rejects(set({ schemaVersion: 'deployment-manifest/3', catalogPins: [{}] }), '23514');
+      await set({ schemaVersion: 'deployment-manifest/2', catalogPins: [{ kind: 'network', ref: 'paper-monad', version: '1.1.0', contentHash: H('ab') }] });
+      await set({ schemaVersion: 'deployment-manifest/1' });
+      await set(null);
     });
 
     test('run identities are 0x SHA-256 and unique; fencing tokens are unique per run', async () => {
@@ -416,7 +438,7 @@ describe('database', { skip }, () => {
     test('catalog versions are immutable except for being disabled', async () => {
       await rejects(db.query(`update catalog_versions set definition = '{}' where ref = 'paper.uniswap'`), 'P0001');
       await rejects(db.query(`delete from catalog_versions where ref = 'paper.uniswap'`), 'P0001');
-      const { rowCount } = await db.query(`update catalog_versions set disabled_reason = 'test withdrawal' where ref = 'paper.USD'`);
+      const { rowCount } = await db.query(`update catalog_versions set disabled_reason = 'test withdrawal' where ref = 'paper.USD' and version = '1.0.0'`);
       assert.equal(rowCount, 1);
     });
 

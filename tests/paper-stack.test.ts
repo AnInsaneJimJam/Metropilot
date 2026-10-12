@@ -14,7 +14,7 @@ import type { AddressInfo } from 'node:net';
 import { after, describe, test } from 'node:test';
 import pg from 'pg';
 import { verifyCapability } from '../packages/contracts/src/capability.ts';
-import { validate } from '../packages/contracts/src/index.ts';
+import { contentHash, validate } from '../packages/contracts/src/index.ts';
 import { PRESETS, syntheticCatalog, workspaceFromStrategy } from '../packages/strategy/src/index.ts';
 import { createApp } from '../apps/api/src/app.ts';
 import { migrate } from '../apps/api/src/db/migrate.ts';
@@ -102,8 +102,8 @@ async function stack(options: { dispatchInline?: boolean; mainnet?: boolean } = 
   const tenant = await controlStore.tenant(`stack-${randomBytes(4).toString('hex')}`);
   // The lifecycle clock can be skewed forward to expire estimates (estimate rows are immutable).
   const skew = { millis: 0 };
-  const lifecycle = new LifecycleService({ pool, runtime: runtimeStore, runtimeImageDigest: IMAGE, catalog, ...(options.mainnet ? { paperFundingAsset: 'paper.USDC' } : {}), now: () => new Date(Date.now() + skew.millis) });
-  const user = createApp({ store: controlStore, lifecycle, catalog, origin: 'http://127.0.0.1:5173', authenticate: async (cookie) => (cookie === 'me' ? tenant : undefined), streamPollMillis: 20 });
+  const lifecycle = new LifecycleService({ pool, runtime: runtimeStore, runtimeImageDigest: IMAGE, ...(options.mainnet ? { paperFundingAsset: 'paper.USDC' } : {}), now: () => new Date(Date.now() + skew.millis) });
+  const user = createApp({ store: controlStore, lifecycle, catalog: () => lifecycle.paperCatalog(), origin: 'http://127.0.0.1:5173', authenticate: async (cookie) => (cookie === 'me' ? tenant : undefined), streamPollMillis: 20 });
   await user.ready();
   const userOrigin = await (async () => { await user.listen({ host: '127.0.0.1', port: 0 }); closers.push(() => user.close()); return `http://127.0.0.1:${(user.server.address() as AddressInfo).port}`; })();
   const internal = createInternalApp({ broker: service, store: runtimeStore, authenticateWorkload: (h) => (typeof h['x-runtime-workload'] === 'string' ? h['x-runtime-workload'] : undefined), pollIntervalMillis: 20 });
@@ -138,8 +138,8 @@ async function stack(options: { dispatchInline?: boolean; mainnet?: boolean } = 
     const connector = presetId.startsWith('aave_') ? 'paper.aave' : presetId.startsWith('curve_') ? 'paper.curve' : 'paper.uniswap';
     const request = {
       schemaVersion: 'deployment/1', agentId, strategyRevisionId: saved.json.revisionId, mode: 'paper', networkRef: 'paper-monad',
-      connectorSelections: [{ ref: connector, version: options.mainnet ? catalog.connectors[connector]!.version : '1.0.0', capabilities: options.mainnet ? [...catalog.connectors[connector]!.actions] : ['price.read', 'swap.exactInput'] }],
-      modelProfiles: presetId === 'ai_gated_purchase' ? [{ ref: 'paper.kimi', version: '1.0.0' }] : [],
+      connectorSelections: [{ ref: connector, version: options.mainnet ? catalog.connectors[connector]!.version : '1.1.0', capabilities: options.mainnet ? [...catalog.connectors[connector]!.actions] : ['price.read', 'swap.exactInput'] }],
+      modelProfiles: presetId === 'ai_gated_purchase' ? [{ ref: 'paper.kimi', version: '1.1.0' }] : [],
       resourceProfileRef: 'paper-small-v1', budgetVersion: estimate.json.budgetVersion, policyVersion: estimate.json.policyVersion, estimateId: estimate.json.id,
     };
     return { agentId, request };
@@ -384,6 +384,69 @@ describe('paper stack end to end', { skip }, () => {
     assert.equal((await s.launch(agentId, { ...ok, networkRef: 'paper-monad', modelProfiles: [] }, 'launch-key-0001')).json.code, 'IDEMPOTENCY_CONFLICT');
   });
 
+  test('catalog resolution (#18): launch compiles against catalog_versions and the manifest pins every row it used', async () => {
+    const s = await stack();
+    const catalog = await s.call('GET', '/catalog');
+    assert.deepEqual(catalog.json.paperVersions, { connectors: { 'paper.kuru': '1.1.0', 'paper.uniswap': '1.1.0' }, modelProfiles: { 'paper.kimi': '1.1.0' } });
+    assert.deepEqual(catalog.json.catalog, JSON.parse(JSON.stringify(syntheticCatalog)), 'the seeded registry reproduces the synthetic catalog');
+    const { agentId, request } = await s.draft();
+    assert.equal((await s.launch(agentId, request)).status, 202);
+    const { rows } = await s.pool.query<{ manifest: Record<string, any>; catalog_hash: string; connector_versions: Record<string, string> }>(
+      'select manifest, catalog_hash, connector_versions from deployments where agent_id = $1', [agentId],
+    );
+    const manifest = rows[0]!.manifest;
+    assert.ok(validate('deploymentManifest2', manifest).ok, JSON.stringify(manifest));
+    assert.equal(manifest['catalogHash'], rows[0]!.catalog_hash);
+    assert.deepEqual(rows[0]!.connector_versions, { 'paper.uniswap': '1.1.0' });
+    const pins = manifest['catalogPins'] as { kind: string; ref: string; version: string; contentHash: string }[];
+    for (const pin of pins) {
+      const row = await s.pool.query('select 1 from catalog_versions where kind = $1 and ref = $2 and version = $3 and content_hash = $4', [pin.kind, pin.ref, pin.version, pin.contentHash]);
+      assert.equal(row.rowCount, 1, `${pin.kind} ${pin.ref}@${pin.version} is a real row`);
+    }
+    assert.deepEqual(pins.map((p) => `${p.kind}:${p.ref}@${p.version}`), [
+      'asset:paper.MON@1.1.0', 'asset:paper.USD@1.1.0', 'asset:paper.WETH@1.1.0', 'connector:paper.kuru@1.1.0', 'connector:paper.uniswap@1.1.0',
+      'feed:paper.weth-usd@1.1.0', 'feed:paper.weth-usd-kuru@1.1.0', 'modelProfile:paper.kimi@1.1.0', 'network:paper-monad@1.1.0', 'resourceProfile:paper-small-v1@1.0.0',
+    ]);
+    // The catalog artifact the runtime fetches is the resolved catalog the manifest hashes.
+    const artifact = await s.pool.query<{ content_hash: string; body: string }>("select content_hash, body from artifacts where deployment_id = (select id from deployments where agent_id = $1) and kind = 'catalog'", [agentId]);
+    assert.equal(artifact.rows[0]!.content_hash, manifest['catalogHash']);
+    assert.deepEqual(JSON.parse(artifact.rows[0]!.body), JSON.parse(JSON.stringify(syntheticCatalog)));
+  });
+
+  test('catalog resolution (#18): disabled, pre-format and live-only versions refuse launch and resume with the reason', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    const disable = (ref: string, version: string, reason: string | null) =>
+      s.pool.query('update catalog_versions set disabled_reason = $3 where ref = $1 and version = $2', [ref, version, reason]);
+    const refused = async (body: unknown, needle: string) => {
+      const response = await s.launch(agentId, body);
+      assert.equal(response.status, 422, JSON.stringify(response.json));
+      assert.equal(response.json.code, 'UNSUPPORTED_CAPABILITY');
+      assert.ok(String(response.json.message).includes(needle), String(response.json.message));
+    };
+    await refused({ ...request, connectorSelections: [{ ...request.connectorSelections[0], version: '1.0.0' }] }, 'predates the complete catalog format');
+    await disable('paper.uniswap', '1.1.0', 'Venue paused for review.');
+    await refused(request, 'paper.uniswap@1.1.0 is disabled: Venue paused for review.');
+    assert.equal((await s.call('GET', '/catalog')).json.paperVersions.connectors['paper.uniswap'], undefined, 'a disabled version is not offered');
+    await disable('paper.uniswap', '1.1.0', null);
+    // A live-only registry row is invisible to paper resolution even when well formed.
+    const live = { networkRef: 'monad-mainnet', capabilities: ['swap.exactInput'], adapterVersion: 'uniswap-v3/1', venue: 'uniswap-v3', actions: ['swap.exactInput'], reads: {} };
+    await s.pool.query("insert into catalog_versions (kind, ref, version, modes, content_hash, definition) values ('connector', 'live.uniswap', '1.0.0', '{live}', $1, $2)", [await contentHash(live), live]);
+    assert.equal((await s.call('GET', '/catalog')).json.catalog.connectors['live.uniswap'], undefined);
+    await refused({ ...request, connectorSelections: [...request.connectorSelections, { ref: 'live.uniswap', version: '1.0.0', capabilities: ['swap.exactInput'] }] }, 'live.uniswap@1.0.0 is not an enabled paper connector');
+
+    assert.equal((await s.launch(agentId, request)).status, 202);
+    assert.equal((await s.call('POST', `/agents/${agentId}/pause`, undefined, { 'idempotency-key': 'pause-0000001' })).status, 202);
+    await disable('paper.kimi', '1.1.0', 'Model profile withdrawn.');
+    const resume = await s.call('POST', `/agents/${agentId}/resume`, undefined, { 'idempotency-key': 'resume-000001' });
+    assert.equal(resume.status, 422, JSON.stringify(resume.json));
+    assert.equal(resume.json.code, 'UNSUPPORTED_CAPABILITY');
+    assert.match(String(resume.json.message), /paper\.kimi@1\.1\.0 was disabled: Model profile withdrawn\./);
+    assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'paused');
+    await disable('paper.kimi', '1.1.0', null);
+    assert.equal((await s.call('POST', `/agents/${agentId}/resume`, undefined, { 'idempotency-key': 'resume-000002' })).status, 202);
+  });
+
   test('executor capabilities: the exchanged token verifies at the executor; the control bearer never does', async () => {
     const s = await stack();
     const { agentId, request } = await s.draft();
@@ -394,7 +457,7 @@ describe('paper stack end to end', { skip }, () => {
     const claims = verifyCapability(token, s.secret, Math.floor(Date.now() / 1000));
     assert.equal(claims.runId, offer.assignment!.run.runId);
     assert.equal(claims.deploymentId, offer.assignment!.deployment.deploymentId);
-    assert.deepEqual(claims.connectors, { 'paper.uniswap': '1.0.0' });
+    assert.deepEqual(claims.connectors, { 'paper.uniswap': '1.1.0' });
     assert.ok(claims.exp - claims.iat <= 300);
     assert.throws(() => verifyCapability(offer.capability!.bearer, s.secret, Math.floor(Date.now() / 1000)));
   });
