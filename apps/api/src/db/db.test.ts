@@ -260,6 +260,10 @@ describe('database', { skip }, () => {
       await rejects(db.query("insert into broker_operations(tenant_id,operation_key,run_id,request_hash,request) values($1,$2,$3,$4,'{}')", ['019a0000-0000-7000-8000-000000000099', key, runId, H('aa')]), '23503');
       await db.query("insert into broker_operations(tenant_id,operation_key,run_id,request_hash,request) values($1,$2,$3,$4,'{}')", [seedTenantId, key, runId, H('aa')]);
       await rejects(db.query('update broker_operations set latest_result_id=$3 where tenant_id=$1 and operation_key=$2', [seedTenantId, key, '019a0000-0000-7000-8000-000000000098']), '23503');
+      // Migration 0010 allows JSONB formatting overhead, but storage stays bounded.
+      await rejects(db.query('update broker_operations set request=$3 where tenant_id=$1 and operation_key=$2', [seedTenantId, key, JSON.stringify({ padding: 'x'.repeat(65536) })]), '23514');
+      const bounds = await db.query("select pg_get_constraintdef(oid) as definition from pg_constraint where conname='broker_results_response_check'");
+      assert.match(bounds.rows[0].definition, /131072/);
     });
 
     test('AI metering (0007) preserves operation ownership, exact holds and immutable rate identity', async () => {
