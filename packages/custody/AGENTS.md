@@ -12,7 +12,8 @@ Live outflows stay disabled until the E03 proof (`pnpm custody:proof`) has dated
 
 ## Checklist
 
-- [ ] EXE-2 / G5: Privy capability proof (ownership, policy/admin separation, signing method, export denial, idempotency, recovery) — harness ready, evidence pending credentials.
+- [x] EXE-2 / G5: Privy capability proof (ownership, policy/admin separation, signing method, export denial, idempotency, recovery).
+  - Done 2026-10-13: `pnpm custody:proof` PASS 9/9 against the project's Privy app; evidence under E03 in [decisions](../../docs/decisions.md).
 - [ ] G5: wallet mapping and finalized deposit crediting against a real Monad RPC (E04/E06).
   - Progress 2026-10-12: one wallet per agent, observed/finalized scanner passes (reorg, duplicate, quarantine) on the local chain ([custody.test.ts](../../tests/custody.test.ts)).
 - [ ] EXE-7 / G5: withdrawal gateway against a provider sandbox.

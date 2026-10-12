@@ -42,16 +42,22 @@ record('policy attached', Array.isArray(fetched.json['policy_ids']) && (fetched.
 
 const message = { method: 'personal_sign', params: { message: `monad-hack E03 ${run}`, encoding: 'utf-8' } };
 const unsigned = await privy.request('POST', `/v1/wallets/${wallet.providerWalletId}/rpc`, message);
-const signed = await privy.request('POST', `/v1/wallets/${wallet.providerWalletId}/rpc`, message, { signed: true });
-const signature = (signed.json['data'] as Record<string, unknown> | undefined)?.['signature'];
-record('owner signature signs', signed.status === 200 && typeof signature === 'string', `status ${signed.status}`);
-// Only an authorization refusal counts: the same body succeeded with the owner signature, so a 400 is not a denial.
+// Signed message signing reaches the policy (authorization passed) and is refused: only transactions are allowed.
+const signedMessage = await privy.request('POST', `/v1/wallets/${wallet.providerWalletId}/rpc`, message, { signed: true });
+record('owner signature authenticates; message signing is outside the policy', signedMessage.json['code'] === 'policy_violation', `status ${signedMessage.status} ${String(signedMessage.json['code'])}`);
+// Only an authorization refusal counts for the unsigned request.
 record('app secret alone cannot sign', unsigned.status === 401 || unsigned.status === 403, `status ${unsigned.status}`);
+
+// An approved zero-value transaction signed by the owner passes authorization and policy. The proof wallet holds no
+// MON, so broadcast fails on balance: nothing is sent and no funds move.
+const approved = { method: 'eth_sendTransaction', caip2: `eip155:${chainId}`, chain_type: 'ethereum', params: { transaction: { to: allowed, value: '0x0', chain_id: chainId } } };
+const sent = await privy.request('POST', `/v1/wallets/${wallet.providerWalletId}/rpc`, approved, { signed: true, idempotencyKey: `${run}-approved` });
+const sentText = JSON.stringify(sent.json).toLowerCase();
+record('owner signature signs an approved transaction', sent.status === 200 || (sent.json['code'] === 'transaction_broadcast_failure' && sentText.includes('insufficient balance')), `status ${sent.status} ${String(sent.json['code'])}`);
 
 const tx = { method: 'eth_sendTransaction', caip2: `eip155:${chainId}`, chain_type: 'ethereum', params: { transaction: { to: denied, value: '0x0', chain_id: chainId } } };
 const blocked = await privy.request('POST', `/v1/wallets/${wallet.providerWalletId}/rpc`, tx, { signed: true, idempotencyKey: `${run}-denied` });
-const policyText = JSON.stringify(blocked.json).toLowerCase();
-record('policy denies an unapproved destination', blocked.status >= 400 && blocked.status < 500 && (blocked.status === 403 || policyText.includes('polic')), `status ${blocked.status}`);
+record('policy denies an unapproved destination', blocked.json['code'] === 'policy_violation', `status ${blocked.status} ${String(blocked.json['code'])}`);
 
 const exported = await privy.request('POST', `/v1/wallets/${wallet.providerWalletId}/export`, { encryption_type: 'HPKE', recipient_public_key: privy.ownerPublicKey });
 record('export denied without the owner signature', exported.status === 401 || exported.status === 403, `status ${exported.status}`);
