@@ -6,6 +6,7 @@ import { ControlStore } from "./store.ts";
 import { LifecycleService } from "./lifecycle.ts";
 import { RuntimeControlStore } from "./runtime-control/store.ts";
 
+if (process.env['KIMI_API_KEY'] || process.env['MOONSHOT_API_KEY']) throw new Error('Model credentials are restricted to the broker process.');
 // Explicitly local-only until the production identity adapter and HTTPS deployment are supplied.
 if (
   process.env["LOCAL_WORKSPACE"] !== "1" ||

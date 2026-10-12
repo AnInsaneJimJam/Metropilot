@@ -1,3 +1,6 @@
+import { KimiAdapter } from '../kimi-adapter.ts';
+import { KimiBroker } from '../kimi-broker.ts';
+import { kimiVerified } from '../kimi-config.ts';
 import { PaperBrokerService } from '../broker-service.ts';
 // Local entry point for the runtime-facing internal API plus its worker loop (schedule ticks, lease reclaim,
 // executor outbox consumption).
@@ -21,9 +24,10 @@ const brokerSecretHex = process.env['BROKER_CAPABILITY_SECRET'];
 if (brokerSecretHex !== undefined && !/^[0-9a-f]{64}$/.test(brokerSecretHex)) throw new Error('BROKER_CAPABILITY_SECRET must be 64 lower-case hex characters.');
 const brokerSecret = brokerSecretHex ? Buffer.from(brokerSecretHex, 'hex') : undefined;
 const store = new RuntimeControlStore({ pool, ...(secretHex ? { executorCapabilitySecret: Buffer.from(secretHex, 'hex') } : {}), ...(brokerSecret ? { brokerCapabilitySecret: brokerSecret } : {}) });
+const kimi = new KimiBroker(pool, new KimiAdapter({ apiKey: process.env['KIMI_API_KEY'] ?? '', verified: kimiVerified(process.env) }));
 const app = createInternalApp({
   store,
-  ...(brokerSecret ? { broker: new PaperBrokerService({ pool, secret: brokerSecret }) } : {}),
+  ...(brokerSecret ? { broker: new PaperBrokerService({ pool, secret: brokerSecret, kimi }) } : {}),
   // Dev-only workload identity: the runtime names itself. Never acceptable outside loopback.
   authenticateWorkload: (headers) => {
     const id = headers['x-runtime-workload'];
@@ -44,7 +48,7 @@ const worker = setInterval(() => {
     const now = new Date().toISOString();
     return store.ingestPrice({ sourceEventKey: `synthetic:${now}`, feedRef: 'paper.weth-usd', price: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal: (price / 100).toFixed(2).replace(/\.?0+$/, '') }, observedAt: now, receivedAt: now });
   })() : Promise.resolve([]);
-  Promise.all([tick, store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.consumeBrokerResults()])
+  Promise.all([tick, store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.consumeBrokerResults(), kimi.recover()])
     .catch((error: unknown) => console.error(`worker tick failed: ${(error as Error).name}`))
     .finally(() => { busy = false; });
 }, 1_000);

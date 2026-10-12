@@ -261,6 +261,17 @@ describe('database', { skip }, () => {
       await rejects(db.query('update broker_operations set latest_result_id=$3 where tenant_id=$1 and operation_key=$2', [seedTenantId, key, '019a0000-0000-7000-8000-000000000098']), '23503');
     });
 
+    test('AI metering (0007) preserves operation ownership, exact holds and immutable rate identity', async () => {
+      const key = H('9b'), agent = paperSeed().request.agentId;
+      const insert = (tenant: string, amount: string) => db.query(`insert into ai_metering(tenant_id,operation_key,agent_id,model_id,rate_version,input_rate,cached_input_rate,output_rate,max_input_tokens,max_output_tokens,reserved_usd_micros,state) values($1,$2,$3,'synthetic-test','test/1',950000,160000,4000000,100,20,$4,'dispatched')`, [tenant,key,agent,amount]);
+      await rejects(insert(seedTenantId, '-1'), '23514');
+      await rejects(insert('019a0000-0000-7000-8000-000000000099', '175'), '23503');
+      await insert(seedTenantId, '175');
+      await rejects(insert(seedTenantId, '175'), '23505');
+      await rejects(db.query('update ai_metering set input_rate=0'), 'P0001');
+      await rejects(db.query('delete from ai_metering'), 'P0001');
+    });
+
     test('artifacts and timeline entries are immutable', async () => {
       await db.query(`insert into artifacts (ref, tenant_id, deployment_id, kind, content_hash, body) values ('artifact:test', $1, $2, 'strategy', $3, '{}')`, [seedTenantId, deployment, H('bb')]);
       await rejects(db.query(`update artifacts set body = '[]'`), 'P0001');
