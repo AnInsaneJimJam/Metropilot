@@ -134,3 +134,6 @@ Codex owns the paper broker service, broker-audience capability exchange/verific
 ## Broker-AI issue #6 — 2026-10-13
 
 Codex owns `apps/runtime/src/dispatch/broker.ts`, broker capability caching, runtime endpoint/main wiring, `scripts/stack-dev.mjs` and HTTP-client conformance/regression tests. Depends on #5 (`73e7a53`). Scope: use the API broker with identical-body retry, bounded transport and UUIDv7 tracing. Evidence: `REQUIRE_DB=1 pnpm check` 542 passed, zero skipped; real-service broker conformance and full HTTP paper stack pass. `pnpm stack:dev` boots all five services with HTTP broker; stopped after verification.
+
+## Broker-AI #7 — 2026-10-13
+Codex owns executor branch-evidence verification, scoped PostgreSQL evidence reads and paper admission scenarios. Depends on #6. Reconstruct from immutable run/artifact identity and referenced broker responses through the shared pure interpreter; never trust runtime checkpoint bindings. No live enablement or unrelated executor behavior. Evidence: `REQUIRE_DB=1 pnpm check` 546 passed, zero skipped; executor-paper scenarios verify complete, missing, contradictory and foreign-run records before reservation; full paper HTTP stack remains green.

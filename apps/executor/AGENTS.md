@@ -20,3 +20,5 @@ Unknown signing/broadcast outcomes remain reserved and under reconciliation. Mon
 - [ ] EXE-8 / G8–G10: pass crash, policy rejection, duplicate delivery, deficit freeze and provider-outage checks.
 
 Dependencies: [accounting](../../packages/accounting/AGENTS.md), [policy](../../packages/policy/AGENTS.md), [connectors](../../packages/connectors/AGENTS.md), [contracts](../../packages/contracts/AGENTS.md). Live remains gated on external evidence in [decisions](../../docs/decisions.md). Tick only with checks and effect evidence.
+
+- [x] BROKER-4 / #7: D36 paper exception removed; executor rebuilds branch bindings from immutable, scoped broker results using the shared interpreter, with admission-time freshness and exact request checks. [Verifier](src/branch-evidence.ts), [PostgreSQL verified/missing/contradicting/foreign-run scenarios](../../tests/executor-paper.test.ts). `REQUIRE_DB=1 pnpm check`: 546 passed, zero skipped (2026-10-13). Live remains disabled; hosted restricted DB role remains open.
