@@ -71,11 +71,13 @@ export class BrokerStore {
     const claim = await this.tx(async (c) => {
       // Locking the run serializes admission with pause/revocation and runtime writes.
       const { rows } = await c.query<{
+        status: string;
+        outcome: string | null;
         kind: string;
         node_id: string;
         iteration_path: number[];
       }>(
-        `select o.kind,o.node_id,o.iteration_path from runs r
+        `select r.status,o.outcome,o.kind,o.node_id,o.iteration_path from runs r
          join deployments d on d.tenant_id=r.tenant_id and d.id=r.deployment_id
          join run_operations o on o.tenant_id=r.tenant_id and o.run_id=r.run_id
          where r.tenant_id=$1 and r.run_id=$2 and r.deployment_id=$3 and r.generation=$4
@@ -119,6 +121,8 @@ export class BrokerStore {
           );
         return previous.rows[0].response;
       }
+      if (!['assigned', 'waiting', 'queued'].includes(op.status) || (op.outcome !== null && op.outcome !== 'pending'))
+        throw new ControlError(409, 'REVISION_CONFLICT', 'Finished work cannot start a new broker dispatch.');
       await c.query(
         "insert into broker_operations(tenant_id,operation_key,run_id,request_hash,request) values($1,$2,$3,$4,$5)",
         [scope.tenantId, request.operationKey, scope.runId, hash, request],
@@ -164,30 +168,26 @@ export class BrokerStore {
     return this.tx(async (c) => {
       const { rows } = await c.query<{
         request_hash: string;
-        response: BrokerResult;
+        latest_result_id: string;
       }>(
-        `select o.request_hash,b.response from broker_operations o join broker_results b on b.tenant_id=o.tenant_id and b.id=o.latest_result_id
+        `select o.request_hash,o.latest_result_id from broker_operations o
          join runs r on r.tenant_id=o.tenant_id and r.run_id=o.run_id
          where o.tenant_id=$1 and o.run_id=$2 and o.operation_key=$3 and r.deployment_id=$4 and r.generation=$5 for update of o`,
-        [
-          scope.tenantId,
-          scope.runId,
-          request.operationKey,
-          scope.deploymentId,
-          scope.generation,
-        ],
+        [scope.tenantId,scope.runId,request.operationKey,scope.deploymentId,scope.generation],
       );
       const prior = rows[0];
-      if (!prior)
-        throw new ControlError(404, "NOT_FOUND", "Broker operation not found.");
+      if (!prior) throw new ControlError(404, 'NOT_FOUND', 'Broker operation not found.');
+      // Read after acquiring the operation lock, with a fresh statement snapshot.
+      const current = (await c.query<{ response: BrokerResult }>('select response from broker_results where tenant_id=$1 and id=$2', [scope.tenantId, prior.latest_result_id])).rows[0];
+      if (!current) throw new ControlError(404, 'NOT_FOUND', 'Broker answer not found.');
       if (prior.request_hash !== (await contentHash(request)))
         throw new ControlError(
           409,
           "IDEMPOTENCY_CONFLICT",
           "Broker request differs from the stored dispatch.",
         );
-      if (["completed", "refused"].includes(prior.response.disposition))
-        return prior.response;
+      if (["completed", "refused"].includes(current.response.disposition))
+        return current.response;
       return this.append(c, scope, request, response, provenance);
     });
   }

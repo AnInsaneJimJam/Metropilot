@@ -194,6 +194,32 @@ describe("broker result persistence / PostgreSQL", { skip: !url }, () => {
     );
   });
 
+  test('finished runs and terminal waiting operations cannot start a delayed first dispatch', async () => {
+    const known = await request('known_before_finish');
+    const saved = await store.execute(scope,known,provenance,async()=>answer(known));
+    const delayed = await request('late_first_request');
+    let calls=0;
+    await pool.query("update runs set status='completed' where run_id=$1",[scope.runId]);
+    try {
+      await assert.rejects(store.execute(scope,delayed,provenance,async()=>{ calls++; return answer(delayed); }),/Finished work/);
+      assert.deepEqual(await store.execute(scope,known,provenance,async()=>{ calls++; return answer(known); }),saved);
+    } finally { await pool.query("update runs set status='queued' where run_id=$1",[scope.runId]); }
+    const expired=await request('already_timed_out');
+    await pool.query("update run_operations set outcome='timeout' where operation_key=$1",[expired.operationKey]);
+    await assert.rejects(store.execute(scope,expired,provenance,async()=>{ calls++; return answer(expired); }),/Finished work/);
+    assert.equal(calls,0);
+  });
+
+  test('concurrent reconciliation and a late provider result keep one winning terminal answer', async () => {
+    const r=await request('resolution_race');
+    await store.execute(scope,r,provenance,async()=>{ throw new Error('lost provider response'); });
+    const competing={ ...answer(r),value:{ price:{ decimal:'2600',baseAssetRef:'paper.WETH',quoteUnit:'USD' },observedAt:'2026-10-13T00:00:00.000Z' } };
+    const results=await Promise.all([store.resolve(scope,r,answer(r),provenance),new BrokerStore(pool).resolve(scope,r,competing,provenance)]);
+    assert.deepEqual(results[0],results[1]);
+    assert.deepEqual(await store.resolve(scope,r,{ schemaVersion:'broker-result/1',operationKey:r.operationKey,disposition:'unknown' },provenance),results[0]);
+    assert.equal((await pool.query('select 1 from broker_results where operation_key=$1',[r.operationKey])).rowCount,3);
+  });
+
   test("a lost dispatch stays unknown; reconciliation appends a result without changing history", async () => {
     const r = await request("unknown_read");
     let calls = 0;
