@@ -16,5 +16,7 @@ Live outflows stay disabled until the E03 proof (`pnpm custody:proof`) has dated
   - Done 2026-10-13: `pnpm custody:proof` PASS 9/9 against the project's Privy app; evidence under E03 in [decisions](../../docs/decisions.md).
 - [ ] G5: wallet mapping and finalized deposit crediting against a real Monad RPC (E04/E06).
   - Progress 2026-10-12: one wallet per agent, observed/finalized scanner passes (reorg, duplicate, quarantine) on the local chain ([custody.test.ts](../../tests/custody.test.ts)).
+  - Progress 2026-10-13: real Monad testnet deposit (contract-forwarded MON, found via call traces) credited once after finality, withdrawn and reconciled exactly (evidence in decisions). Open: scanner throughput (indexer, E10).
 - [ ] EXE-7 / G5: withdrawal gateway against a provider sandbox.
   - Progress 2026-10-12: reserve, send, finalize, revert-gas and never-resend-ambiguous on the local provider; API with step-up in [funds-api.test.ts](../../tests/funds-api.test.ts).
+  - Progress 2026-10-13: native MON withdrawal through Privy on Monad testnet finalized and settled with actual gas.

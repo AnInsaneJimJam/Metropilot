@@ -146,7 +146,10 @@ export class DepositScanner {
     ];
     let observed = 0;
     const latest = await this.chain.latestHeight();
-    const from = (await cursor(this.pool, this.chain.chainId, 'observed', this.config.startHeight)) + 1n;
+    // The observed pass only feeds the pending display; it starts near the head when behind. The finalized pass
+    // below reads every block and is the only one that credits.
+    const observedFrom = (await cursor(this.pool, this.chain.chainId, 'observed', this.config.startHeight)) + 1n;
+    const from = latest - observedFrom > this.batch ? latest - this.batch + 1n : observedFrom;
     const to = latest < from + this.batch - 1n ? latest : from + this.batch - 1n;
     if (addresses.length && to >= from) {
       for (const log of await transfers(from, to)) {

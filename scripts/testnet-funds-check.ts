@@ -52,8 +52,25 @@ if (mode === 'prepare') {
   await pool.end();
   process.exit(0);
 }
+if (mode === 'reconcile') {
+  // Catch the scanner up to the finalized head, then compare every testnet wallet with the ledger.
+  const config: CustodyConfig = { networkRef: 'monad-testnet', chainId: CHAIN, gasAssetRef: 'live.MON', startHeight: 0n, assets: [{ assetRef: 'live.MON', chainId: CHAIN, token: 'native', decimals: 18, funding: true }] };
+  const scanner = new DepositScanner(pool, chain, config, 400n);
+  for (let i = 0; i < 400; i++) {
+    const r = await scanner.tick(new Date());
+    const c = await pool.query<{ height: string }>(`select height from chain_cursors where chain_id = $1 and name = 'finalized'`, [CHAIN]);
+    if (BigInt(c.rows[0]!.height) < r.finalizedHeight) continue;
+    const reports = await reconcileWallets(pool, chain, config, new Date());
+    if (!reports.length) continue;
+    console.log(JSON.stringify(reports.map((x) => ({ ok: x.ok, recordedWallet: x.recordedWalletAtomic.toString(), liabilities: x.liabilitiesAtomic.toString(), chainDifference: x.chainDifference.toString(), ledgerDifference: x.ledgerDifference.toString() }))));
+    break;
+  }
+  for (const a of process.argv.slice(3)) console.log(a, (await chain.nativeBalance(a, await chain.finalizedHeight())).toString());
+  await pool.end();
+  process.exit(0);
+}
 if (mode !== 'run' || !agentArg || !returnArg) {
-  console.log('Usage: prepare | run <agentId> <returnAddress> [withdrawMon]');
+  console.log('Usage: prepare | run <agentId> <returnAddress> [withdrawMon] | reconcile [address…]');
   process.exit(1);
 }
 
