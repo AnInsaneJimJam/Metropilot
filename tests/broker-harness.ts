@@ -10,6 +10,7 @@ import type {
   BrokerResult,
   RunCheckpoint,
   RuntimeAssignment,
+  Strategy,
 } from "../packages/contracts/src/index.ts";
 import {
   verifyCapability,
@@ -50,7 +51,7 @@ after(async () => {
 
 /** A fresh database per scenario; the public control-plane creates actual immutable artifacts and waits. */
 export async function brokerHarness(
-  options: { decide?: (r: BrokerRequest) => Promise<BrokerResult>; kimiAdapter?: import('../apps/api/src/kimi-adapter.ts').KimiAdapter } = {},
+  options: { strategy?: Strategy; decide?: (r: BrokerRequest) => Promise<BrokerResult>; kimiAdapter?: import('../apps/api/src/kimi-adapter.ts').KimiAdapter } = {},
 ) {
   if (!admin) {
     admin = new pg.Client({ connectionString: url! });
@@ -108,7 +109,7 @@ export async function brokerHarness(
   };
   const catalog = options.kimiAdapter ? { ...syntheticCatalog, modelProfiles: { 'paper.kimi': { ...syntheticCatalog.modelProfiles['paper.kimi']!, provider: 'kimi', modelId: KIMI_MODEL } } } : syntheticCatalog;
   const program = await compileStrategy(
-    JSON.stringify(PRESETS.find((p) => p.id === "ai_gated_purchase")!.strategy),
+    JSON.stringify(options.strategy ?? PRESETS.find((p) => p.id === "ai_gated_purchase")!.strategy),
     catalog,
   );
   async function waiting(
