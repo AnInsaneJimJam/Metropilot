@@ -2,7 +2,8 @@
 //   CUSTODY_PROVIDER=local  in-process local chain and wallets, labelled local (development only)
 //   CUSTODY_PROVIDER=privy  Privy server wallets + Monad JSON-RPC; needs the PRIVY_* values, CUSTODY_CHAIN_ID,
 //                           CUSTODY_RPC (and CUSTODY_RPC_SECONDARY for cross-checked finality), CUSTODY_NETWORK_REF,
-//                           FUNDING_TOKEN_ADDRESS/FUNDING_TOKEN_DECIMALS/FUNDING_ASSET_REF, GAS_ASSET_REF.
+//                           GAS_ASSET_REF, and optionally FUNDING_TOKEN_ADDRESS/FUNDING_TOKEN_DECIMALS/FUNDING_ASSET_REF
+//                           (without them, agents are funded with native MON only).
 // LIVE_OUTFLOWS=1 enables the withdrawal gateway; it stays off until the E03 proof has dated evidence.
 import { CrossCheckedChain, JsonRpcChain, LocalChain, LocalCustody, PrivyCustody } from '@monad-hack/custody';
 import type { ChainReader, CustodyConfig, CustodyProvider } from '@monad-hack/custody';
@@ -48,9 +49,10 @@ export function custodyFromEnv(env: NodeJS.ProcessEnv): CustodySetup | undefined
   if (kind !== 'privy') throw new Error('CUSTODY_PROVIDER is local or privy.');
   const chainId = Number(need(env, 'CUSTODY_CHAIN_ID'));
   if (!Number.isSafeInteger(chainId) || chainId < 1) throw new Error('CUSTODY_CHAIN_ID must be a chain ID.');
-  const token = need(env, 'FUNDING_TOKEN_ADDRESS').toLowerCase();
-  if (!/^0x[0-9a-f]{40}$/.test(token)) throw new Error('FUNDING_TOKEN_ADDRESS must be an address.');
-  const decimals = Number(need(env, 'FUNDING_TOKEN_DECIMALS'));
+  // Optional: without a funding token, users fund with native MON only (gas and trading inventory).
+  const tokenAddress = env['FUNDING_TOKEN_ADDRESS']?.toLowerCase();
+  if (tokenAddress !== undefined && !/^0x[0-9a-f]{40}$/.test(tokenAddress)) throw new Error('FUNDING_TOKEN_ADDRESS must be an address.');
+  const decimals = tokenAddress ? Number(need(env, 'FUNDING_TOKEN_DECIMALS')) : 0;
   const primary = new JsonRpcChain({ endpoint: need(env, 'CUSTODY_RPC'), chainId });
   const secondaryUrl = env['CUSTODY_RPC_SECONDARY'];
   const chain = secondaryUrl ? new CrossCheckedChain(primary, new JsonRpcChain({ endpoint: secondaryUrl, chainId })) : primary;
@@ -61,7 +63,7 @@ export function custodyFromEnv(env: NodeJS.ProcessEnv): CustodySetup | undefined
     config: {
       networkRef: need(env, 'CUSTODY_NETWORK_REF'), chainId, gasAssetRef, startHeight: BigInt(env['CUSTODY_START_HEIGHT'] ?? '0'),
       assets: [
-        { assetRef: need(env, 'FUNDING_ASSET_REF'), chainId, token, decimals, funding: true },
+        ...(tokenAddress ? [{ assetRef: need(env, 'FUNDING_ASSET_REF'), chainId, token: tokenAddress, decimals, funding: true }] : []),
         { assetRef: gasAssetRef, chainId, token: 'native', decimals: 18, funding: true },
       ],
     },

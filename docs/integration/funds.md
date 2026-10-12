@@ -68,6 +68,13 @@ Set `CUSTODY_PROVIDER=privy`, `CUSTODY_CHAIN_ID`, `CUSTODY_NETWORK_REF`, `CUSTOD
 issuer's official source and a block explorer; do not copy them from a chat or a search snippet. Fund the agent
 wallet with testnet MON for gas and the test token, then watch `GET /balances` move from pending to credited.
 
+### Real testnet check (MON-only funding)
+
+The funding token is optional: without `FUNDING_TOKEN_ADDRESS` agents are funded with native MON only.
+`node --env-file=.env scripts/testnet-funds-check.ts prepare` creates a labelled test agent and its Privy wallet;
+send it a little testnet MON, then `… run <agentId> <returnAddress>` scans the finalized deposit, allocates it,
+withdraws part back through the gateway and reconciles against the chain.
+
 ## 6. Rate cards
 
 Prices live in immutable `rate_cards` rows (`publishRateCard`), in the funding token's atomic units, with a
