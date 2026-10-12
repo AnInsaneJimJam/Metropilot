@@ -25,6 +25,11 @@ deterministic wallets, labelled local everywhere. In Operate → Live funds: ope
 (mints test assets and finalizes them), allocate (raising trading asks for a code; the code is printed in the
 `[api]` log), verify a destination and withdraw. Nothing touches a real network or key.
 
+The local chain lives in the API process, produces one block per worker tick (2 s) and starts empty on every run
+with a fresh chain ID (`LOCAL_CHAIN_ID` pins one). Ledger balances persist in the database, so an agent funded in
+an earlier run will show a reconciliation freeze against the new, empty chain; use a new agent for each local run.
+Reconciliation runs only once the deposit scanner has processed the finalized head; while it lags it defers.
+
 ## 3. User API
 
 All routes need the session cookie. Money commands take `Idempotency-Key`. Bodies are closed `funds-1` contracts.

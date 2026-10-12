@@ -280,7 +280,11 @@ export class WithdrawalGateway {
  * unsettled send (its effect cannot be explained yet). A difference freezes that agent's outflows.
  */
 export async function reconcileWallets(pool: pg.Pool, chain: ChainReader, config: CustodyConfig, now: Date): Promise<ReconcileReport[]> {
+  // Compare only once the deposit scanner has processed every finalized block: a deposit finalized after its
+  // last pass would otherwise look like unexplained external activity. Lagging means defer, not freeze.
   const height = await chain.finalizedHeight();
+  const scanned = await pool.query<{ height: string }>(`select height from chain_cursors where chain_id = $1 and name = 'finalized'`, [chain.chainId]);
+  if (!scanned.rows[0] || BigInt(scanned.rows[0].height) < height) return [];
   const wallets = await pool.query<{ id: string; tenant_id: string; agent_id: string; address: string }>(`select id, tenant_id, agent_id, address from wallets where chain_id = $1 and status = 'active'`, [chain.chainId]);
   const reports: ReconcileReport[] = [];
   for (const w of wallets.rows) {

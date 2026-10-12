@@ -51,6 +51,8 @@ if (custody) {
   const gateway = new WithdrawalGateway(pool, custody.provider, custody.chain, custody.config);
   const tick = async () => {
     const now = new Date();
+    // The local stand-in has no validators: produce one block per tick so sends reach finality.
+    custody.localChain?.mine(1);
     await scanner.tick(now);
     if (custody.outflows) await gateway.tick(now);
     await reconcileWallets(pool, custody.chain, custody.config, now);

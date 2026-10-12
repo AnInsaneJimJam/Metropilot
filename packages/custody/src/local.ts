@@ -130,11 +130,26 @@ export class LocalChain implements ChainReader {
     }
     return out;
   }
-  async erc20Balance(token: string, owner: string): Promise<bigint> {
-    return this.balanceOf(token, owner);
+  /** Balance as of a block height, replayed from the blocks (like an archive RPC read at that height). */
+  #balanceAt(token: string, owner: string, height: bigint): bigint {
+    let balance = 0n;
+    const t = token.toLowerCase();
+    const o = owner.toLowerCase();
+    for (let n = 0; n <= Number(height) && n < this.#blocks.length; n++) {
+      for (const tx of this.#blocks[n]!.txs) {
+        if (!tx.external && tx.from === o && t === NATIVE) balance -= tx.fee;
+        if (!tx.succeeded || tx.token !== t) continue;
+        if (tx.to === o) balance += tx.amount;
+        if (!tx.external && tx.from === o) balance -= tx.amount;
+      }
+    }
+    return balance;
   }
-  async nativeBalance(owner: string): Promise<bigint> {
-    return this.balanceOf(NATIVE, owner);
+  async erc20Balance(token: string, owner: string, height: bigint): Promise<bigint> {
+    return this.#balanceAt(token, owner, height);
+  }
+  async nativeBalance(owner: string, height: bigint): Promise<bigint> {
+    return this.#balanceAt(NATIVE, owner, height);
   }
 }
 

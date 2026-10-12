@@ -30,14 +30,17 @@ export function custodyFromEnv(env: NodeJS.ProcessEnv): CustodySetup | undefined
   if (!kind) return undefined;
   if (kind === 'local') {
     if (env['NODE_ENV'] === 'production') throw new Error('The local custody stand-in is development only.');
-    const chain = new LocalChain(31_337, 2);
+    // The local chain lives in this process and starts empty, so each run gets its own chain ID (wallets, deposits
+    // and scan cursors from earlier runs belong to other chains). LOCAL_CHAIN_ID pins one for tests.
+    const chainId = Number(env['LOCAL_CHAIN_ID'] ?? 1_000_000 + Math.floor(Math.random() * 1_000_000));
+    const chain = new LocalChain(chainId, 2);
     return {
       provider: new LocalCustody(chain), chain, localChain: chain, outflows: true,
       config: {
-        networkRef: 'local-chain', chainId: 31_337, gasAssetRef: 'local.MON', startHeight: 0n,
+        networkRef: 'local-chain', chainId, gasAssetRef: 'local.MON', startHeight: 0n,
         assets: [
-          { assetRef: 'local.USD', chainId: 31_337, token: LOCAL_USD_TOKEN, decimals: 6, funding: true },
-          { assetRef: 'local.MON', chainId: 31_337, token: 'native', decimals: 18, funding: true },
+          { assetRef: 'local.USD', chainId, token: LOCAL_USD_TOKEN, decimals: 6, funding: true },
+          { assetRef: 'local.MON', chainId, token: 'native', decimals: 18, funding: true },
         ],
       },
     };

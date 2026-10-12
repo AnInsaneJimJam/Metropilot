@@ -125,8 +125,9 @@ describe('custody, deposits, metering and withdrawals', { skip }, () => {
     assert.equal(chain.balanceOf(USDC, dest), 5_000_000n);
     assert.equal(await bucket(a, 'trading'), 45_000_000n);
     assert.equal(await bucket(a, 'trading', 'local.MON'), 10n ** 17n - chain.feePerTx);
+    await scanner.tick(now);
     const recon = (await reconcileWallets(db.pool, chain, config, now)).filter((r) => r.recordedWalletAtomic > 0n);
-    assert.ok(recon.every((r) => r.ok));
+    assert.ok(recon.length > 0 && recon.every((r) => r.ok), JSON.stringify(recon.map((r) => [r.chainDifference.toString(), r.ledgerDifference.toString()])));
   });
 
   test('native MON withdraws to a verified destination: the gateway refreshes the wallet policy before sending', async () => {
@@ -203,12 +204,30 @@ describe('custody, deposits, metering and withdrawals', { skip }, () => {
     chain.fund(NATIVE, b.address, 10n ** 16n);
     chain.mine(3);
     await scanner.tick(now);
-    chain.fund(NATIVE, b.address, 1n, b.address); // appears on chain without a recorded deposit
+    // Funds leave the wallet without a platform operation (e.g. a compromised provider key).
+    chain.submit(b.address, '0x00000000000000000000000000000000000000ee', NATIVE, 1n, `external-${b.agentId}`);
     chain.mine(3);
+    await scanner.tick(now);
     const reports = await reconcileWallets(db.pool, chain, config, now);
-    assert.ok(reports.some((r) => r.freezeId && r.chainDifference === 1n), 'surplus detected');
+    assert.ok(reports.some((r) => r.freezeId && r.chainDifference < 0n), 'deficit detected');
     const { reserve } = await import('../packages/accounting/src/reservations.ts');
     assert.equal(await code(() => db.tx((c) => reserve(c, { operationKey: `blocked:${b.agentId}`, ...b, purpose: 'trade', now, expiresAt: new Date(now.getTime() + 1000), holds: [{ account: user(b, 'trading', 'local.MON'), amount: 1n }] }))), 'RECONCILIATION_REQUIRED');
+  });
+
+  test('a deposit finalized after the last scanner pass is not mistaken for external activity', async () => {
+    const a = await agent();
+    const scanner = new DepositScanner(db.pool, chain, config);
+    chain.fund(USDC, a.address, 3_000_000n);
+    chain.mine(3);
+    await scanner.tick(now);
+    chain.fund(USDC, a.address, 2_000_000n); // lands between the scanner pass and reconciliation
+    chain.mine(3);
+    assert.deepEqual(await reconcileWallets(db.pool, chain, config, now), [], 'the scanner lags the finalized head: defer');
+    await scanner.tick(now);
+    assert.equal(await bucket(a, 'unallocated'), 5_000_000n);
+    assert.ok((await reconcileWallets(db.pool, chain, config, now)).length > 0);
+    const { openFreezes } = await import('../packages/accounting/src/index.ts');
+    assert.deepEqual(await openFreezes(db.pool, 'live', a.tenantId, a.agentId), []);
   });
 
   test('hosting slices are charged once per slice and stop when the hosting bucket is empty; trading funds are never used', async () => {
