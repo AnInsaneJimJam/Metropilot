@@ -1,3 +1,4 @@
+import { HttpBroker } from '../apps/runtime/src/dispatch/broker.ts';
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after, describe, test } from "node:test";
@@ -260,6 +261,7 @@ export async function brokerHarness(
   };
   return {
     broker,
+    app,
     service,
     pool,
     runtime,
@@ -376,4 +378,11 @@ describe("broker capability and safety boundaries", { skip: !url }, () => {
       "BROKER_OUTPUT_INVALID",
     );
   });
+});
+
+if (url) brokerConformance('runtime HTTP client → paper API / PostgreSQL', async () => {
+  const h = await brokerHarness(); await h.app.listen({ host: '127.0.0.1', port: 0 });
+  const address = h.app.server.address(); if (!address || typeof address === 'string') throw new Error('No test port');
+  const broker = new HttpBroker({ origin: `http://127.0.0.1:${address.port}`, capability: async request => h.tokens.get(request.runId)! });
+  return { ...h, broker };
 });

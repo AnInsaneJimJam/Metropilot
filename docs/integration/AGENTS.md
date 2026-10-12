@@ -6,7 +6,8 @@ Every guide names the conformance kit that proves an integration and keeps its e
 
 ## Checklist
 
-- [ ] INT-0 / G4: build the runtime HTTP clients and `main.ts` per [runtime HTTP clients](runtime-http-clients.md), proven first against a loopback server wrapping the stand-ins.
+- [x] INT-0 / G4: build the runtime HTTP clients and `main.ts` per [runtime HTTP clients](runtime-http-clients.md), proven first against a loopback server wrapping the stand-ins.
+  - Done 2026-10-13: all three clients validated against real services; broker conformance in [broker-service.test.ts](../../tests/broker-service.test.ts), launch-to-history flow in [paper-stack.test.ts](../../tests/paper-stack.test.ts). `REQUIRE_DB=1 pnpm check`: 542 passed, zero skipped; `pnpm stack:dev` boots with the HTTP broker.
   - Progress 2026-10-12: control API and executor clients and `main.ts` done and proven against the real services; open until the broker client exists.
 - [x] INT-1 / G4: control API owner passes the [control API conformance kit](../../apps/runtime/src/conformance/control-api.ts) against the real service through the runtime HTTP client.
   - Done 2026-10-08 (branch `feat/runtime-control-api`): kit green through `HttpControlApi` → internal Fastify app → PostgreSQL in [runtime-control.test.ts](../../tests/runtime-control.test.ts); `REQUIRE_DB=1 pnpm check` 426 pass, 0 skipped. Hosted deployment is separate (INF-3).

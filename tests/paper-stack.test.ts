@@ -1,6 +1,6 @@
 // The whole local paper stack on real PostgreSQL (TEST-2, INT-2): user API launch → runtime-facing control API
 // → runtime HTTP clients → real paper executor (Postgres authority, recorded prices) → executor outbox → resumed
-// runs, history and the live event stream. Synthetic paper data; the broker is the scripted stand-in.
+// runs, history and the live event stream. Synthetic paper data; the broker serves recorded reads and explicitly synthetic AI over HTTP.
 // Skips without a reachable DATABASE_URL unless REQUIRE_DB=1.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
@@ -20,8 +20,8 @@ import { ControlStore } from '../apps/api/src/store.ts';
 import { createExecutor, PostgresAuthority, PostgresMarketData } from '../apps/executor/src/index.ts';
 import { HttpControlApi } from '../apps/runtime/src/dispatch/control-api.ts';
 import { HttpExecutor } from '../apps/runtime/src/dispatch/executor.ts';
-import { ScriptedBroker } from '../apps/runtime/src/local/scripted-broker.ts';
-import type { ScriptAnswer } from '../apps/runtime/src/local/scripted-broker.ts';
+import { HttpBroker } from '../apps/runtime/src/dispatch/broker.ts';
+import { PaperBrokerService } from '../apps/api/src/broker-service.ts';
 import { systemClock } from '../apps/runtime/src/ports.ts';
 import type { CrashPoint } from '../apps/runtime/src/host.ts';
 import type { HostCommand } from '../packages/strategy/src/index.ts';
@@ -84,10 +84,12 @@ const listen = async (server: { listen: (port: number, host: string, cb: () => v
 
 const budget = { tradingUsdMicros: '1000000000', hostingUsdMicros: '10000000', dataAndAiUsdMicros: '5000000', monReserveAtomic: '1000000000000000000' };
 
-async function stack(options: { dispatchInline?: boolean; decisions?: ScriptAnswer[] } = {}) {
+async function stack(options: { dispatchInline?: boolean } = {}) {
   const pool = await freshPool();
   const secret = randomBytes(32);
-  const runtimeStore = new RuntimeControlStore({ pool, executorCapabilitySecret: secret });
+  const brokerSecret = randomBytes(32);
+  const runtimeStore = new RuntimeControlStore({ pool, executorCapabilitySecret: secret, brokerCapabilitySecret: brokerSecret });
+  const service = new PaperBrokerService({ pool, secret: brokerSecret });
   const controlStore = new ControlStore(pool);
   const tenant = await controlStore.tenant(`stack-${randomBytes(4).toString('hex')}`);
   // The lifecycle clock can be skewed forward to expire estimates (estimate rows are immutable).
@@ -96,7 +98,7 @@ async function stack(options: { dispatchInline?: boolean; decisions?: ScriptAnsw
   const user = createApp({ store: controlStore, lifecycle, origin: 'http://127.0.0.1:5173', authenticate: async (cookie) => (cookie === 'me' ? tenant : undefined), streamPollMillis: 20 });
   await user.ready();
   const userOrigin = await (async () => { await user.listen({ host: '127.0.0.1', port: 0 }); closers.push(() => user.close()); return `http://127.0.0.1:${(user.server.address() as AddressInfo).port}`; })();
-  const internal = createInternalApp({ store: runtimeStore, authenticateWorkload: (h) => (typeof h['x-runtime-workload'] === 'string' ? h['x-runtime-workload'] : undefined), pollIntervalMillis: 20 });
+  const internal = createInternalApp({ broker: service, store: runtimeStore, authenticateWorkload: (h) => (typeof h['x-runtime-workload'] === 'string' ? h['x-runtime-workload'] : undefined), pollIntervalMillis: 20 });
   await internal.listen({ host: '127.0.0.1', port: 0 });
   closers.push(() => internal.close());
   const internalOrigin = `http://127.0.0.1:${(internal.server.address() as AddressInfo).port}`;
@@ -107,12 +109,7 @@ async function stack(options: { dispatchInline?: boolean; decisions?: ScriptAnsw
   });
   const executorOrigin = await listen(executor.server);
   const control = new HttpControlApi({ origin: internalOrigin, workload: { 'x-runtime-workload': 'runtime-stack-1' } });
-  const decisions = [...(options.decisions ?? [])];
-  const broker = new ScriptedBroker({
-    clock: systemClock,
-    read: () => ({ value: { price: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal: '2500' }, observedAt: systemClock.now() } }),
-    decide: () => decisions.shift() ?? { value: { decision: 'allow', summary: 'Synthetic AI: allow.' } },
-  });
+  const broker = new HttpBroker({ origin: internalOrigin, capability: () => control.brokerCapability(), forgetCapability: () => control.forgetBrokerCapability() });
   const httpExecutor = new HttpExecutor({ origin: executorOrigin, capability: () => control.executorCapability(), forgetCapability: () => control.forgetExecutorCapability() });
   const config = { runtimeId: 'runtime-stack-1', mode: 'paper' as const, imageDigest: IMAGE, heartbeatMillis: 10_000, pollWaitSeconds: 0 };
   const runtime = (crashAt?: (point: CrashPoint, command: HostCommand) => void) => new Supervisor({ config, control, broker, executor: httpExecutor, clock: systemClock, ...(crashAt ? { crashAt } : {}) });

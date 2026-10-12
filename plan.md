@@ -130,3 +130,7 @@ Codex owns `apps/api/src/broker-store.ts`, migration `0006_broker_results.sql`, 
 ## Broker-AI issue #5 — 2026-10-13
 
 Codex owns the paper broker service, broker-audience capability exchange/verification, internal route wiring and broker conformance tests. Depends on #4 (`f1148ff`). Read side uses persisted market observations with catalog units/freshness; AI is explicitly synthetic. Real provider billing remains #8/#9. Evidence: `REQUIRE_DB=1 pnpm check` 534 passed, zero skipped. Broker conformance runs through Fastify on PostgreSQL; safety checks cover cross-audience/expired/other-run tokens, missing observations, approved command fields, malicious AI output and reconciliation with exactly one durable resume. Executor audience regression updated for the expanded issuer.
+
+## Broker-AI issue #6 — 2026-10-13
+
+Codex owns `apps/runtime/src/dispatch/broker.ts`, broker capability caching, runtime endpoint/main wiring, `scripts/stack-dev.mjs` and HTTP-client conformance/regression tests. Depends on #5 (`73e7a53`). Scope: use the API broker with identical-body retry, bounded transport and UUIDv7 tracing. Evidence: `REQUIRE_DB=1 pnpm check` 542 passed, zero skipped; real-service broker conformance and full HTTP paper stack pass. `pnpm stack:dev` boots all five services with HTTP broker; stopped after verification.

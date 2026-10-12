@@ -1,13 +1,13 @@
 # Runtime HTTP clients
 
-**Status 2026-10-12: the control API and executor clients and the process entry are written; the broker client is not (no API Broker service exists).** [`dispatch/control-api.ts`](../../apps/runtime/src/dispatch/control-api.ts) and [`dispatch/executor.ts`](../../apps/runtime/src/dispatch/executor.ts) pass their conformance kits against the real services on PostgreSQL ([`runtime-control.test.ts`](../../tests/runtime-control.test.ts), [`executor-conformance.test.ts`](../../tests/executor-conformance.test.ts)); [`main.ts`](../../apps/runtime/src/main.ts) runs the warm supervisor with them and a synthetic broker ([D41](../decisions.md)). The executor capability comes from the control API's exchange route ([D38](../decisions.md)); the runtime sends only that token to the executor. Both clients send UUIDv7 `X-Request-ID`s.
+**Status 2026-10-13: all three HTTP clients and the process entry are implemented.** The broker kit runs through [`dispatch/broker.ts`](../../apps/runtime/src/dispatch/broker.ts) against the real Fastify service and PostgreSQL ([broker-service.test.ts](../../tests/broker-service.test.ts)). [paper-stack.test.ts](../../tests/paper-stack.test.ts) runs launch → HTTP recorded read/synthetic decision → executor → history. `main.ts` defaults to the HTTP broker; `RUNTIME_BROKER=synthetic` explicitly selects the local stand-in. Broker and executor tokens have separate audiences and secrets; the runtime exchanges its current assignment bearer and never receives either secret.
 
-What is missing, and where it goes ([agent runtime §16](../specs/agent-runtime.md#16-suggested-source-layout)):
+Client locations ([agent runtime §16](../specs/agent-runtime.md#16-suggested-source-layout)):
 
 | File | Implements | Talks to |
 | --- | --- | --- |
 | `apps/runtime/src/dispatch/control-api.ts` (**written**) | `ControlApi` | [Control API routes](control-api.md#5-endpoints-the-runtime-calls) |
-| `apps/runtime/src/dispatch/broker.ts` | `Broker` | API Broker read / `ai.decide` route |
+| `apps/runtime/src/dispatch/broker.ts` (**written**) | `Broker` | API Broker read / `ai.decide` route |
 | `apps/runtime/src/dispatch/executor.ts` | `Executor` | `POST /internal/v1/intents` ([executor guide](executor.md#2-the-request)) |
 | `apps/runtime/src/main.ts` | Process entry | `parseConfig(process.env)` → build the three clients → `new Supervisor(...).serve()` → `drain()` on `SIGTERM` |
 
@@ -60,7 +60,7 @@ Servers answer failures with an [`error-1`](../../packages/contracts/schemas/err
 | --- | --- |
 | Heartbeat body and answer | [`runtime-heartbeat/1`](../../packages/contracts/schemas/runtime-heartbeat-1.schema.json) `{runId, assignmentId, fencingToken}` → [`runtime-lease/1`](../../packages/contracts/schemas/runtime-lease-1.schema.json) `{leaseExpiresAt, capability}` |
 | Artifact fetch response | [`artifact/1`](../../packages/contracts/schemas/artifact-1.schema.json) `{ref, kind, contentHash, text}`; the runtime still re-verifies hashes |
-| Capability issue and refresh | Per-assignment bearer (32 random bytes, base64url) delivered in [`assignment-offer/2`](../../packages/contracts/schemas/assignment-offer-2.schema.json); the server stores only its SHA-256. The heartbeat extends the same bearer's expiry (not rotated, so requests in flight stay valid). Audience-scoped broker/executor capabilities are **still open** |
+| Capability issue and refresh | Per-assignment bearer (32 random bytes, base64url) delivered in [`assignment-offer/2`](../../packages/contracts/schemas/assignment-offer-2.schema.json); the server stores only its SHA-256. The heartbeat extends the same bearer's expiry (not rotated, so requests in flight stay valid). Audience-scoped broker/executor capabilities use the authenticated exchange, separate secrets and current-generation checks |
 | Long-poll semantics | Server holds the poll up to `waitSeconds`, re-checking every 250 ms without holding a database connection, and answers `none` on timeout; the client times out at `waitSeconds` + 5 s |
 | `fetchArtifact` has no assignment argument | The client uses the capability of the assignment most recently received from `poll` |
 | Bootstrap redemption for cold-start tasks | **Still open**: `GET /internal/v1/runtime/assignments/{assignmentId}` returning `runtime-assignment/1`, with the single-use bootstrap value delivered out of band |
@@ -74,5 +74,5 @@ Servers answer failures with an [`error-1`](../../packages/contracts/schemas/err
 - [x] Control API conformance kit green through the client against the real control API on PostgreSQL ([INT-1](AGENTS.md)).
 - [x] `dispatch/executor.ts`: closed intent, `Idempotency-Key = logicalKey`, exchanged executor capability (refreshed once on `401`), identical-body retries.
 - [x] Executor conformance kit green through its client against the real paper executor ([INT-2](AGENTS.md)).
-- [x] `main.ts` with closed configuration (credential guard, endpoint origins), signal-driven drain and a synthetic broker (`pnpm stack:dev`).
-- [ ] `dispatch/broker.ts` once the API Broker exists; broker-audience capabilities through the same exchange.
+- [x] `main.ts` with closed configuration (credential guard, endpoint origins), signal-driven drain and the HTTP broker (`pnpm stack:dev`).
+- [x] `dispatch/broker.ts`, broker-audience exchange, bounded responses, identical-body retries; conformance against the real service.
