@@ -78,6 +78,8 @@ Made by the editor owner (TathagatGupta98); see the [plan claim](../plan.md#acti
 
 E03 progress 2026-10-12: harness ready (`pnpm custody:proof`, [funds guide](integration/funds.md#4-privy-proof-e03)); request shapes and the authorization signature are unit-tested against Privy's documented API. Evidence pending a Privy app; paper-only until it passes.
 
+E06 progress 2026-10-12: `JsonRpcChain` (packages/custody) run read-only against the public Monad testnet RPC `https://testnet-rpc.monad.xyz`: `eth_chainId` = 10143 verified, the `finalized` block tag is supported (finalized 70469247, latest 70469248, lag 1 block), block hash at the finalized height and a balance read at that height succeeded. Open: a second independent RPC for `CrossCheckedChain`, historical `eth_getLogs` limits and provider quotas.
+
 E09 G1 portion verified 2026-10-03: exact pins ajv 8.20.0, ajv-formats 3.0.1, json-schema-to-typescript 16.0.0 (dev), pg 8.23.1, @types/pg 8.23.1 (all MIT), typescript 7.0.2 (Apache-2.0), @types/node 24.19.0 (MIT); compatibility proven by `pnpm bootstrap` (Node 24.21.0, pnpm 12.8.1, Postgres 17.11) → 244/244 node:test pass, 0 skipped. SDK capability tests (Fastify, viem, wallet provider) stay with their gates.
 
 These gates need evidence, not a new major architecture exercise. They are intentionally not filled with guessed chain addresses, model IDs, credit balances or invented deadlines. Record the verified values, source/date and passing probe when closing them.
