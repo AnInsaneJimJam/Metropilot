@@ -289,6 +289,8 @@ describe('database', { skip }, () => {
       await rejects(db.query("update ai_allowance_reservations set state='settled',charged_usd_micros=101,settled_at=now()"),'23514');
       await db.query("update ai_allowance_reservations set state='settled',charged_usd_micros=50,settled_at=now()");
       await rejects(db.query('update ai_allowance_reservations set charged_usd_micros=0'),'P0001');
+      assert.equal((await db.query('select counts_call from ai_allowance_reservations where operation_key=$1', [key])).rows[0].counts_call, true);
+      await rejects(db.query('update ai_allowance_reservations set counts_call=false'), 'P0001');
     });
 
     test('allowance backfill (0009) preserves an earlier unknown hold exactly once', async () => {

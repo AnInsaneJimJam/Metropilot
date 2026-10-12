@@ -34,6 +34,61 @@ const controlFor = (h: Harness): ControlApi => ({
 });
 
 describe('paper AI allowance / PostgreSQL', { skip }, () => {
+  test('synthetic calls settle at zero, enforce the call cap and replay one reservation', async () => {
+    let calls = 0;
+    const h = await brokerHarness({ decide: async request => {
+      calls++;
+      return { schemaVersion: 'broker-result/1', operationKey: request.operationKey, disposition: 'completed', resultId: '019a0000-0000-7000-8000-000000000099', value: { decision: 'allow', summary: 'Synthetic quota test.' }, receivedAt: new Date().toISOString() };
+    } });
+    const first = await h.arrange('ai.decide');
+    const original = await h.broker.request(first);
+    assert.equal(original.disposition, 'completed');
+    for (let i = 1; i < 20; i++) assert.equal((await h.broker.request(await h.runAgain(first.runId))).disposition, 'completed');
+    const denied = await h.broker.request(await h.runAgain(first.runId));
+    assert.equal(denied.reason?.code, 'BROKER_BUDGET_EXHAUSTED');
+    assert.deepEqual(await h.broker.request(first), original);
+    assert.equal(calls, 20);
+    assert.deepEqual((await h.pool.query("select count(*)::int as calls,sum(charged_usd_micros)::text as charged,count(*) filter(where state='held')::int as held from ai_allowance_reservations")).rows[0], { calls: 20, charged: '0', held: 0 });
+    assert.equal((await h.pool.query('select 1 from ai_metering')).rowCount, 0);
+  });
+
+  test('failure between allowance and meter writes rolls back the unused hold before provider I/O', async () => {
+    let calls = 0;
+    const h = await brokerHarness({ kimiAdapter: new KimiAdapter({ apiKey: 'synthetic-not-a-provider-key', verified: true, fetch: async () => { calls++; return response(); } }) });
+    const request = await h.arrange('ai.decide');
+    await h.pool.query("create function interrupt_meter_claim() returns trigger language plpgsql as $$ begin raise exception 'simulated claim interruption'; end $$; create trigger interrupt_meter before insert on ai_metering for each row execute function interrupt_meter_claim()");
+    const interrupted = await h.broker.request(request);
+    assert.equal(interrupted.disposition, 'unknown');
+    assert.equal(calls, 0);
+    assert.equal((await h.pool.query('select 1 from ai_allowance_reservations')).rowCount, 0);
+    assert.equal((await h.pool.query('select 1 from ai_metering')).rowCount, 0);
+    await h.pool.query('drop trigger interrupt_meter on ai_metering');
+    assert.deepEqual(await h.broker.request(request), interrupted);
+    assert.equal(calls, 0);
+    assert.equal((await h.broker.request(await h.runAgain(request.runId))).disposition, 'completed');
+    assert.equal(calls, 1);
+  });
+
+  test('forward backfill correction excludes pre-dispatch refusals while retaining synthetic usage', async () => {
+    const h = await brokerHarness();
+    const first = await h.arrange('ai.decide');
+    h.service.allowance.reserve = async () => ({ allowed: true });
+    assert.equal((await h.broker.request(first)).disposition, 'completed');
+    const rejected = await h.runAgain(first.runId);
+    await h.pool.query("update deployments set model_profiles='{}'");
+    assert.equal((await h.broker.request(rejected)).reason?.code, 'BROKER_NOT_ALLOWED');
+    const legacy = await readFile(new URL('../apps/api/migrations/0009_ai_allowance_backfill.sql', import.meta.url), 'utf8');
+    await h.pool.query(legacy);
+    const correction = await readFile(new URL('../apps/api/migrations/0011_ai_backfill_call_counts.sql', import.meta.url), 'utf8');
+    // The schema is already current; exercise the forward correction's data statements.
+    await h.pool.query(correction.slice(correction.indexOf('alter table ai_allowance_reservations disable')));
+    const rows = (await h.pool.query('select operation_key,counts_call,charged_usd_micros from ai_allowance_reservations')).rows;
+    assert.equal(rows.find(row => row.operation_key === first.operationKey).counts_call, true);
+    assert.equal(rows.find(row => row.operation_key === rejected.operationKey).counts_call, false);
+    assert.ok(rows.every(row => row.charged_usd_micros === '0'));
+    await assert.rejects(h.pool.query('update ai_allowance_reservations set counts_call=true where operation_key=$1', [rejected.operationKey]), /immutable/);
+  });
+
   test('20-call default is atomic across concurrent runs; replay consumes no extra call or charge', async () => {
     let calls = 0;
     const h = await brokerHarness({ kimiAdapter: new KimiAdapter({ apiKey: 'synthetic-not-a-provider-key', verified: true, fetch: async () => { calls++; return response(); } }) });

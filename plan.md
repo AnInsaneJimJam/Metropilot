@@ -146,3 +146,7 @@ Codex owns migration `0008_ai_allowances.sql`, atomic paper AI allowances, pre-d
 #9 also owns forward migration `0009_ai_allowance_backfill.sql`: preserve pre-existing metered charges/holds and prior synthetic call counts when introducing allowances. Migration 0008 has already run in scratch tests and remains unchanged.
 
 Broker review follow-up: Codex owns forward migration `0010_broker_storage_bounds.sql`. Applied migration 0006 remains unchanged. Preserve compact protocol limits while allowing PostgreSQL JSONB formatting overhead in storage; verify near-limit persistence and database ceilings.
+
+#9 review follow-up owns forward migration `0011_ai_backfill_call_counts.sql`: preserve legacy audit claims while excluding known pre-dispatch refusals from call counts. Atomically commit Kimi allowance and metering claims; add synthetic-path and interrupted-claim regressions.
+
+Final review evidence: `REQUIRE_DB=1 pnpm check` → 576 passed, zero skipped. Includes terminal-dispatch and reconciliation races, downstream authored failures, malformed HTTP errors, expired/future executor observations, compact JSON boundary persistence, atomic allowance/metering rollback, legacy refusal correction and the distinct zero-cost synthetic quota path. Real-provider E05 remains gated.

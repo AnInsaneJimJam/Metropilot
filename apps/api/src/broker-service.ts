@@ -216,11 +216,11 @@ export class PaperBrokerService {
           catch { return refuse('BROKER_BUDGET_EXHAUSTED', 'This AI request exceeds the bounded profile.'); }
         } else if (profile.provider !== 'synthetic') return refuse('BROKER_NOT_ALLOWED', 'The model provider is not enabled.');
         await this.allowance.settleKnown();
-        const allowance = await this.allowance.reserve(scope, request.operationKey, ceiling);
-        if (!allowance.allowed) return refuse('BROKER_BUDGET_EXHAUSTED', allowance.message);
         if (kimi) {
-          result = await kimi.dispatch(scope, request);
+          result = await kimi.dispatch(scope, request, this.allowance);
         } else {
+          const allowance = await this.allowance.reserve(scope, request.operationKey, ceiling);
+          if (!allowance.allowed) return refuse('BROKER_BUDGET_EXHAUSTED', allowance.message);
           result = this.options.decide
             ? await this.options.decide(request)
             : {

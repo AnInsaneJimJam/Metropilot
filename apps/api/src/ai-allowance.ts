@@ -10,11 +10,11 @@ export class AiAllowance {
   readonly pool: pg.Pool;
   readonly now: () => Date;
   constructor(pool: pg.Pool, now: () => Date = () => new Date()) { this.pool = pool; this.now = now; }
-  async reserve(scope: BrokerScope, operationKey: string, ceiling: bigint): Promise<Allowance> {
+  async reserve(scope: BrokerScope, operationKey: string, ceiling: bigint, transaction?: pg.PoolClient): Promise<Allowance> {
     if (ceiling < 0n || ceiling > PAPER_AI_USD_MICROS_PER_DAY) return { allowed: false, message: 'This AI call exceeds the daily API allowance.' };
-    const client = await this.pool.connect();
+    const client = transaction ?? await this.pool.connect();
     try {
-      await client.query('begin');
+      if (!transaction) await client.query('begin');
       const agent = (await client.query<{ id: string; paper_budget: { dataAndAiUsdMicros?: string } | null }>(`select a.id,a.paper_budget from agents a
         join deployments d on d.tenant_id=a.tenant_id and d.agent_id=a.id
         join runs r on r.tenant_id=d.tenant_id and r.deployment_id=d.id
@@ -25,10 +25,10 @@ export class AiAllowance {
       const existing = (await client.query<{ reserved_usd_micros: string }>('select reserved_usd_micros from ai_allowance_reservations where tenant_id=$1 and operation_key=$2', [scope.tenantId,operationKey])).rows[0];
       if (existing) {
         if (BigInt(existing.reserved_usd_micros) !== ceiling) throw new Error('The AI reservation ceiling cannot change.');
-        await client.query('commit'); return { allowed: true };
+        if (!transaction) await client.query('commit'); return { allowed: true };
       }
       const now = this.now(), day = now.toISOString().slice(0,10);
-      const totals = (await client.query<{ calls: string; daily: string; allocated: string }>(`select count(*) filter(where authorized_day=$3)::text as calls,
+      const totals = (await client.query<{ calls: string; daily: string; allocated: string }>(`select count(*) filter(where authorized_day=$3 and counts_call)::text as calls,
         coalesce(sum(case when state='held' then reserved_usd_micros else charged_usd_micros end) filter(where authorized_day=$3),0)::text as daily,
         coalesce(sum(case when state='held' then reserved_usd_micros else charged_usd_micros end),0)::text as allocated
         from ai_allowance_reservations where tenant_id=$1 and agent_id=$2`, [scope.tenantId,agent.id,day])).rows[0]!;
@@ -36,11 +36,11 @@ export class AiAllowance {
       const reason = BigInt(totals.calls) >= BigInt(PAPER_AI_CALLS_PER_DAY) ? 'The sandbox AI allowance of 20 calls for today is used up.'
         : BigInt(totals.daily) + ceiling > PAPER_AI_USD_MICROS_PER_DAY ? 'The sandbox AI allowance of USD 0.10 for today is used up.'
         : !allocation || !/^(0|[1-9][0-9]{0,77})$/.test(allocation) || BigInt(totals.allocated) + ceiling > BigInt(allocation) ? 'The agent API allocation is insufficient for this AI call.' : undefined;
-      if (reason) { await client.query('commit'); return { allowed: false, message: reason }; }
+      if (reason) { if (!transaction) await client.query('commit'); return { allowed: false, message: reason }; }
       await client.query(`insert into ai_allowance_reservations(tenant_id,operation_key,agent_id,authorized_at,authorized_day,reserved_usd_micros,state) values($1,$2,$3,$4,$5,$6,'held')`, [scope.tenantId,operationKey,agent.id,now,day,ceiling.toString()]);
-      await client.query('commit'); return { allowed: true };
-    } catch (error) { await client.query('rollback'); throw error; }
-    finally { client.release(); }
+      if (!transaction) await client.query('commit'); return { allowed: true };
+    } catch (error) { if (!transaction) await client.query('rollback'); throw error; }
+    finally { if (!transaction) client.release(); }
   }
 
   /** Known Kimi usage comes from immutable metering; synthetic calls settle at zero. */
