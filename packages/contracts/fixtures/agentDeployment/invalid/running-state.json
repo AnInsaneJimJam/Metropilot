@@ -1,0 +1,19 @@
+{
+  "description": "Desired states use the shared vocabulary (D37)",
+  "expect": {
+    "fieldPath": "/desiredState",
+    "keyword": "enum"
+  },
+  "document": {
+    "schemaVersion": "agent-deployment/1",
+    "agentId": "019a0000-0000-7000-8000-000000000001",
+    "deploymentId": "019a0000-0000-7000-8000-000000000501",
+    "generation": "1",
+    "mode": "paper",
+    "desiredState": "running",
+    "strategyRevisionId": "019a0000-0000-7000-8000-000000000002",
+    "manifestHash": "0xabababababababababababababababababababababababababababababababab",
+    "simulationAccountId": "019a0000-0000-7000-8000-000000000502",
+    "updatedAt": "2026-10-12T12:00:00.000Z"
+  }
+}

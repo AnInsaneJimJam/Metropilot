@@ -25,6 +25,10 @@ import assignmentOffer2Schema from '../schemas/assignment-offer-2.schema.json' w
 import artifact1Schema from '../schemas/artifact-1.schema.json' with { type: 'json' };
 import runtimeHeartbeat1Schema from '../schemas/runtime-heartbeat-1.schema.json' with { type: 'json' };
 import runtimeLease1Schema from '../schemas/runtime-lease-1.schema.json' with { type: 'json' };
+import audienceCapabilitySchema from '../schemas/audience-capability-1.schema.json' with { type: 'json' };
+import deploymentManifestSchema from '../schemas/deployment-manifest-1.schema.json' with { type: 'json' };
+import auditEvent2Schema from '../schemas/audit-event-2.schema.json' with { type: 'json' };
+import lifecycle from '../schemas/control-lifecycle-1.schema.json' with { type: 'json' };
 import type { Strategy } from './generated.ts';
 import type { RunCheckpoint } from './generated.ts';
 import type { ErrorCode, GeneratedContractMap, RunComplete as GeneratedRunComplete, RunState as GeneratedRunState, RunWait as GeneratedRunWait } from './generated-contracts.ts';
@@ -44,7 +48,7 @@ export type ContractDocumentMap = Omit<GeneratedContractMap, 'runWait' | 'runCom
 export type ContractKind = keyof ContractDocumentMap;
 
 export const schemaBaseUri = 'https://monad-hack.example/schemas/';
-export const schemaDocuments: readonly object[] = [schema, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema];
+export const schemaDocuments: readonly object[] = [schema, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, auditEvent2Schema, lifecycle];
 
 /** Schema reference per kind; strategy is absolute because its schema lives beside the language core. */
 export const contractRefs = {
@@ -72,6 +76,14 @@ export const contractRefs = {
   artifact: schemaBaseUri + 'artifact-1.schema.json',
   runtimeHeartbeat: schemaBaseUri + 'runtime-heartbeat-1.schema.json',
   runtimeLease: schemaBaseUri + 'runtime-lease-1.schema.json',
+  audienceCapability: schemaBaseUri + 'audience-capability-1.schema.json',
+  deploymentManifest: schemaBaseUri + 'deployment-manifest-1.schema.json',
+  auditEvent2: schemaBaseUri + 'audit-event-2.schema.json',
+  paperEstimate: lifecycle.$id + '#/$defs/PaperEstimate',
+  deploymentOperation: lifecycle.$id + '#/$defs/DeploymentOperation',
+  agentDeployment: lifecycle.$id + '#/$defs/AgentDeployment',
+  runSummary: lifecycle.$id + '#/$defs/RunSummary',
+  runDetail: lifecycle.$id + '#/$defs/RunDetail',
 } as const satisfies Record<ContractKind, string>;
 
 /** UTF-8 byte ceilings checked before JSON parsing (strategy-language.md section 7, runtime.md limits). */
@@ -100,6 +112,14 @@ export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
   artifact: 1024 * 1024,
   runtimeHeartbeat: 4 * 1024,
   runtimeLease: 4 * 1024,
+  audienceCapability: 8 * 1024,
+  deploymentManifest: 16 * 1024,
+  auditEvent2: 64 * 1024,
+  paperEstimate: 4 * 1024,
+  deploymentOperation: 4 * 1024,
+  agentDeployment: 4 * 1024,
+  runSummary: 4 * 1024,
+  runDetail: 64 * 1024,
 };
 
 export type ContractIssueCode = Extract<ErrorCode, 'SCHEMA_INVALID' | 'LIMIT_EXCEEDED' | 'MALFORMED_REQUEST'>;

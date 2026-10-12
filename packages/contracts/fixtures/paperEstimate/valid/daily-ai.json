@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "paper-estimate/1",
+  "id": "019a0000-0000-7000-8000-000000000003",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "strategyRevisionId": "019a0000-0000-7000-8000-000000000002",
+  "budgetVersion": 1,
+  "policyVersion": 1,
+  "mode": "paper",
+  "runsPerDay": 1,
+  "worstCaseAiCallsPerDay": 1,
+  "createdAt": "2026-10-12T12:00:00.000Z",
+  "expiresAt": "2026-10-12T12:15:00.000Z"
+}

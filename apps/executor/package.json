@@ -9,6 +9,7 @@
   "dependencies": {
     "@monad-hack/contracts": "workspace:*",
     "@monad-hack/policy": "workspace:*",
+    "@monad-hack/strategy": "workspace:*",
     "pg": "8.23.1"
   },
   "devDependencies": {

@@ -74,6 +74,7 @@ pnpm bootstrap             # install, preflight, start Postgres, migrate, seed, 
 pnpm strategy:demo         # synthetic threshold-sale execution; no network or wallet
 pnpm runtime:demo          # synthetic paper runtime: triggers, host loop, crash recovery, fencing, pause
 pnpm api:runtime           # local runtime-facing control API on 127.0.0.1:3002 (after pnpm db:migrate)
+pnpm stack:dev             # whole local paper stack: user API, control API + worker, executor, runtime, studio
 pnpm web:dev               # Blockly strategy editor
 ```
 

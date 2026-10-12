@@ -1,0 +1,17 @@
+{
+  "description": "Withdrawals are not lifecycle operations",
+  "expect": {
+    "fieldPath": "/kind",
+    "keyword": "enum"
+  },
+  "document": {
+    "schemaVersion": "deployment-operation/1",
+    "id": "019a0000-0000-7000-8000-000000000601",
+    "agentId": "019a0000-0000-7000-8000-000000000001",
+    "deploymentId": "019a0000-0000-7000-8000-000000000501",
+    "kind": "withdraw",
+    "state": "succeeded",
+    "createdAt": "2026-10-12T12:00:00.000Z",
+    "updatedAt": "2026-10-12T12:00:00.000Z"
+  }
+}

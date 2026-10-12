@@ -1,6 +1,6 @@
 # Runtime HTTP clients
 
-**Status 2026-10-08 (branch `feat/runtime-control-api`): the control API client is written; the broker and executor clients and the process entry point are not.** The runtime talks to the outside world only through the interfaces in [`apps/runtime/src/ports.ts`](../../apps/runtime/src/ports.ts) (`ControlApi`, `Broker`, `Executor`). [`dispatch/control-api.ts`](../../apps/runtime/src/dispatch/control-api.ts) implements `ControlApi` over HTTP and passes the conformance kit against the real control API on PostgreSQL ([`tests/runtime-control.test.ts`](../../tests/runtime-control.test.ts)); it is the template for the other two. `Broker` and `Executor` still have only the in-memory stand-ins in [`src/local/`](../../apps/runtime/src/local/).
+**Status 2026-10-12: the control API and executor clients and the process entry are written; the broker client is not (no API Broker service exists).** [`dispatch/control-api.ts`](../../apps/runtime/src/dispatch/control-api.ts) and [`dispatch/executor.ts`](../../apps/runtime/src/dispatch/executor.ts) pass their conformance kits against the real services on PostgreSQL ([`runtime-control.test.ts`](../../tests/runtime-control.test.ts), [`executor-conformance.test.ts`](../../tests/executor-conformance.test.ts)); [`main.ts`](../../apps/runtime/src/main.ts) runs the warm supervisor with them and a synthetic broker ([D41](../decisions.md)). The executor capability comes from the control API's exchange route ([D38](../decisions.md)); the runtime sends only that token to the executor. Both clients send UUIDv7 `X-Request-ID`s.
 
 What is missing, and where it goes ([agent runtime §16](../specs/agent-runtime.md#16-suggested-source-layout)):
 
@@ -72,6 +72,7 @@ Servers answer failures with an [`error-1`](../../packages/contracts/schemas/err
 - [ ] Bootstrap redemption and production workload identity (gate E02).
 - [x] `dispatch/control-api.ts` with validation, timeouts, headers, error mapping and retries as above.
 - [x] Control API conformance kit green through the client against the real control API on PostgreSQL ([INT-1](AGENTS.md)).
-- [ ] `dispatch/broker.ts` and `dispatch/executor.ts`, each proven first against a loopback server wrapping its stand-in.
-- [ ] Executor conformance kit green through its client against the real paper executor ([INT-2](AGENTS.md)).
-- [ ] `main.ts` with closed configuration, signal-driven drain and capability refresh.
+- [x] `dispatch/executor.ts`: closed intent, `Idempotency-Key = logicalKey`, exchanged executor capability (refreshed once on `401`), identical-body retries.
+- [x] Executor conformance kit green through its client against the real paper executor ([INT-2](AGENTS.md)).
+- [x] `main.ts` with closed configuration (credential guard, endpoint origins), signal-driven drain and a synthetic broker (`pnpm stack:dev`).
+- [ ] `dispatch/broker.ts` once the API Broker exists; broker-audience capabilities through the same exchange.

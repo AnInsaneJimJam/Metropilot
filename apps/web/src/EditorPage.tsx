@@ -21,6 +21,7 @@ import type { Stage } from "./StrategyHeading.tsx";
 import { WorkspaceSidebar } from "./WorkspaceSidebar.tsx";
 import { PresetPicker } from "./PresetPicker.tsx";
 import { StrategyScope } from "./StrategyScope.tsx";
+import { OperatePanel } from "./OperatePanel.tsx";
 export function EditorPage() {
   const [stage, setStage] = useState<Stage>("build");
   const [experience, setExperience] = useState<Experience>("rookie");
@@ -278,6 +279,15 @@ export function EditorPage() {
                 setBudget(b);
                 change();
               }}
+              validation={validation}
+              onOperate={() => setStage("operate")}
+            />
+          )}
+          {stage === "operate" && (
+            <OperatePanel
+              current={current}
+              dirty={dirty}
+              connected={connected}
               validation={validation}
             />
           )}

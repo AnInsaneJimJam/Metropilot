@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/audit-event-2.schema.json",
+  "title": "AuditEventV2",
+  "description": "Immutable audit event envelope, audit-event/2 (docs/specs/api-and-data.md section 6): audit-event/1 with runId as the interpreter's 0x SHA-256 run identity (not a UUIDv7), run lifecycle and timeline types, and the deployment the event belongs to. Delivered over SSE and history; payload is already redacted. Supersedes audit-event/1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sequence",
+    "tenantId",
+    "actor",
+    "traceId",
+    "type",
+    "occurredAt",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "audit-event/2"
+    },
+    "sequence": {
+      "description": "Monotonic per-tenant stream sequence; the SSE Last-Event-ID.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "tenantId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "agentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "intentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "actor": {
+      "$ref": "#/$defs/actor"
+    },
+    "traceId": {
+      "$ref": "common.schema.json#/$defs/traceId"
+    },
+    "type": {
+      "$ref": "#/$defs/auditEventType"
+    },
+    "occurredAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "payload": {
+      "type": "object",
+      "maxProperties": 64
+    },
+    "deploymentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    }
+  },
+  "$defs": {
+    "actor": {
+      "title": "AuditActorV2",
+      "description": "user and operator actors carry their account ID; process roles do not.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "user",
+            "operator",
+            "controlPlane",
+            "runtime",
+            "executor",
+            "system"
+          ]
+        },
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        }
+      },
+      "if": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "user",
+              "operator"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "id"
+          ]
+        }
+      }
+    },
+    "auditEventType": {
+      "title": "AuditEventTypeV2",
+      "enum": [
+        "deployment.stateChanged",
+        "observation.accepted",
+        "observation.skipped",
+        "run.step",
+        "model.usage",
+        "policy.denied",
+        "reservation.changed",
+        "transaction.stateChanged",
+        "ledger.settled",
+        "resource.health",
+        "run.stateChanged",
+        "timeline.entry"
+      ]
+    }
+  }
+}

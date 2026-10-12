@@ -328,10 +328,13 @@ describe('paper executor recovery (deferred dispatch)', { skip }, () => {
 
 describe('paper executor clock ordering', { skip }, () => {
   // Every clock read advances 1 ms, so a quote is always observed after any earlier read.
-  let tick = Date.now();
+  // Starts at the real time when the suite begins, not at module load: under a loaded parallel run the gap
+  // could exceed the capability's 30 s skew allowance and make a real-time capability "not yet valid".
+  let tick = 0;
   const clock = (): Date => new Date((tick += 1));
   let h: ExecutorTestHarness;
   before(async () => {
+    tick = Date.now();
     h = await ExecutorTestHarness.start({ ...setup, wiring: { now: clock } });
     h.market.observedAt = () => clock().toISOString();
   });

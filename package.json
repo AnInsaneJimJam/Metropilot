@@ -21,7 +21,9 @@
     "strategy:demo": "pnpm generate && node packages/strategy/src/demo.ts",
     "api:dev": "pnpm generate && node --env-file-if-exists=.env apps/api/src/server.ts",
     "runtime:demo": "pnpm generate && node apps/runtime/src/demo.ts",
-    "api:runtime": "pnpm generate && LOCAL_RUNTIME_CONTROL=1 node --env-file-if-exists=.env apps/api/src/runtime-control/server.ts"
+    "api:runtime": "pnpm generate && LOCAL_RUNTIME_CONTROL=1 node --env-file-if-exists=.env apps/api/src/runtime-control/server.ts",
+    "executor:dev": "pnpm generate && LOCAL_EXECUTOR=1 node --env-file-if-exists=.env apps/executor/src/main.ts",
+    "stack:dev": "pnpm generate && node scripts/stack-dev.mjs"
   },
   "devDependencies": {
     "@types/node": "24.19.0",

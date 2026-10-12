@@ -4,7 +4,9 @@ This guide is for the owner of `apps/api` (control API and API worker roles). It
 
 Status 2026-10-08 (branch `feat/runtime-control-api`): **the runtime-facing control API is implemented** in [`apps/api/src/runtime-control/`](../../apps/api/src/runtime-control/): [`store.ts`](../../apps/api/src/runtime-control/store.ts) (PostgreSQL; the routes below plus the worker roles), [`app.ts`](../../apps/api/src/runtime-control/app.ts) (internal Fastify routes and capability checks), [`server.ts`](../../apps/api/src/runtime-control/server.ts) (`pnpm api:runtime`, local only) and migration [`0003_runtime_control.sql`](../../apps/api/migrations/0003_runtime_control.sql). The runtime's [HTTP client](../../apps/runtime/src/dispatch/control-api.ts) talks to it, and [`tests/runtime-control.test.ts`](../../tests/runtime-control.test.ts) passes the conformance kit both against the store and through HTTP, plus end-to-end paper runs, all on real PostgreSQL. The in-memory [`LocalControlPlane`](../../apps/runtime/src/local/control-plane.ts) remains the behavioral reference for the demo.
 
-What is still yours (API owner): the user-facing deployment request and manifest (API-2) on top of the minimal `deployments` table, real ingestion from Envio/RPC feeding `ingestPrice` (gate E10), the selected workload-identity mechanism for the poll (gate E02), audience-scoped capabilities for the broker and executor, and production hosting. The broker and executor clients are not written yet ([runtime HTTP clients](runtime-http-clients.md)).
+Update 2026-10-12 (branch `feat/lifecycle-executor-integration`): the user lifecycle and history are implemented too (section 11): paper estimates, `deployment/1` launches with a `deployment-manifest/1` record, pause/resume/stop, operations, run history, `audit-event/2` history and a live event stream, the executor capability exchange and the executor outbox consumer (migration [`0005`](../../apps/api/migrations/0005_deployment_lifecycle.sql)). `pnpm stack:dev` runs the whole local paper stack.
+
+What is still yours (API owner): real ingestion from Envio/RPC feeding `ingestPrice` (gate E10), the selected workload-identity mechanism for the poll (gate E02), real user authentication for the `/v1` routes, the API Broker (broker-audience capabilities), cloud provisioning (INF-3) and production hosting.
 
 ## 1. Who calls whom
 
@@ -18,7 +20,7 @@ executor or broker reconciliation ──definitive result──► you ──res
 
 The runtime never reads your database, never subscribes to events and has no timers. Everything that decides *when* a strategy runs is yours.
 
-## 2. Tables (implemented in migration 0003)
+## 2. Tables (migrations 0003 and 0005)
 
 | Table | Purpose | Key constraints |
 | --- | --- | --- |
@@ -30,6 +32,10 @@ The runtime never reads your database, never subscribes to events and has no tim
 | `run_operations` | One row per operation key: kind, node, iteration path, outcome, result ref | Primary key `(run_id, operation_key)` |
 | `timeline_entries` | Notify entries | Immutable; `operation_key` primary key |
 | `runtime_workers` | Known runtimes and the operator drain flag | |
+| `deployments` (0005 columns) | Network ref, policy and budget versions, resource profile, model pins, estimate, simulation account, `manifest` and `manifest_hash`; `desired_state` is `active`/`paused`/`stopping`/`stopped` ([D37](../decisions.md)) | Paper ⇔ simulation account; at most one non-stopped deployment per agent; FKs to `policies`, `estimates`, `simulation_accounts` |
+| `deployment_operations` | Asynchronous lifecycle operations (`deploy`, `pause`, `resume`, `stop`) | Idempotency rows live in `control_requests` |
+| `market_observations` | Finalized price observations from `ingestPrice`; the executor's recorded market | Primary key `(feed_ref, source_event_key)` |
+| `tenant_streams`, `audit_events` | Per-tenant audit stream (`audit-event/2`), written in the same transaction as each change | Immutable; `unique(source)` makes republishing a no-op |
 
 Normalized source events (`events`) are not part of this migration; ingestion owns them.
 
@@ -69,7 +75,7 @@ Build each [`runtime-assignment/1`](../../packages/contracts/schemas/runtime-ass
 | `lease.fencingToken` | Previous token for this run + 1, as a decimal string |
 | `lease.expiresAt` | Now + 30 s; heartbeats every 10 s extend it ([runtime.md](../specs/runtime.md)) |
 | `deployment.generation` | Current generation as a decimal string |
-| `deployment.manifestHash` | Until API-2 produces a real manifest: `contentHash({schemaVersion: "runtime-manifest/0", mode, strategyHash, catalogHash, connectorVersions, runtimeImageDigest})` (see `RuntimeControlStore`). When the manifest record exists, replace it with that record's content hash and keep the runtime informed |
+| `deployment.manifestHash` | `contentHash` of the deployment's `deployment-manifest/1` record (`deployments.manifest_hash`); a deployment without one is not offered work |
 | `deployment.runtimeImageDigest` | Digest of the pinned runtime image; the runtime refuses any other |
 | `deployment.connectorVersions` | Manifest pins `{connectorRef: "MAJOR.MINOR.PATCH"}` for every connector the strategy uses |
 | `run.triggerId` | The strategy's own trigger ID (for example `crossing`), never a UUID |
@@ -94,6 +100,7 @@ Every route except the poll requires `Authorization: Bearer <capability>`; a cap
 | `POST /internal/v1/runs/{runId}/complete` | `run-complete/1` | Only `completed` or `failed` checkpoints; conditional on the current lease |
 | `POST /internal/v1/runs/{runId}/timeline` | `timeline-entry/1` | Idempotent by operation key; user-safe text only |
 | `POST /internal/v1/runtime/heartbeat` | `runtime-heartbeat/1` → `runtime-lease/1` | Extend the lease and the same capability (not rotated, so requests in flight stay valid); refuse a stale token or a revoked generation |
+| `POST /internal/v1/runtime/capabilities:exchange` | `{"audience": "executor"}` → `audience-capability/1` | Current lease of an active generation only; a D35 token scoped to the run, expiring no later than the control capability ([D38](../decisions.md)) |
 
 The runtime saves the waiting checkpoint **before** it dispatches anything, so a crash at any point leaves you with enough to resume: a re-run loads the checkpoint, regenerates the identical command and operation key, and re-dispatches under the same key, which the broker and executor deduplicate.
 
@@ -105,14 +112,14 @@ Answer failures with an [`error-1`](../../packages/contracts/schemas/error-1.sch
 
 When a swap is pending (executor `202`) or an AI call is ambiguous (broker `unknown`), the runtime records `pending` and releases its process. The owning service later reaches a definitive state through its reconciliation path. Then you:
 
-- **Swap (executor).** Record the definitive outcome on the operation row (`settled`, `rejected` or `failed`) with the intent ID as `resultRef`, then issue a new assignment for the same run (new assignment ID, next fencing token). The runtime loads `run-state/1`, hands the outcome to the interpreter and continues. The stand-in does this in `settleOperation()`.
+- **Swap (executor).** Record the definitive outcome on the operation row (`settled`, `rejected` or `failed`) with the intent ID as `resultRef`, then issue a new assignment for the same run (new assignment ID, next fencing token). The runtime loads `run-state/1`, hands the outcome to the interpreter and continues. Implemented: the control worker's `consumeExecutorOutbox()` does this for every definitive `transaction.stateChanged` outbox row (the stand-in uses `settleOperation()`). A row whose outcome conflicts with an already recorded one is still published, with `payload.conflict` set, and never retried, so one bad row cannot block the rest of the outbox.
 - **Read or AI (broker).** Leave the operation `pending` and only issue the new assignment. The runtime re-requests under the same operation key, the broker answers with its reconciled record (no new provider call), and the runtime records it. Never record a broker `recorded` outcome yourself with only a reference: the interpreter needs the typed record and fails the run closed without it. The stand-in does this in `resumeBrokerOperation()`.
 
 Settlement and reconciliation waits never hold a runtime process.
 
-## 8. Pause, resume and redeploy
+## 8. Pause, resume and stop
 
-Pause sets the deployment inactive: from that moment `wait`, `results`, `complete`, `timeline` and `heartbeat` answer `GENERATION_REVOKED` for its runs, and `trigger_state` rows stop matching. External effects already dispatched stay with the executor or broker to reconcile. Resume or redeploy mints a new generation, resets crossing state (a fresh baseline is required) and never revives an old generation's assignments.
+Pause sets `desired_state = 'paused'`: from that moment `wait`, `results`, `complete`, `timeline`, `heartbeat` and the capability exchange answer `GENERATION_REVOKED` for its runs, the executor refuses new intents and cancels reserved ones before filling, and `trigger_state` rows stop matching. External effects already dispatched keep reconciling. Resume mints a new generation (`active`), revokes the unfinished runs of the old generation, resets crossing state (a fresh baseline is required) and never revives an old generation's assignments. Stop sets `stopped` for good after revoking unfinished runs; a new launch creates a new deployment. Each change writes a `deployment.stateChanged` audit event.
 
 ## 9. Proving compatibility
 
@@ -138,3 +145,23 @@ To run the API locally for a runtime: `pnpm db:migrate`, then `pnpm api:runtime`
 - [x] Resume assignment after a definitive result for a pending operation; revoke unfinished runs when a generation is superseded.
 - [x] Conformance kit green through the runtime HTTP client against PostgreSQL ([INT-1](AGENTS.md)).
 - [ ] Production workload identity (E02), audience-scoped broker/executor capabilities, hosting.
+- [x] User lifecycle and history (section 11), executor capability exchange and executor outbox consumer (2026-10-12).
+
+## 11. User lifecycle and history
+
+Implemented in [`apps/api/src/lifecycle.ts`](../../apps/api/src/lifecycle.ts) and routed in [`app.ts`](../../apps/api/src/app.ts); the studio's Operate stage uses them. Every mutation takes an `Idempotency-Key` (same key and body replays the stored response; a different body is `409 IDEMPOTENCY_CONFLICT`).
+
+| Route | Behavior |
+| --- | --- |
+| `POST /v1/agents/{id}/estimates` | `paper-estimate/1`: runs per day and worst-case AI calls from the saved revision; creates policy version 1 from the agent's experience if none exists ([D39](../decisions.md)); expires in 15 minutes |
+| `POST /v1/agents/{id}/deployments` | `deployment/1` → `202` `deployment-operation/1`. Paper only (`422 CAPABILITY_DISABLED` for live). Checks the estimate (agent, revision, expiry → `409 ESTIMATE_EXPIRED`), budget and policy versions, the network and resource profile, every selected connector and capability, and that every connector, capability and model profile the strategy uses is selected (`422 UNSUPPORTED_CAPABILITY`). One open deployment per agent (`409`). Creates the simulation account, manifest, deployment, artifacts and trigger rows in one transaction |
+| `POST /v1/agents/{id}/pause`, `/resume`, `/stop` | `202` `deployment-operation/1` (section 8) |
+| `GET /v1/operations/{id}` | `deployment-operation/1` |
+| `GET /v1/agents/{id}/deployment` | `agent-deployment/1`: the open deployment, else the latest |
+| `GET /v1/agents/{id}/runs?limit&cursor` | `run-summary/1` items, newest first |
+| `GET /v1/runs/{runId}` | `run-detail/1`: trigger stage times, operations with outcomes, timeline entries |
+| `GET /v1/agents/{id}/events?after&limit` | `audit-event/2` items after a sequence, oldest first |
+| `GET /v1/agents/{id}/stream` | Server-sent `audit` events (`id:` is the sequence); `Last-Event-ID` resumes; delivery never controls execution |
+| `GET /v1/catalog` | Adds `paperVersions`: enabled paper connector and model profile versions, for building a launch request |
+
+Evidence: [`tests/paper-stack.test.ts`](../../tests/paper-stack.test.ts) runs launch → schedule → runtime (HTTP clients) → real paper executor → outbox → history and stream, plus pending fills, runtime death after admission, pause/resume/stop and launch validation, on PostgreSQL.

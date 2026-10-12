@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "audit-event/2",
+  "sequence": "7",
+  "tenantId": "019a0000-0000-7000-8000-000000000030",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "deploymentId": "019a0000-0000-7000-8000-000000000501",
+  "runId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+  "actor": {
+    "kind": "runtime"
+  },
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "type": "run.stateChanged",
+  "occurredAt": "2026-10-12T12:00:00.000Z",
+  "payload": {
+    "from": "waiting",
+    "to": "completed"
+  }
+}

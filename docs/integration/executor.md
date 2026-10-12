@@ -50,9 +50,9 @@ Generation is a decimal **string**. Each repeat iteration is a distinct intent b
 
 ## 3a. Capability and deployment authority
 
-Two inputs the control API owner provides; until then the executor tests use in-memory stand-ins ([`testing.ts`](../../apps/executor/src/testing.ts)).
+Both inputs are provided by the control API since 2026-10-12 (branch `feat/lifecycle-executor-integration`). Executor unit and scenario tests still use the in-memory stand-ins in [`testing.ts`](../../apps/executor/src/testing.ts) for fault injection; [`tests/paper-stack.test.ts`](../../tests/paper-stack.test.ts) runs the real ones.
 
-**Capability** ([D35](../decisions.md)): `Authorization: Bearer <token>`, a compact HS256 token signed with a secret shared only by the control API and the executor. Claims are closed and checked exactly as in [`capability.ts`](../../apps/executor/src/capability.ts) (`signCapability` is the reference issuer):
+**Capability** ([D35](../decisions.md)): `Authorization: Bearer <token>`, a compact HS256 token signed with a secret shared only by the control API and the executor. Claims are closed and checked exactly as in [`packages/contracts/src/capability.ts`](../../packages/contracts/src/capability.ts) (moved there by [D38](../decisions.md); the executor's `capability.ts` re-exports it). The control API issues it through `POST /internal/v1/runtime/capabilities:exchange`:
 
 ```json
 {
@@ -75,11 +75,22 @@ Two inputs the control API owner provides; until then the executor tests use in-
 
 **Deployment authority:** the executor calls `AuthoritySource.current(tenantId, deploymentId)` ([`authorization.ts`](../../apps/executor/src/authorization.ts)) on every admission and again before each fill, so a pause takes effect before the capability expires. It returns the current generation, mode, desired state (`active`, `paused`, `stopping`, `stopped`), strategy revision ID, policy version, network ref, connector pins and, for paper, the simulation account ID. The approved AST, policy limits and catalog readiness are then read from `strategy_revisions`, `policies` and `catalog_versions`. Implement it over the `deployments` table; throwing means unavailable (`503`, nothing admitted).
 
-Gap as of 2026-10-09 (`0003_runtime_control.sql`, `63d353e`): that table's `desired_state` is `running`/`paused`/`stopped`, while `DesiredState` here is `active`/`paused`/`stopping`/`stopped`, and it has no policy version, network ref or simulation account. The control API's `authorityFor(runId)` returns only deployment, generation, mode and an `active` flag. The owners agree the mapping and the missing columns before the adapter is written.
+Resolved 2026-10-12:
 
-The per-assignment bearer in `assignment-offer/2` (`capabilityGrant`) authenticates the runtime to the control API only; it is not this executor capability, which the control API does not issue yet ([runtime HTTP clients §5](runtime-http-clients.md#5-gaps-and-how-they-were-settled)).
+| Former gap | Resolution |
+| --- | --- |
+| Deployment state names differed | One vocabulary, `active` / `paused` / `stopping` / `stopped` ([D37](../decisions.md), migration [`0005`](../../apps/api/migrations/0005_deployment_lifecycle.sql)) |
+| `deployments` lacked policy version, network ref and simulation account | Columns added in 0005; a paper launch fills them ([D39](../decisions.md)) |
+| No `AuthoritySource` over `deployments` | [`PostgresAuthority`](../../apps/executor/src/authority.ts), read on every admission and fill |
+| Nobody issued executor capabilities | The control API signs D35 tokens on exchange ([D38](../decisions.md)) |
+| `intents` not foreign-keyed to `deployments` | Foreign key added in 0005; the test harness inserts a matching deployment row |
+| Recorded market data was a stand-in | [`PostgresMarketData`](../../apps/executor/src/market.ts) over `market_observations`, written by ingestion |
+| Pending results were not consumed | The control worker publishes `executor_outbox` and resumes runs ([D40](../decisions.md)) |
+| No process entry or reconcile worker | [`main.ts`](../../apps/executor/src/main.ts) (`pnpm executor:dev`) with a 1 s `reconcile()` loop |
 
-The paper executor also needs recorded market data (`MarketData` in [`paper.ts`](../../apps/executor/src/paper.ts)) until broker results are persisted and referenced through `observationRefs`.
+Still open: branch evidence for nodes under `if` stays unverified until broker results are persisted ([D36](../decisions.md); live must deny them), and hosted deployment must run `main.ts` under a restricted database role (grants: `select` on `deployments`, `strategy_revisions`, `policies`, `catalog_versions`, `market_observations`; read/write on the executor tables of migration 0004; nothing else).
+
+The per-assignment bearer in `assignment-offer/2` (`capabilityGrant`) still authenticates the runtime to the control API only; the runtime exchanges it for this executor capability and never sends it to the executor.
 
 ## 4. Admission behavior the runtime relies on
 
@@ -113,7 +124,7 @@ Rules that matter to the runtime: `settlement` (actual input and output) only in
 
 The runtime does not poll you while an intent is pending. When your reconciliation reaches a definitive state (`settled`, `rejected`, `failed`), tell the control API, for example through an outbox row the API worker consumes, with the run ID, the logical key (which is the operation key) and the intent ID. The control API records the result and issues a resume assignment ([control API guide section 7](control-api.md#7-resuming-after-a-pending-operation)). The stand-in wires this as `onSettled → settleOperation`.
 
-Implemented as the `executor_outbox` table (migration `0002`): every state change commits, in the same transaction, a `transaction.stateChanged` row with `run_id`, `logical_key`, `intent_id` and `payload.state` (plus `policy.denied`, `reservation.changed` and `ledger.settled` rows). The API worker resumes runs from definitive `transaction.stateChanged` rows, assigns the tenant audit sequence and sets `published_at`; only an unpublished row may be marked, and nothing else in a row can change. Note: `audit-event/1` types `runId` as a UUIDv7 while runs use a 32-byte hash; the contract owner must reconcile that before these rows become audit events.
+Implemented as the `executor_outbox` table (migration `0004`): every state change commits, in the same transaction, a `transaction.stateChanged` row with `run_id`, `logical_key`, `intent_id` and `payload.state` (plus `policy.denied`, `reservation.changed` and `ledger.settled` rows). The API worker resumes runs from definitive `transaction.stateChanged` rows, assigns the tenant audit sequence and sets `published_at`; only an unpublished row may be marked, and nothing else in a row can change. Consumed since 2026-10-12 by `RuntimeControlStore.consumeExecutorOutbox()` in the control worker loop: each row becomes an `audit-event/2` event (which types `runId` as the run hash, [D40](../decisions.md)) and a definitive `transaction.stateChanged` records the swap outcome and issues the resume (`settled`→settled, `rejected`/`cancelled`→rejected, `failed`→failed); an outcome the runtime already recorded is a no-op.
 
 ## 7. Paper mode expectations
 
@@ -123,7 +134,7 @@ Follow [executor.md section 8](../specs/executor.md#8-paper-execution). The stan
 
 The [executor conformance kit](../../apps/runtime/src/conformance/executor.ts) checks closed results, idempotent duplicates, body conflicts, key recomputation, closed request bodies, distinct repeat iterations, durable rejections and stale-generation refusal. The stand-in passes it in [`conformance.test.ts`](../../apps/runtime/src/conformance.test.ts).
 
-To run it against your service you need the runtime's executor client, which is **not written yet** ([runtime HTTP clients](runtime-http-clients.md)); it will map your statuses exactly as in [§3 there](runtime-http-clients.md#3-one-error-mapping-both-sides-implement-it). Provide an `ExecutorHarness` whose `arrangeRun` creates an authorized paper run of `EXECUTOR_CONFORMANCE_STRATEGY` with at least 1 `paper.WETH` available and whose `revoke` pauses it.
+The runtime's real client, [`dispatch/executor.ts`](../../apps/runtime/src/dispatch/executor.ts), now runs the kit against the real paper executor ([`executor-conformance.test.ts`](../../tests/executor-conformance.test.ts), 7/7); it maps statuses exactly as in [runtime HTTP clients §3](runtime-http-clients.md#3-one-error-mapping-both-sides-implement-it). To repeat it against another deployment of the executor, provide an `ExecutorHarness` whose `arrangeRun` creates an authorized paper run of `EXECUTOR_CONFORMANCE_STRATEGY` with at least 1 `paper.WETH` available and whose `revoke` pauses it.
 
 The kit exports `EXECUTOR_CONFORMANCE_STRATEGY` (2026-10-08) because a real executor matches each intent against the deployed AST (executor spec §5 steps 7–9): the repeat test uses node `sell_small` inside a two-iteration repeat and the insufficient-input test uses node `sell_too_much`, so every intent the kit sends is one the approved strategy can produce. The in-memory stand-in does not check the AST and is unaffected.
 
@@ -132,5 +143,7 @@ The kit exports `EXECUTOR_CONFORMANCE_STRATEGY` (2026-10-08) because a real exec
 - [x] `POST /internal/v1/intents` and `GET /internal/v1/intents/{intentId}` with closed `action-intent/1` / `intent-result/1` validation. Evidence 2026-10-08: [`server.ts`](../../apps/executor/src/server.ts); boundary cases in [`executor-paper.test.ts`](../../tests/executor-paper.test.ts) (`REQUIRE_DB=1 pnpm check` 421/421, four consecutive runs; 481/481 on 2026-10-09 after merging `63d353e`).
 - [x] Logical key recomputed from the capability; canonical-body idempotency; conflict and stale-generation answers as in section 4. Evidence: same file (scope, duplicate, concurrent-duplicate, pause and stale-generation cases).
 - [x] Result states and fields as in section 5; no transaction hash in paper. Evidence: every answer is validated against `intent-result/1` before it is sent; paper rows have no transaction-hash column.
-- [ ] Definitive results of pending intents reported to the control API for resume. Executor side done (`executor_outbox`, section 6); the API worker consumer is open (G3).
-- [ ] Conformance kit green against the real paper executor ([INT-2](AGENTS.md)). Rehearsed 2026-10-08 over HTTP + PostgreSQL through a test-only client ([`executor-conformance.test.ts`](../../tests/executor-conformance.test.ts), 7/7); open until the runtime's real client (INT-0) and control-API authority exist.
+- [x] Definitive results of pending intents reported to the control API for resume. Evidence 2026-10-12: outbox consumer and resume in [`paper-stack.test.ts`](../../tests/paper-stack.test.ts) (pending fill → `reconcile()` → outbox → resume; runtime death after admission → outbox resume, one intent).
+- [x] Conformance kit green against the real paper executor ([INT-2](AGENTS.md)). Evidence 2026-10-12: [`executor-conformance.test.ts`](../../tests/executor-conformance.test.ts) through the runtime's `HttpExecutor`, 7/7; with Postgres authority and control-API-issued capabilities in [`paper-stack.test.ts`](../../tests/paper-stack.test.ts) (`REQUIRE_DB=1 pnpm check` 518 pass, 0 skipped, twice).
+- [ ] Branch evidence for `if`-gated nodes verified from persisted broker results ([D36](../decisions.md)) before live.
+- [ ] Restricted database role for the hosted executor (grants listed in section 3a).

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/audience-capability-1.schema.json",
+  "title": "AudienceCapability",
+  "description": "A short-lived capability for one downstream service, audience-capability/1, obtained by a runtime from POST /internal/v1/runtime/capabilities:exchange with its control capability. For audience executor the token is the D35 HS256 compact JWS (packages/contracts/src/capability.ts); the runtime never sees the signing secret. Secret: never logged or stored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "audience",
+    "token",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "audience-capability/1"
+    },
+    "audience": {
+      "type": "string",
+      "enum": [
+        "executor"
+      ]
+    },
+    "token": {
+      "type": "string",
+      "maxLength": 4096,
+      "pattern": "^[A-Za-z0-9_-]{1,1024}\\.[A-Za-z0-9_-]{1,2048}\\.[A-Za-z0-9_-]{1,1024}$"
+    },
+    "expiresAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  }
+}

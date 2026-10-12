@@ -31,6 +31,14 @@ const refs = {
   artifact: 'artifact-1.schema.json',
   runtimeHeartbeat: 'runtime-heartbeat-1.schema.json',
   runtimeLease: 'runtime-lease-1.schema.json',
+  audienceCapability: 'audience-capability-1.schema.json',
+  deploymentManifest: 'deployment-manifest-1.schema.json',
+  auditEvent2: 'audit-event-2.schema.json',
+  paperEstimate: 'control-lifecycle-1.schema.json#/$defs/PaperEstimate',
+  deploymentOperation: 'control-lifecycle-1.schema.json#/$defs/DeploymentOperation',
+  agentDeployment: 'control-lifecycle-1.schema.json#/$defs/AgentDeployment',
+  runSummary: 'control-lifecycle-1.schema.json#/$defs/RunSummary',
+  runDetail: 'control-lifecycle-1.schema.json#/$defs/RunDetail',
 };
 const root = {
   title: 'GeneratedContractMap',

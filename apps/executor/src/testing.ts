@@ -180,6 +180,14 @@ export class ExecutorTestHarness {
     for (const [asset, amount] of Object.entries(balances)) {
       await this.pool.query('insert into simulation_balances (tenant_id, account_id, asset_ref, available) values ($1, $2, $3, $4)', [tenantId, simulationAccountId, asset, amount.toString()]);
     }
+    // A real deployments row for the intents → deployments foreign key (migration 0005); authority itself
+    // stays in memory here so tests can pause, redeploy or fail it without touching that row.
+    await this.pool.query(
+      `insert into deployments (tenant_id, id, agent_id, strategy_revision_id, mode, strategy_hash, catalog_hash, connector_versions, runtime_image_digest,
+                                network_ref, policy_version, budget_version, resource_profile_ref, simulation_account_id)
+       values ($1, $2, $3, $4, 'paper', $5, $5, $6, $5, $7, 1, 1, 'paper-small-v1', $8)`,
+      [tenantId, deploymentId, agentId, revisionId, await contentHash(options.strategy), { 'paper.uniswap': '1.0.0' }, PAPER_NETWORK, simulationAccountId],
+    );
     this.authority.deployments.set(deploymentId, {
       tenantId, agentId, deploymentId, generation: '1', mode: 'paper', desiredState: 'active', strategyRevisionId: revisionId,
       policyVersion: 1, networkRef: PAPER_NETWORK, connectorPins: { 'paper.uniswap': '1.0.0' }, simulationAccountId,

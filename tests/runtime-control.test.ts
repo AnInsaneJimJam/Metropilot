@@ -85,7 +85,16 @@ async function deployPreset(pool: pg.Pool, store: RuntimeControlStore, presetId:
      values ($1, $2, $3, 'strategy/1', $4, $5, '{}')`,
     [tenantId, revisionId, agentId, program.hash, program.strategy],
   );
-  const { deploymentId } = await store.deploy({ tenantId, agentId, strategyRevisionId: revisionId, mode: 'paper', catalog: syntheticCatalog, connectorVersions: PAPER_CONNECTOR_VERSIONS, runtimeImageDigest: LOCAL_IMAGE_DIGEST });
+  // What a launch creates (apps/api/src/lifecycle.ts): policy snapshot, paper estimate, simulation account.
+  const estimateId = uuidv7();
+  const simulationAccountId = uuidv7();
+  await pool.query("insert into policies (tenant_id, agent_id, version, limits) values ($1, $2, 1, '{\"maxSlippageBps\": 50, \"dailyActionCount\": 24}')", [tenantId, agentId]);
+  await pool.query("insert into estimates (tenant_id, id, agent_id, strategy_revision_id, assumptions, created_at, expires_at) values ($1, $2, $3, $4, '{}', now(), now() + interval '15 minutes')", [tenantId, estimateId, agentId, revisionId]);
+  await pool.query('insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, $2, $3, 1)', [tenantId, simulationAccountId, agentId]);
+  const { deploymentId } = await store.deploy({
+    tenantId, agentId, strategyRevisionId: revisionId, mode: 'paper', catalog: syntheticCatalog, connectorVersions: PAPER_CONNECTOR_VERSIONS, runtimeImageDigest: LOCAL_IMAGE_DIGEST,
+    networkRef: 'paper-monad', policyVersion: 1, budgetVersion: 1, resourceProfileRef: 'paper-small-v1', modelProfiles: {}, estimateId, simulationAccountId,
+  });
   return deploymentId;
 }
 

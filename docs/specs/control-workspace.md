@@ -40,7 +40,7 @@ Paper budget units: `tradingUsdMicros`, `hostingUsdMicros`, `dataAndAiUsdMicros`
 
 ## Remaining integrations
 
-Cloud runtime, executor, actual paper execution, provider models, wallet funding, ledger enforcement, billable estimates and hosted identity are outside this two-block slice. Deploy is visibly unavailable. All saved agents remain drafts. No UI or route claims an agent is running, paused, exited, funded or live. Pause, sell and withdrawal remain separate operations for the lifecycle/executor integration.
+Since 2026-10-12 the Operate stage launches a saved revision on the local paper stack (`pnpm stack:dev`), pauses, resumes and stops it, and shows runs and a live activity stream; routes are listed in [control API guide §11](../integration/control-api.md#11-user-lifecycle-and-history). Still outside this slice: cloud hosting, a real API Broker and model provider (reads and AI are synthetic), wallet funding, ledger enforcement, billable estimates, hosted identity and live trading. Sell and withdrawal remain separate operations.
 
 The browser still carries Blockly and the compiler; the production bundle is roughly 351 KiB gzipped plus locally bundled fonts. Future loading and compiler-worker work should be measured against real devices rather than hiding the bundle warning.
 

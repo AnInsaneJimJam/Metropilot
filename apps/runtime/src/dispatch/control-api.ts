@@ -6,6 +6,7 @@ import type { AssignmentOfferV2, AssignmentPoll, ContractKind, RunComplete, RunR
 import { RuntimeError } from '../errors.ts';
 import type { Artifact, ControlApi } from '../ports.ts';
 import { runtimeErrorFor } from './errors.ts';
+import { uuidv7 } from './ids.ts';
 import type { CallKind } from './errors.ts';
 
 export interface HttpControlApiOptions {
@@ -32,6 +33,7 @@ export class HttpControlApi implements ControlApi {
   /** Capability per assignment. Kept for older assignments too, so a stale writer is fenced by the server. */
   readonly #held = new Map<string, Held>();
   #current: string | undefined;
+  readonly #executorTokens = new Map<string, { token: string; expiresAt: string }>();
 
   constructor(options: HttpControlApiOptions) {
     const origin = new URL(options.origin);
@@ -92,6 +94,25 @@ export class HttpControlApi implements ControlApi {
     held.bearer = lease.capability.bearer;
   }
 
+  /**
+   * An executor-audience capability for the current assignment (D38), cached until shortly before it expires.
+   * The control capability never leaves this client; the executor token is the only thing sent to the executor.
+   */
+  async executorCapability(): Promise<string> {
+    const assignmentId = this.#current;
+    if (!assignmentId) throw new RuntimeError('ASSIGNMENT_INVALID', 'No assignment holds a capability.');
+    const cached = this.#executorTokens.get(assignmentId);
+    if (cached && Date.parse(cached.expiresAt) - Date.now() > 30_000) return cached.token;
+    const grant = await this.#call('POST', '/internal/v1/runtime/capabilities:exchange', { body: { audience: 'executor' }, responseKind: 'audienceCapability', headers: this.#bearer(assignmentId) });
+    this.#executorTokens.set(assignmentId, { token: grant.token, expiresAt: grant.expiresAt });
+    return grant.token;
+  }
+
+  /** Forget a cached executor capability (for example after the executor refused it). */
+  forgetExecutorCapability(): void {
+    if (this.#current) this.#executorTokens.delete(this.#current);
+  }
+
   #bearer(assignmentId: string): Record<string, string> {
     const held = this.#held.get(assignmentId);
     // Without a capability the request cannot be authorized; the server would answer 401 anyway.
@@ -112,7 +133,7 @@ export class HttpControlApi implements ControlApi {
           method,
           redirect: 'error',
           signal: AbortSignal.timeout(options.timeoutMillis ?? this.#timeout),
-          headers: { accept: 'application/json', 'x-request-id': crypto.randomUUID(), ...(payload ? { 'content-type': 'application/json' } : {}), ...options.headers },
+          headers: { accept: 'application/json', 'x-request-id': uuidv7(), ...(payload ? { 'content-type': 'application/json' } : {}), ...options.headers },
           ...(payload ? { body: payload } : {}),
         });
         const text = await response.text();
