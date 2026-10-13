@@ -64,9 +64,30 @@ Needed from the project owner (create these yourself; never paste secrets in cha
 
 Set `CUSTODY_PROVIDER=privy`, `CUSTODY_CHAIN_ID`, `CUSTODY_NETWORK_REF`, `CUSTODY_RPC` (and
 `CUSTODY_RPC_SECONDARY` for cross-checked finality), and the verified funding token
-(`FUNDING_TOKEN_ADDRESS`, `FUNDING_TOKEN_DECIMALS`, `FUNDING_ASSET_REF`). Verify the address and decimals from the
+(`FUNDING_TOKEN_ADDRESS`, `FUNDING_TOKEN_DECIMALS`, `FUNDING_ASSET_REF`, e.g. `live.USDC` with the catalog address). Verify the address and decimals from the
 issuer's official source and a block explorer; do not copy them from a chat or a search snippet. Fund the agent
 wallet with testnet MON for gas and the test token, then watch `GET /balances` move from pending to credited.
+
+### Deposit index (Envio HyperSync, E10)
+
+Without an index the scanner traces every block over RPC, which on the public endpoint runs at about chain speed.
+Set `ENVIO_API_TOKEN` (create one at https://envio.dev/app/api-tokens; `HYPERSYNC_URL` defaults to
+`https://<CUSTODY_CHAIN_ID>.hypersync.xyz`) and the scanner reads through `HyperSyncChain` (D48):
+
+- HyperSync only names candidate blocks; RPC re-reads each one, so credited values, finality and receipts never
+  come from the index. Heights are capped at the indexed height; an incomplete page fails the scan.
+- Token deposits: Transfer logs to agent wallets for each configured token.
+- Native MON, including contract-forwarded transfers: balance segments between the wallet's own transactions,
+  bisected where the balance rose, then traced block by block (Monad testnet has no HyperSync trace index).
+  Historical balances must be available for the scanned range (the public testnet RPC keeps about 10M blocks).
+- Run `pnpm custody:hypersync` once with the token: it checks the chain, replays the recorded forwarded deposit and
+  the withdrawal windows against the RPC trace reader, matches a real USDC Transfer and measures throughput.
+
+### Live catalog
+
+`pnpm db:seed:live` adds the Monad testnet network and the tradable assets `live.MON`, `live.WMON` and
+`live.USDC` (addresses verified on chain; evidence in `docs/decisions.md`). Funding remains MON only. Live trading
+also needs a live connector entry, which is added with the chosen venue.
 
 ### Real testnet check (MON-only funding)
 

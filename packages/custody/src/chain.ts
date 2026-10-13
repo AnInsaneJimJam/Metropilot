@@ -50,7 +50,7 @@ export class ChainError extends Error {
 }
 
 const q = (n: bigint): string => `0x${n.toString(16)}`;
-const topicFor = (address: string): string => `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}`;
+export const topicFor = (address: string): string => `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}`;
 const addressFromTopic = (topic: string): string => `0x${topic.slice(-40)}`.toLowerCase();
 
 export interface JsonRpcOptions {
@@ -171,6 +171,11 @@ export class JsonRpcChain implements ChainReader {
     return out.flat();
   }
 
+  /** Native MON into the destinations within one block (the per-block step of `nativeTransfers`). */
+  nativeInBlock(height: bigint, destinations: readonly string[]): Promise<TransferLog[]> {
+    return this.#nativeInBlock(height, new Set(destinations.map((d) => d.toLowerCase())));
+  }
+
   async #nativeInBlock(height: bigint, want: ReadonlySet<string>): Promise<TransferLog[]> {
     type Frame = { from: string; to?: string; type: string; value?: string; error?: string; calls?: Frame[] };
     const block = await this.call<{ hash: string; transactions: { hash: string; from: string; to: string | null; value: string; transactionIndex: string }[] } | null>('eth_getBlockByNumber', [q(height), !this.#traces]);
@@ -216,6 +221,11 @@ export class JsonRpcChain implements ChainReader {
 
   async nativeBalance(owner: string, height: bigint): Promise<bigint> {
     return BigInt(await this.call<string>('eth_getBalance', [owner.toLowerCase(), q(height)]));
+  }
+
+  /** Transactions sent by the owner up to and including the block (its nonce after that block). */
+  async transactionCount(owner: string, height: bigint): Promise<bigint> {
+    return BigInt(await this.call<string>('eth_getTransactionCount', [owner.toLowerCase(), q(height)]));
   }
 }
 

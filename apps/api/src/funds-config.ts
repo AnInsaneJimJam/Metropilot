@@ -4,8 +4,10 @@
 //                           CUSTODY_RPC (and CUSTODY_RPC_SECONDARY for cross-checked finality), CUSTODY_NETWORK_REF,
 //                           GAS_ASSET_REF, and optionally FUNDING_TOKEN_ADDRESS/FUNDING_TOKEN_DECIMALS/FUNDING_ASSET_REF
 //                           (without them, agents are funded with native MON only).
+//                           ENVIO_API_TOKEN switches deposit discovery to the HyperSync index (HYPERSYNC_URL defaults to
+//                           https://<chainId>.hypersync.xyz); RPC still supplies every credited value and finality.
 // LIVE_OUTFLOWS=1 enables the withdrawal gateway; it stays off until the E03 proof has dated evidence.
-import { CrossCheckedChain, JsonRpcChain, LocalChain, LocalCustody, PrivyCustody } from '@monad-hack/custody';
+import { CrossCheckedChain, HyperSyncChain, JsonRpcChain, LocalChain, LocalCustody, PrivyCustody, hyperSyncUrlFor } from '@monad-hack/custody';
 import type { ChainReader, CustodyConfig, CustodyProvider } from '@monad-hack/custody';
 
 export interface CustodySetup {
@@ -55,7 +57,9 @@ export function custodyFromEnv(env: NodeJS.ProcessEnv): CustodySetup | undefined
   const decimals = tokenAddress ? Number(need(env, 'FUNDING_TOKEN_DECIMALS')) : 0;
   const primary = new JsonRpcChain({ endpoint: need(env, 'CUSTODY_RPC'), chainId });
   const secondaryUrl = env['CUSTODY_RPC_SECONDARY'];
-  const chain = secondaryUrl ? new CrossCheckedChain(primary, new JsonRpcChain({ endpoint: secondaryUrl, chainId })) : primary;
+  const checked = secondaryUrl ? new CrossCheckedChain(primary, new JsonRpcChain({ endpoint: secondaryUrl, chainId })) : primary;
+  const envioToken = env['ENVIO_API_TOKEN'];
+  const chain = envioToken ? new HyperSyncChain(primary, { url: env['HYPERSYNC_URL'] ?? hyperSyncUrlFor(chainId), apiToken: envioToken }, checked) : checked;
   const gasAssetRef = env['GAS_ASSET_REF'] ?? 'live.MON';
   return {
     provider: new PrivyCustody({ appId: need(env, 'PRIVY_APP_ID'), appSecret: need(env, 'PRIVY_APP_SECRET'), authorizationKey: need(env, 'PRIVY_AUTHORIZATION_KEY') }),

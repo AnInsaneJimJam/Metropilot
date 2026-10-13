@@ -10,6 +10,7 @@ import { after, before, describe, test } from 'node:test';
 import pg from 'pg';
 import { contentHash, validate } from '@monad-hack/contracts';
 import { migrate, readMigrations } from './migrate.ts';
+import { liveCatalog, seedLiveCatalog } from './live-catalog.ts';
 import { paperSeed, seedPaper, seedTenantId } from './seed.ts';
 
 const required = process.env['REQUIRE_DB'] === '1';
@@ -143,6 +144,23 @@ describe('database', { skip }, () => {
   test('paper asset identities are valid contract shapes', async () => {
     const { rows } = await db.query<{ definition: { identity: unknown } }>(`select definition from catalog_versions where kind = 'asset'`);
     for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok);
+  });
+
+  test('live catalog: idempotent, valid on-chain identities, and found by the executor catalog query', async () => {
+    const live = await freshClient();
+    await migrate(live);
+    await seedLiveCatalog(live);
+    await seedLiveCatalog(live);
+    const { rows } = await live.query<{ ref: string; definition: { identity: unknown } }>(`select ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) order by ref`);
+    assert.deepEqual(rows.map((r) => r.ref), ['live.MON', 'live.USDC', 'live.WMON']);
+    for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok, row.ref);
+    // Same predicate as the executor store's catalogAllows for live assets.
+    const allowed = await live.query(
+      `select distinct ref from catalog_versions where kind = 'asset' and ref = any($1) and 'live' = any(modes) and disabled_reason is null
+         and definition -> 'identity' ->> 'kind' = any($2) and definition -> 'identity' ->> 'networkRef' = 'monad-testnet'`,
+      [['live.MON', 'live.WMON', 'live.USDC'], ['erc20', 'native']]);
+    assert.equal(allowed.rowCount, 3);
+    assert.equal((await live.query('select count(*)::int as n from catalog_versions')).rows[0].n, liveCatalog().length);
   });
 
   describe('tenant-scoped references', () => {

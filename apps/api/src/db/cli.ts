@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { ConfigError, databaseUrl, isLoopback, redactUrl, requireEnv } from '../config.ts';
 import { migrate } from './migrate.ts';
+import { seedLiveCatalog } from './live-catalog.ts';
 import { seedPaper } from './seed.ts';
 
 const repoRoot = join(import.meta.dirname, '..', '..', '..', '..');
@@ -58,6 +59,12 @@ const commands: Record<string, () => Promise<void>> = {
       if (!isLoopback(url)) throw new ConfigError('refusing to seed a non-local database');
       await seedPaper(client);
       console.log(`${redactUrl(url)}: paper seed data present`);
+    }),
+  'seed-live': () =>
+    withClient(async (client, url) => {
+      // Real Monad testnet network and asset entries (verified addresses); no accounts or secrets.
+      await seedLiveCatalog(client);
+      console.log(`${redactUrl(url)}: Monad testnet live catalog present`);
     }),
 };
 
