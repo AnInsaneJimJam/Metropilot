@@ -27,7 +27,8 @@ Browser ─https─▶ Vercel (apps/web) ── rewrite /v1/* ──▶ https://
   - Ports 80/443 are open to all; SSH only from the configured address.
   - The static IP is free while attached.
 - **Isolation:**
-  - Runtimes run in their proxy's network namespace on an internal-only network. They can reach control and the executor through the proxy (which adds the workload HMAC proof), and nothing else: no database, no internet.
+  - Each runtime joins only a private internal network shared with its workload proxy, and reaches control and the executor through that proxy (which adds the workload HMAC proof) via a loopback forwarder. It cannot reach the database, other services or the internet.
+  - Every service has memory, CPU and process limits (runtimes 512 MB, half a CPU, 128 processes).
   - Postgres is on the internal network only.
 - **Backups:**
   - Lightsail daily automatic snapshots at 06:00 UTC, kept 7 days.

@@ -1,6 +1,7 @@
 // Runtime task sidecar (hosted only). The runtime accepts plain http only on loopback and names itself with the
 // development workload header, so each runtime task runs this proxy beside it:
 //   127.0.0.1:3002 → control API (adds the workload HMAC proof), 127.0.0.1:3003 → executor (pass-through).
+// On a single machine (infra/stack) PROXY_LISTEN_HOST binds it to the runtime's private network address instead.
 // The workload ID is bound to the ECS task (runtime-<task id> from the task metadata endpoint); a request naming
 // another workload is refused. The proxy holds RUNTIME_WORKLOAD_SECRET; the runtime container holds no secret.
 import { createHmac } from 'node:crypto';
@@ -51,7 +52,7 @@ function serve(port, target, sign) {
     });
     req.pipe(out);
   });
-  server.listen(port, '127.0.0.1', () => console.log(JSON.stringify({ event: 'workload.proxy.listening', port, upstream: target.origin, signed: sign })));
+  server.listen(port, process.env.PROXY_LISTEN_HOST || '127.0.0.1', () => console.log(JSON.stringify({ event: 'workload.proxy.listening', port, upstream: target.origin, signed: sign })));
   return server;
 }
 

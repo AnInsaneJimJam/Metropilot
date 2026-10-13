@@ -4,3 +4,9 @@ One-server hosting for the demo (docs/hosting/LIGHTSAIL.md): Terraform for the i
 docker compose for the stack; `render-env.mjs` writes the server env without printing values; `up.sh` builds, ships
 and starts. Never commit `terraform.tfvars`, `.env.server` or state. Real-money switches stay off unless the user
 approves a capped live trade. Teardown steps are in the guide; keep them current with every resource added here.
+
+## Checklist
+
+- [x] LS-1: Terraform for instance, static IP, firewall (SSH from one address) and key pair; `up.sh` ships and starts the shared stack.
+- [ ] LS-2: first `terraform apply`: blocked by the organization SCP (Lightsail writes denied, docs/hosting/LIGHTSAIL.md).
+- [ ] LS-3: after LS-2, run the teardown end to end and confirm no instance, IP or snapshot is left.

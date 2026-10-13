@@ -18,12 +18,13 @@ if [ -n "$(git -C "$root" status --porcelain)" ]; then
 fi
 
 # Tunnel and DNS (idempotent): one named tunnel, its credentials kept in a git-ignored directory the container reads.
-mkdir -p "$dir/cloudflared"
+mkdir -p -m 700 "$dir/cloudflared" && chmod 700 "$dir/cloudflared"
 if ! cf info "$name" >/dev/null 2>&1; then cf create "$name"; fi
 id="$(cf list --name "$name" --output json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s)[0].id))')"
 creds="$HOME/.cloudflared/$id.json"
 [ -f "$creds" ] || { echo "Missing $creds (tunnel created on another machine?). Recreate the tunnel or copy its credentials." >&2; exit 1; }
-install -m 0644 "$creds" "$dir/cloudflared/$id.json"
+# Owner-only: cloudflared runs as the operator's user (compose.tunnel.yml), so nothing needs to be world-readable.
+install -m 0600 "$creds" "$dir/cloudflared/$id.json"
 cat > "$dir/cloudflared/config.yml" <<CFG
 tunnel: $id
 credentials-file: /etc/cloudflared/$id.json
@@ -45,6 +46,7 @@ ENV_OUT="$dir/.env.server" node "$root/infra/stack/render-env.mjs" "$host" "$ima
 # Vercel rewrite → Cloudflare edge → cloudflared → api: three hops in front of the client address.
 grep -q '^TRUSTED_PROXY_HOPS=' "$dir/.env.server" || echo 'TRUSTED_PROXY_HOPS=3' >> "$dir/.env.server"
 grep -q '^TUNNEL_CONFIG_DIR=' "$dir/.env.server" || echo "TUNNEL_CONFIG_DIR=$dir/cloudflared" >> "$dir/.env.server"
+grep -q '^TUNNEL_UID=' "$dir/.env.server" || echo "TUNNEL_UID=$(id -u):$(id -g)" >> "$dir/.env.server"
 
 compose() { docker compose -p metropilot --env-file "$dir/.env.server" -f "$root/infra/stack/docker-compose.yml" -f "$dir/compose.tunnel.yml" "$@"; }
 compose up -d postgres

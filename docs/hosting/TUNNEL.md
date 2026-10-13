@@ -48,13 +48,13 @@ changed, then relaunch running agents.
 - **After a restart:** containers restart with Docker (`restart: unless-stopped`). Make sure Docker starts on boot with `sudo systemctl enable docker`.
 - **Status and logs:**
   ```
-  docker compose -p metropilot ps
-  docker compose -p metropilot logs -f api cloudflared
+  infra/tunnel/stack.sh ps
+  infra/tunnel/stack.sh logs -f api cloudflared
   ```
-- **Step-up codes:** `docker compose -p metropilot logs api | grep stepUp.code` (operators only).
+- **Step-up codes:** `infra/tunnel/stack.sh logs api | grep stepUp.code` (operators only).
 - **Backup:**
   ```
-  docker compose -p metropilot exec -T postgres pg_dump -U monad -Fc monad > metropilot-$(date +%F).dump
+  infra/tunnel/stack.sh exec -T postgres pg_dump -U monad -Fc monad > metropilot-$(date +%F).dump
   ```
 - **Resources:** the whole stack uses about 0.7 GB of memory when idle. It doesn't touch the development database.
   - It runs in its own volume, `metropilot_pgdata`, under project `metropilot`.

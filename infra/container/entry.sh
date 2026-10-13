@@ -10,13 +10,17 @@ case "${1:-}" in
     exec node apps/api/src/hosted.ts
     ;;
   control)
-    # The Kimi verification evidence is a JSON secret; the broker reads it from a file under /tmp.
+    # The Kimi verification evidence is a JSON secret; the broker reads it from a file under /tmp. ECS passes it as
+    # JSON; docker compose env files cannot hold quotes, so the single-machine stack passes it base64-encoded.
+    umask 077
     if [ -n "${KIMI_VERIFICATION_JSON:-}" ]; then
-      umask 077
       printf '%s' "$KIMI_VERIFICATION_JSON" > /tmp/kimi-verification.json
       export KIMI_VERIFICATION_FILE=/tmp/kimi-verification.json
+    elif [ -n "${KIMI_VERIFICATION_B64:-}" ]; then
+      printf '%s' "$KIMI_VERIFICATION_B64" | base64 -d > /tmp/kimi-verification.json
+      export KIMI_VERIFICATION_FILE=/tmp/kimi-verification.json
     fi
-    unset KIMI_VERIFICATION_JSON
+    unset KIMI_VERIFICATION_JSON KIMI_VERIFICATION_B64
     exec node apps/api/src/runtime-control/server.ts
     ;;
   executor)
@@ -29,7 +33,11 @@ case "${1:-}" in
     # The runtime refuses credential-shaped variables (AWS_*, *_TOKEN, ...). Fargate injects AWS_* variables, so
     # it starts from an empty environment with only what its closed configuration accepts. Its ID is bound to
     # the ECS task, matching the workload proxy beside it.
-    # On a single server (Lightsail, docker compose) RUNTIME_ID is set per container instead.
+    # On a single server (Lightsail, docker compose) RUNTIME_ID is set per container instead, and the runtime joins
+    # only a private network with its proxy: RUNTIME_PROXY_IP starts a loopback forwarder to that proxy.
+    if [ -n "${RUNTIME_PROXY_IP:-}" ]; then
+      node infra/sidecar/loopback-forward.mjs "$RUNTIME_PROXY_IP" 3002 3003 &
+    fi
     id="${RUNTIME_ID:-$(node -e 'fetch(process.env.ECS_CONTAINER_METADATA_URI_V4 + "/task").then((r) => r.json()).then((t) => console.log("runtime-" + String(t.TaskARN).split("/").pop()))')}"
     exec env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp \
       RUNTIME_ID="$id" RUNTIME_MODE="${RUNTIME_MODE:-paper}" RUNTIME_IMAGE_DIGEST="$RUNTIME_IMAGE_DIGEST" \

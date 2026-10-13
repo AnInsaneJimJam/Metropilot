@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Write the stack's env file (git-ignored, 0600; default infra/stack/.env.server, or ENV_OUT) for docker compose.
-// Values: the repository .env (Privy, Envio, AI Gateway), generated secrets kept across runs (a redeploy never rotates
+// Values: the repository .env (Privy, Envio, Alchemy, AI Gateway), generated secrets kept across runs (a redeploy never rotates
 // the database password or capability secrets), Privy's published signing keys (PEM, from its JWKS) and, on the first
 // run, the Monad mainnet finalized height so deposit scanning starts now instead of block 0. Never prints values.
 //   node infra/stack/render-env.mjs <api-host> <image> <runtime-digest>
@@ -38,6 +38,8 @@ if (!startHeight) {
   startHeight = String(BigInt((await res.json()).result.number));
 }
 const password = keep('POSTGRES_PASSWORD', hex);
+// Alchemy (D60), optional: the second custody witness and the market transport, paced for its free tier.
+const alchemy = repo.MARKET_RPC_URL ? { span: '10', rps: '15', push: '2500' } : { span: '100', rps: '0', push: '0' };
 const env = {
   APP_IMAGE: image,
   API_HOST: apiHost,
@@ -54,12 +56,19 @@ const env = {
   PRIVY_VERIFICATION_KEY: pems.join('\n').replaceAll('\n', '\\n'),
   ENVIO_API_TOKEN: repo.ENVIO_API_TOKEN ?? '',
   AI_GATEWAY_API_KEY: repo.AI_GATEWAY_API_KEY ?? '',
-  KIMI_VERIFICATION_JSON: current.KIMI_VERIFICATION_JSON ?? '',
+  // JSON holds quotes, which compose env files cannot carry: passed base64-encoded (infra/container/entry.sh).
+  KIMI_VERIFICATION_B64: current.KIMI_VERIFICATION_B64 || (repo.KIMI_VERIFICATION_JSON ? Buffer.from(repo.KIMI_VERIFICATION_JSON).toString('base64') : ''),
   CUSTODY_PROVIDER: 'privy',
   CUSTODY_CHAIN_ID: '143',
   CUSTODY_NETWORK_REF: 'monad-mainnet',
   CUSTODY_RPC: rpc,
   CUSTODY_START_HEIGHT: startHeight,
+  CUSTODY_RPC_SECONDARY: repo.CUSTODY_RPC_SECONDARY ?? '',
+  MARKET_RPC_URL: repo.MARKET_RPC_URL || 'https://rpc.monad.xyz',
+  MARKET_WS_URL: repo.MARKET_WS_URL || 'wss://rpc.monad.xyz',
+  MARKET_LOG_SPAN: repo.MARKET_LOG_SPAN || alchemy.span,
+  MARKET_RPC_MAX_RPS: repo.MARKET_RPC_MAX_RPS || alchemy.rps,
+  MARKET_PUSH_MIN_MILLIS: repo.MARKET_PUSH_MIN_MILLIS || alchemy.push,
   // Real-money switches stay off until the first capped trade is approved (docs/hosting/LIGHTSAIL.md).
   LIVE_OUTFLOWS: current.LIVE_OUTFLOWS ?? '0',
   LIVE_LAUNCH: current.LIVE_LAUNCH ?? '0',
