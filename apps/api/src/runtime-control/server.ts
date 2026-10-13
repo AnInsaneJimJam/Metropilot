@@ -1,4 +1,6 @@
 import { PaperBrokerService } from '../broker-service.ts';
+import { MarketIngestion, RpcMarketSource } from '../market-ingestion.ts';
+import { WS_RPC, rpcClient, MainnetMarkets } from '@monad-hack/connectors';
 // Local entry point for the runtime-facing internal API plus its worker loop (schedule ticks, lease reclaim,
 // executor outbox consumption).
 // Development only: loopback, a header-based workload identity and no TLS. A hosted entry point must supply the
@@ -30,26 +32,65 @@ const app = createInternalApp({
     return typeof id === 'string' && /^[!-~]{1,128}$/.test(id) ? id : undefined;
   },
 });
-// SYNTHETIC: with LOCAL_SYNTHETIC_FEED=1, a random-walk WETH/USD price is ingested every 5 s so paper fills
-// have recorded quotes and price triggers can cross. Never a market data source; labelled as synthetic.
-const feed = process.env['LOCAL_SYNTHETIC_FEED'] === '1';
-let price = 250_000; // cents
+// New-head pushes are hints only. Every tick fetches the finalized head independently.
+// A 5-second watchdog also covers quiet pools and missed/disconnected subscriptions.
+if (process.env['LOCAL_SYNTHETIC_FEED'] === '1') throw new Error('Synthetic market feeds are disabled.');
+const ingestion = new MarketIngestion(pool, new RpcMarketSource(new MainnetMarkets(rpcClient(process.env['MARKET_RPC_URL']))), (o) => store.ingestPrice(o), undefined, (entry) => console.log(JSON.stringify(entry)));
+let refreshBusy = false, recoveryBusy = false;
+let stopping = false;
+let socket: WebSocket | undefined;
+let reconnect: ReturnType<typeof setTimeout> | undefined;
+const marketLane = async (phase: 'refresh' | 'recovery', wake: string): Promise<void> => {
+  if (stopping || (phase === 'refresh' ? refreshBusy : recoveryBusy)) return;
+  if(phase==='refresh')refreshBusy=true;else recoveryBusy=true;
+  const started = performance.now();
+  try {
+    if(phase==='refresh')await ingestion.refresh();else await ingestion.tick();
+    console.log(JSON.stringify({ event: 'market.ingestion.tick', phase, wake, elapsedMillis: Math.round(performance.now() - started) }));
+  } catch {
+    // MarketIngestion reports safe per-feed reason codes. Provider errors must never be printed here.
+  } finally { if(phase==='refresh')refreshBusy=false;else recoveryBusy=false; }
+};
+const marketTick = (wake = 'watchdog'): void => {
+  void marketLane('refresh',wake);
+  void marketLane('recovery',wake);
+};
+const connect = (): void => {
+  if (stopping) return;
+  const url = new URL(process.env['MARKET_WS_URL'] ?? WS_RPC);
+  if (url.protocol !== 'wss:' || url.username || url.password) throw new Error('Market WebSocket must use WSS without URL credentials.');
+  socket = new WebSocket(url);
+  socket.onopen = () => socket?.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_subscribe', params: ['newHeads'] }));
+  socket.onmessage = (event) => {
+    try {
+      const message = JSON.parse(String(event.data));
+      if (message.error) socket?.close();
+      if (message.id === 1 && typeof message.result === 'string') console.log(JSON.stringify({event:'market.subscription.connected',transport:'wss-newHeads'}));
+      if (message.method === 'eth_subscription') void marketTick('push');
+    } catch { socket?.close(); }
+  };
+  socket.onerror = () => socket?.close();
+  socket.onclose = () => { if (!stopping) reconnect = setTimeout(connect, 10_000); };
+};
+connect();
+void marketTick();
+const watchdog = setInterval(() => void marketTick(), 5_000);
 let busy = false;
 const worker = setInterval(() => {
   if (busy) return;
   busy = true;
   // Schedules, lost leases and executor outbox → audit stream and resumed runs.
-  const tick = feed && Date.now() % 5_000 < 1_000 ? (() => {
-    price = Math.max(200_000, Math.min(300_000, price + Math.round((Math.random() - 0.5) * 2_000)));
-    const now = new Date().toISOString();
-    return store.ingestPrice({ sourceEventKey: `synthetic:${now}`, feedRef: 'paper.weth-usd', price: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal: (price / 100).toFixed(2).replace(/\.?0+$/, '') }, observedAt: now, receivedAt: now });
-  })() : Promise.resolve([]);
-  Promise.all([tick, store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.consumeBrokerResults()])
+  Promise.all([store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.meterHosting(), store.consumeBrokerResults()])
     .catch((error: unknown) => console.error(`worker tick failed: ${(error as Error).name}`))
     .finally(() => { busy = false; });
 }, 1_000);
 const close = async (): Promise<void> => {
+  stopping = true;
+  clearInterval(watchdog);
+  if (reconnect) clearTimeout(reconnect);
+  socket?.close();
   clearInterval(worker);
+  while (refreshBusy || recoveryBusy || busy) await new Promise((resolve) => setTimeout(resolve, 50));
   await app.close();
   await pool.end();
   process.exit(0);

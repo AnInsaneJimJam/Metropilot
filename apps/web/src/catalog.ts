@@ -1,9 +1,10 @@
-import { syntheticCatalog, priceUnitKey, OUTPUT_SCHEMAS } from '@monad-hack/strategy';
+import { marketCatalog } from '@monad-hack/connectors/registry';
+import { priceUnitKey, OUTPUT_SCHEMAS } from '@monad-hack/strategy';
 import type { Catalog } from '@monad-hack/strategy';
 // The single adapter from catalog records to editor dropdowns. Paper catalog only until G3 serves a live one.
-export const editorCatalog: Catalog = syntheticCatalog;
+export const editorCatalog: Catalog = marketCatalog;
 export type Option = [string, string];
-const VENUE_LABEL: Record<string, string> = { 'uniswap-v3': 'Uniswap v3', kuru: 'Kuru' };
+const VENUE_LABEL: Record<string, string> = { 'uniswap-v3': 'Uniswap v3', kuru: 'Kuru', curve: 'Curve StableSwap-NG', aave: 'Aave v3' };
 const orNone = (options: Option[]): Option[] => options.length ? options : [['(none in catalog)', '']];
 
 export const assetSymbol = (ref: string): string => ref.slice(ref.lastIndexOf('.') + 1);
@@ -20,7 +21,7 @@ export function connectorOptions(action: string): Option[] {
   return orNone(Object.entries(editorCatalog.connectors).filter(([, c]) => c.actions.includes(action)).map(([ref]) => [venueLabel(ref), ref]));
 }
 export function feedOptions(): Option[] {
-  return orNone(Object.entries(editorCatalog.feeds).map(([ref, f]) => [`${assetSymbol(f.baseAssetRef)}/${f.quoteUnit} · ${venueLabel(f.connectorRef)} ${f.windowSeconds}s TWAP`, ref]));
+  return orNone(Object.entries(editorCatalog.feeds).map(([ref, f]) => [`${assetSymbol(f.baseAssetRef)}/${f.quoteUnit} · ${venueLabel(f.connectorRef)} ${f.source === 'nativeOracle' ? 'native USD oracle' : `${f.windowSeconds}s ${f.source === 'poolEma' ? 'native EMA parameter' : 'geometric TWAP'}`}`, ref]));
 }
 /** Distinct base/quote pairs that some feed quotes, for Price literals. */
 export function priceUnitOptions(): Option[] {
@@ -31,7 +32,7 @@ export function priceUnitOptions(): Option[] {
 /** Read operations some connector allows, and the connectors that offer reads. */
 export function readOperationOptions(): Option[] {
   const operations = new Set(Object.values(editorCatalog.reads).flatMap(r => Object.keys(r)));
-  return orNone([...operations].map(op => [op === 'price.read' ? 'price (30 s TWAP)' : op, op]));
+  return orNone([...operations].map(op => [op === 'price.read' ? 'native protocol price' : op === 'ausd.price.read' ? 'AUSD native USD price' : op === 'reserve.read' ? 'USDC reserve APRs' : op === 'ausd.reserve.read' ? 'AUSD reserve APRs' : op, op]));
 }
 export function readConnectorOptions(): Option[] {
   return orNone(Object.keys(editorCatalog.reads).filter(ref => Object.hasOwn(editorCatalog.connectors, ref)).map(ref => [venueLabel(ref), ref]));

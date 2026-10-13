@@ -4,10 +4,13 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@monad-hack/accounting": "workspace:*",
     "@monad-hack/contracts": "workspace:*",
+    "@monad-hack/custody": "workspace:*",
     "@monad-hack/strategy": "workspace:*",
     "fastify": "5.12.5",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "@monad-hack/connectors": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "8.23.1"

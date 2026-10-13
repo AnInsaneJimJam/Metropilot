@@ -1,0 +1,32 @@
+{
+  "description": "rejects unapproved finality",
+  "expect": {
+    "fieldPath": "/finality",
+    "keyword": "const"
+  },
+  "document": {
+    "schemaVersion": "price-observation/1",
+    "feedRef": "paper.wmon-usdc",
+    "connectorRef": "paper.uniswap",
+    "connectorVersion": "1.1.0",
+    "networkRef": "monad-mainnet",
+    "sourceEventKey": "143:0x83fef384587d07731880416db8850f8af66fda03:0xc8cd7e20204019073eeaa27f1373147a7712741b41e6195e66156e4cc3557aa2:uniswap-v3-geometric-twap",
+    "poolAddress": "0x83fef384587d07731880416db8850f8af66fda03",
+    "finality": "proposed",
+    "method": "uniswap-v3-geometric-twap",
+    "windowSeconds": 30,
+    "price": {
+      "baseAssetRef": "paper.WMON",
+      "quoteUnit": "USDC",
+      "decimal": "0.025667896448136311"
+    },
+    "observedAt": "2026-10-12T17:36:40.000Z",
+    "receivedAt": "2026-10-12T17:36:42.267Z",
+    "block": {
+      "chainId": 143,
+      "number": "112816054",
+      "hash": "0xc8cd7e20204019073eeaa27f1373147a7712741b41e6195e66156e4cc3557aa2"
+    },
+    "provenanceHash": "0x0ffc433d59e0db03d48eff031752b118ee38928e48d88a80fc68ca577ee1e8c0"
+  }
+}

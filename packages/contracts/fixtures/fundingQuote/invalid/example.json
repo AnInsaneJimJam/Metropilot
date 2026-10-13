@@ -1,0 +1,32 @@
+{
+  "description": "A quote proposes all three buckets",
+  "expect": {
+    "fieldPath": "/allocations",
+    "keyword": "minItems"
+  },
+  "document": {
+    "schemaVersion": "funding-quote/1",
+    "id": "019a0000-0000-7000-8000-0000000000e1",
+    "agentId": "019a0000-0000-7000-8000-000000000001",
+    "assetRef": "live.USD",
+    "rateCardVersions": [
+      "x"
+    ],
+    "allocations": [],
+    "gasAtomic": "0",
+    "feasible": true,
+    "shortfallAtomic": "0",
+    "dailyCost": [
+      {
+        "bucket": "hosting",
+        "amount": "1"
+      },
+      {
+        "bucket": "api",
+        "amount": "0"
+      }
+    ],
+    "createdAt": "2026-10-12T12:00:00.000Z",
+    "expiresAt": "2026-10-12T12:00:00.000Z"
+  }
+}

@@ -84,6 +84,11 @@ export function createInternalApp(options: InternalAppOptions) {
     return reply.header('cache-control', 'no-store').send(document);
   });
 
+  app.post('/internal/v1/market/read', async (request, reply) => {
+    const { scope } = await capability(request);
+    return reply.header('cache-control', 'no-store').send(await store.marketRead(scope, body('brokerRequest', request.body)));
+  });
+
   app.get('/internal/v1/runs/:runId', async (request, reply) => {
     const { scope } = await capability(request);
     const { runId } = request.params as { runId: string };

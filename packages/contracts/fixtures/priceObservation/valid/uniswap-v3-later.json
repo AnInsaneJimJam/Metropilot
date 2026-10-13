@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "price-observation/1",
+  "feedRef": "paper.wmon-usdc",
+  "connectorRef": "paper.uniswap",
+  "connectorVersion": "1.1.0",
+  "networkRef": "monad-mainnet",
+  "sourceEventKey": "143:0x83fef384587d07731880416db8850f8af66fda03:0xf7b34faa959633f55599456451d18769ca0dcfdef37e31615a6de0f48c06f5b8:uniswap-v3-geometric-twap",
+  "poolAddress": "0x83fef384587d07731880416db8850f8af66fda03",
+  "finality": "finalized",
+  "method": "uniswap-v3-geometric-twap",
+  "windowSeconds": 30,
+  "price": {
+    "baseAssetRef": "paper.WMON",
+    "quoteUnit": "USDC",
+    "decimal": "0.024464998059936183"
+  },
+  "observedAt": "2026-10-13T01:29:40.000Z",
+  "receivedAt": "2026-10-13T01:29:42.617Z",
+  "block": {
+    "chainId": 143,
+    "number": "112909987",
+    "hash": "0xf7b34faa959633f55599456451d18769ca0dcfdef37e31615a6de0f48c06f5b8"
+  },
+  "provenanceHash": "0xb7943a11a2a7139cd9a512595fcdd040f2581b0bef29ce118dabde1486248d1e"
+}

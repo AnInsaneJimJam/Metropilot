@@ -1,0 +1,18 @@
+{
+  "description": "Margin is at most 100%",
+  "expect": {
+    "fieldPath": "/marginBps",
+    "keyword": "maximum"
+  },
+  "document": {
+    "assetRef": "live.USD",
+    "depositAtomic": "1",
+    "minTradingAtomic": "0",
+    "gasAtomic": "0",
+    "resourceProfileRef": "runtime.small",
+    "aiCallsPerDay": 0,
+    "maxInputTokens": 0,
+    "maxOutputTokens": 0,
+    "marginBps": 10001
+  }
+}

@@ -2,5 +2,16 @@
   "name": "@monad-hack/connectors",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@monad-hack/contracts": "workspace:*",
+    "viem": "2.57.4"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./registry": "./src/registry.ts"
+  },
+  "devDependencies": {
+    "@monad-hack/strategy": "workspace:*"
+  }
 }
