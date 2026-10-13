@@ -63,8 +63,8 @@ test('Node and pnpm pins are exact and agree with the engines range', () => {
 test('module and rule-bearing directories have AGENTS.md (design.md directory rules)', () => {
   // Code/data subfolders inherit the nearest AGENTS.md.
   const inherits = new Set(['src', 'scripts', 'generated', 'workflows']);
-  // Git-ignored build output (.gitignore) is not repository structure.
-  const ignored = new Set(['node_modules', 'dist', 'build', 'coverage']);
+  // Git-ignored build output and local tunnel credentials (.gitignore) are not repository structure.
+  const ignored = new Set(['node_modules', 'dist', 'build', 'coverage', 'cloudflared']);
   const missing: string[] = [];
   const walk = (dir: string, underFixtures: boolean): void => {
     for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
