@@ -15,7 +15,7 @@ import {
   buildApproval, buildSwap, decodeApproval, decodeSwap, decodeSwapResult, interpretApprovalReceipt, interpretSwapReceipt, minimumOutput, quote, referenceOutput, RouteError,
 } from '@monad-hack/connectors';
 import type { FrozenSwap, RouteReader, SwapLeg, UniswapRoute, UnsignedTransaction } from '@monad-hack/connectors';
-import { ProviderError, walletPolicyDestinations } from '@monad-hack/custody';
+import { ProviderError, walletInFlight, walletPolicyDestinations, withWalletSendLock } from '@monad-hack/custody';
 import type { CustodyConfig, CustodyProvider, Receipt } from '@monad-hack/custody';
 import type { AuthoritySource } from './authorization.ts';
 import { uuidv7 } from './ids.ts';
@@ -100,6 +100,10 @@ export class LivePipeline {
   /** One pass: advance in-flight attempts, then continue or start intents whose wallet is free. */
   async tick(now: Date = new Date()): Promise<PipelineReport> {
     const report: PipelineReport = { started: 0, sent: 0, settled: 0, failed: 0, reconciling: 0 };
+    // A crash after the provider returned the swap hash but before the intent moved: record the submission first.
+    const unsubmitted = await this.#pool.query<AttemptRow>(
+      `select a.* from transaction_attempts a join intents i on i.id = a.intent_id where a.kind = 'swap' and a.tx_hash is not null and i.state = 'signing' limit 50`);
+    for (const a of unsubmitted.rows) await this.#live.markSubmitted(a.intent_id, a.tx_hash!, now);
     const open = await this.#pool.query<AttemptRow>(`select * from transaction_attempts where state in ('prepared', 'sent', 'ambiguous') order by created_at limit 50`);
     for (const a of open.rows) await this.#advance(a, now, report);
     // Intents whose swap attempt finished but did not settle yet (a crash between the two steps).
@@ -108,11 +112,12 @@ export class LivePipeline {
     for (const a of unsettled.rows) await this.#settle(a, now, report);
     const ready = await this.#pool.query<IntentRecord>(
       `select i.* from intents i where i.mode = 'live' and i.state in ('reserved', 'signing')
-         and not exists (select 1 from transaction_attempts a where a.intent_id = i.id and (a.kind = 'swap' or a.state in ('prepared', 'sent', 'ambiguous')))
+         and not exists (select 1 from transaction_attempts a where a.intent_id = i.id and (a.kind = 'swap' or a.state in ('prepared', 'sent', 'ambiguous', 'reverted', 'refused')))
        order by i.created_at limit 20`);
     for (const record of ready.rows) {
       try {
-        if (await this.#prepare(toRow(record), now, report)) report.started++;
+        // One sender per wallet across processes (withdrawal gateway, other executor instances).
+        if (await withWalletSendLock(this.#pool, record.wallet_id!, () => this.#prepare(toRow(record), now, report))) report.started++;
       } catch (error) {
         // Chain or provider reads failed before anything was recorded: the next tick retries.
         this.#onError(record.id, error);
@@ -124,15 +129,6 @@ export class LivePipeline {
   async #wallet(id: string): Promise<WalletRow> {
     const r = await this.#pool.query<WalletRow>('select id, address, provider_wallet_id, provider_policy_id from wallets where id = $1', [id]);
     return r.rows[0]!;
-  }
-
-  /** One unresolved transaction per wallet: another intent's transaction or a withdrawal in flight waits it out. */
-  async #walletBusy(walletId: string, intentId: string): Promise<boolean> {
-    const r = await this.#pool.query(
-      `select 1 from intents where wallet_id = $1 and id <> $2 and mode = 'live' and state in ('signing', 'signed', 'submitted', 'included', 'finalized', 'reconciling')
-       union all select 1 from transaction_attempts where wallet_id = $1 and intent_id <> $2 and state in ('prepared', 'sent', 'ambiguous')
-       union all select 1 from withdrawals where wallet_id = $1 and state in ('submitted', 'reconciling') limit 1`, [walletId, intentId]);
-    return (r.rowCount ?? 0) > 0;
   }
 
   async #approvalFee(intentId: string): Promise<bigint> {
@@ -157,7 +153,10 @@ export class LivePipeline {
       await this.#end(row, { code: authority?.desiredState === 'paused' ? 'EXECUTOR_DEPLOYMENT_INACTIVE' : 'EXECUTOR_STALE_GENERATION', message: 'The deployment changed before the swap was signed.' }, now, report);
       return false;
     }
-    if (await this.#walletBusy(row.walletId!, row.id)) return false;
+    // One unresolved transaction per wallet: another intent's transaction or a withdrawal in flight waits it out.
+    if (await walletInFlight(this.#pool, row.walletId!, { intentId: row.id })) return false;
+    // A connector or asset disabled after admission stops the trade before signing.
+    const catalog = await this.#store.catalogAllows(row.action.connectorRef, row.action.connectorVersion, 'swap.exactInput', authority.networkRef, [row.action.tokenInRef, row.action.tokenOutRef], 'live');
     const wallet = await this.#wallet(row.walletId!);
     const tin = cfg.assets[row.action.tokenInRef];
     const tout = cfg.assets[row.action.tokenOutRef];
@@ -215,7 +214,7 @@ export class LivePipeline {
     const used = usage.rows[0] ? BigInt(usage.rows[0].pending) + BigInt(usage.rows[0].committed) : 0n;
     const freezes = await openFreezes(this.#pool, 'live', row.tenantId, row.agentId);
     const context: ActionContext = {
-      mode: 'live', phase: 'signing', deploymentActive: true, connectorEnabled: true, assetsAllowed: true, requestedSlippageBps: row.action.maxSlippageBps, limits,
+      mode: 'live', phase: 'signing', deploymentActive: true, connectorEnabled: catalog.connector, assetsAllowed: catalog.assets, requestedSlippageBps: row.action.maxSlippageBps, limits,
       resolvedInputAtomic: amountIn, availableInputAtomic: held < amountIn ? held : amountIn, actionsInWindow: 0, nowMillis: quotedAt,
       // The reference is read now from a finalized block.
       valuation: { observedAtMillis: quotedAt, maxAgeSeconds: this.#live.config.maxValuationAgeSeconds },
@@ -242,7 +241,14 @@ export class LivePipeline {
       await this.#end(row, denial, now, report, { verdict, contextHash });
       return false;
     }
-    if (row.state === 'reserved') await this.#live.markSigning(row.id, verdict, contextHash, now);
+    if (row.state === 'reserved') {
+      // Recheck authority at the claim, and send only if this pass actually moved the intent to signing (a
+      // concurrent cancel or expiry returns the row unchanged and its holds are already released).
+      const current = await this.#authority.current(row.tenantId, row.deploymentId);
+      if (!current || current.generation !== row.generation || current.desiredState !== 'active') return false;
+      const claimed = await this.#live.markSigning(row.id, verdict, contextHash, now);
+      if (claimed.state !== 'signing') return false;
+    }
     const kind = approveTx ? 'approve' : 'swap';
     const tx = approveTx ?? swapTx;
     const attempt = await this.#record(row, wallet, kind, tx, kind === 'approve' ? approvalGas : swapGas, kind === 'swap' ? swap : undefined, now);
@@ -291,7 +297,7 @@ export class LivePipeline {
 
   async #advance(a: AttemptRow, now: Date, report: PipelineReport): Promise<void> {
     if (a.state === 'prepared' || a.state === 'ambiguous') {
-      await this.#send(a, now, report);
+      await withWalletSendLock(this.#pool, a.wallet_id, () => this.#send(a, now, report));
       return;
     }
     const receipt = await this.#chain.receipt(a.tx_hash!);
@@ -300,27 +306,34 @@ export class LivePipeline {
     // Inclusion is provisional: only a receipt at or below the finalized height on the canonical chain counts.
     if (receipt.blockNumber > finalized || (await this.#chain.blockHashAt(receipt.blockNumber)) !== receipt.blockHash) return;
     const state = receipt.succeeded ? 'finalized' : 'reverted';
-    await this.#pool.query(
+    const record = () => this.#pool.query(
       `update transaction_attempts set state = $2, block_number = $3, block_hash = $4, fee_atomic = $5, updated_at = $6 where id = $1 and state = 'sent'`,
       [a.id, state, receipt.blockNumber.toString(), receipt.blockHash, receipt.feeAtomic.toString(), now]);
-    const done: AttemptRow = { ...a, state, fee_atomic: receipt.feeAtomic.toString() };
     if (a.kind === 'swap') {
-      await this.#settle(done, now, report, receipt);
+      // A crash after this update is resumed by the unsettled-swap pass in tick().
+      await record();
+      await this.#settle({ ...a, state, fee_atomic: receipt.feeAtomic.toString() }, now, report, receipt);
       return;
     }
+    // Approval: interpret the receipt and act on it before the attempt is marked done, so a crash in between replays
+    // the check instead of leaving a finished approval nobody inspected.
     const wallet = await this.#wallet(a.wallet_id);
+    let ok: boolean;
     try {
-      const ok = interpretApprovalReceipt(this.#cfg.route, decodeApproval(this.#cfg.route, { chainId: a.chain_id, to: a.to_address, data: a.data, value: BigInt(a.value_atomic) }), receipt, wallet.address);
-      // Success: the intent stays signing and the next tick re-quotes and sends the swap.
-      if (!ok) {
-        await this.#live.failAfterSigning(a.intent_id, { code: 'EXECUTOR_SIMULATION_FAILED', message: 'The approval reverted on chain; only its gas was charged.' }, receipt.feeAtomic, now);
-        report.failed++;
-      }
+      ok = interpretApprovalReceipt(this.#cfg.route, decodeApproval(this.#cfg.route, { chainId: a.chain_id, to: a.to_address, data: a.data, value: BigInt(a.value_atomic) }), receipt, wallet.address);
     } catch (error) {
       if (!(error instanceof RouteError)) throw error;
+      // Left as sent: the wallet stays blocked and the freeze stays open until an operator reconciles.
       await this.#unexpected(a, error.message, now);
       report.reconciling++;
+      return;
     }
+    if (!ok) {
+      await this.#live.failAfterSigning(a.intent_id, { code: 'EXECUTOR_SIMULATION_FAILED', message: 'The approval reverted on chain; only its gas was charged.' }, receipt.feeAtomic, now);
+      report.failed++;
+    }
+    // Success: the intent stays signing and the next pass re-quotes and sends the swap.
+    await record();
   }
 
   /** Settle a finished swap attempt from its canonical receipt: actual movements and all gas, exactly once. */

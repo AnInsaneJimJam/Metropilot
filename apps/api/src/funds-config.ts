@@ -19,6 +19,13 @@ export interface CustodySetup {
   readonly outflows: boolean;
   /** Present only for the local stand-in: mint test assets into a wallet. */
   readonly localChain?: LocalChain;
+  /** RPC endpoints whose eth_chainId must equal the configured chain before any scan or settlement. */
+  readonly endpoints?: readonly JsonRpcChain[];
+}
+
+/** Refuse to start when an RPC serves another chain: its native deposits would be labelled with this chain's asset. */
+export async function verifyCustodyChain(setup: CustodySetup): Promise<void> {
+  for (const endpoint of setup.endpoints ?? []) await endpoint.verifyChainId();
 }
 
 const need = (env: NodeJS.ProcessEnv, name: string): string => {
@@ -58,23 +65,26 @@ export function custodyFromEnv(env: NodeJS.ProcessEnv): CustodySetup | undefined
   const decimals = tokenAddress ? Number(need(env, 'FUNDING_TOKEN_DECIMALS')) : 0;
   const primary = new JsonRpcChain({ endpoint: need(env, 'CUSTODY_RPC'), chainId });
   const secondaryUrl = env['CUSTODY_RPC_SECONDARY'];
-  const checked = secondaryUrl ? new CrossCheckedChain(primary, new JsonRpcChain({ endpoint: secondaryUrl, chainId })) : primary;
+  const secondary = secondaryUrl ? new JsonRpcChain({ endpoint: secondaryUrl, chainId }) : undefined;
+  const checked = secondary ? new CrossCheckedChain(primary, secondary) : primary;
   const envioToken = env['ENVIO_API_TOKEN'];
   const chain = envioToken ? new HyperSyncChain(primary, { url: env['HYPERSYNC_URL'] ?? hyperSyncUrlFor(chainId), apiToken: envioToken }, checked) : checked;
   // Asset refs are per network (testnet.* / mainnet.*); the ledger never mixes chains.
   const gasAssetRef = env['GAS_ASSET_REF'] ?? (chainId === 143 ? 'mainnet.MON' : chainId === 10143 ? 'testnet.MON' : need(env, 'GAS_ASSET_REF'));
   return {
     provider: new PrivyCustody({ appId: need(env, 'PRIVY_APP_ID'), appSecret: need(env, 'PRIVY_APP_SECRET'), authorizationKey: need(env, 'PRIVY_AUTHORIZATION_KEY') }),
-    chain, outflows: env['LIVE_OUTFLOWS'] === '1',
+    chain, outflows: env['LIVE_OUTFLOWS'] === '1', endpoints: secondary ? [primary, secondary] : [primary],
     config: {
       networkRef: need(env, 'CUSTODY_NETWORK_REF'), chainId, gasAssetRef, startHeight: BigInt(env['CUSTODY_START_HEIGHT'] ?? '0'),
       // Mainnet wallets may call the reviewed Uniswap router and approve it on the traded tokens.
       ...(chainId === 143 ? {
         tradingContracts: [MAINNET_UNISWAP.router, MAINNET_UNISWAP.wmon, MAINNET_UNISWAP.usdc],
+        // A token that is also the funding token is reconciled as funding; trade outputs paid to the wallet are
+        // excluded from deposit crediting by the scanner either way, so nothing credits twice.
         tradedAssets: [
           { assetRef: 'mainnet.WMON', chainId, token: MAINNET_UNISWAP.wmon, decimals: 18, funding: false },
           { assetRef: 'mainnet.USDC', chainId, token: MAINNET_UNISWAP.usdc, decimals: 6, funding: false },
-        ],
+        ].filter((t) => t.token !== tokenAddress),
       } : {}),
       assets: [
         ...(tokenAddress ? [{ assetRef: need(env, 'FUNDING_ASSET_REF'), chainId, token: tokenAddress, decimals, funding: true }] : []),

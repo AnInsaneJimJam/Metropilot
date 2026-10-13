@@ -218,16 +218,27 @@ export class RuntimeControlStore {
    */
   async meterHosting(): Promise<{ charged: number; paused: string[] }> {
     const now = new Date(this.#now());
-    const active = await this.#pool.query<{ id: string; tenant_id: string; agent_id: string; mode: 'paper' | 'live'; resource_profile_ref: string }>(
-      `select id, tenant_id, agent_id, mode, resource_profile_ref from deployments where desired_state = 'active' order by id limit 500`);
+    type Active = { id: string; tenant_id: string; agent_id: string; mode: 'paper' | 'live'; resource_profile_ref: string };
+    // Bounded pages over the whole active set (keyset on id), so later deployments are metered too.
+    const active: Active[] = [];
+    for (let after = '00000000-0000-0000-0000-000000000000'; ;) {
+      const page = await this.#pool.query<Active>(
+        `select id, tenant_id, agent_id, mode, resource_profile_ref from deployments where desired_state = 'active' and id > $1 order by id limit 500`, [after]);
+      active.push(...page.rows);
+      if (page.rows.length < 500) break;
+      after = page.rows.at(-1)!.id;
+    }
     let charged = 0;
     const paused: string[] = [];
-    for (const d of active.rows) {
+    for (const d of active) {
       const card = await currentRateCard(this.#pool, 'hosting', d.mode, d.resource_profile_ref, now);
       if (!card?.sliceSeconds) continue;
       const scope = { mode: d.mode, tenantId: d.tenant_id, agentId: d.agent_id };
       const slice = sliceIndexAt(now, card.sliceSeconds);
       await this.#tx(async (c) => {
+        // A pause or stop that landed after the list was read wins: lock and recheck before authorizing charges.
+        const current = await c.query<{ desired_state: string }>('select desired_state from deployments where id = $1 for update', [d.id]);
+        if (current.rows[0]?.desired_state !== 'active') return;
         // Each slice is its own savepoint: a paid slice stays paid even when the next one cannot be.
         for (const index of [slice, slice + 1n]) {
           await c.query('savepoint hosting_slice');

@@ -38,7 +38,8 @@ export function FundsPanel({ agentId, localFaucet }: { agentId: string; localFau
   const [amount, setAmount] = useState("");
   const [withdrawal, setWithdrawal] = useState<Withdrawal>();
 
-  const decimalsOf = (ref: string) => wallet?.acceptedAssets.find((a) => a.assetRef === ref)?.decimals ?? 18;
+  // Unknown decimals show atomic units (0) rather than a wrong scale; the wallet metadata loads below.
+  const decimalsOf = (ref: string) => wallet?.acceptedAssets.find((a) => a.assetRef === ref)?.decimals ?? 0;
   const refresh = useCallback(async () => {
     setFunds(await api<Funds>(`/agents/${agentId}/balances`));
   }, [agentId]);
@@ -47,6 +48,14 @@ export function FundsPanel({ agentId, localFaucet }: { agentId: string; localFau
     const timer = setInterval(() => void refresh().catch(() => undefined), 4000);
     return () => clearInterval(timer);
   }, [refresh]);
+  useEffect(() => {
+    // Returning to Operate: balances name the wallet but not its asset decimals; fetch them (idempotent, existing wallet).
+    if (!funds?.wallet || wallet) return;
+    void api<Wallet>(`/agents/${agentId}/wallet`, { method: "POST", body: "{}" }).then((w) => {
+      setWallet(w);
+      setAssetRef((current) => current || w.acceptedAssets[0]?.assetRef || "");
+    }).catch(() => undefined);
+  }, [funds?.wallet, wallet, agentId]);
   useEffect(() => {
     if (!withdrawal || ["finalized", "failed", "cancelled"].includes(withdrawal.state)) return;
     const timer = setInterval(() => void api<Withdrawal>(`/withdrawals/${withdrawal.id}`).then(setWithdrawal).catch(() => undefined), 3000);

@@ -23,6 +23,7 @@ if (!secretHex || !/^[0-9a-f]{64}$/.test(secretHex)) throw new Error('EXECUTOR_C
 const feeds: FeedPair[] = MARKETS.map(m => ({feedRef:m.feedRef,connectorRef:m.connectorRef,baseAssetRef:`paper.${m.base}`,quoteAssetRef:`paper.${m.quote}`,baseDecimals:TOKENS[m.base].decimals,quoteDecimals:TOKENS[m.quote].decimals}));
 const pool = new pg.Pool({ connectionString: url, max: 10, connectionTimeoutMillis: 3000 });
 const live = liveFromEnv(process.env);
+await live?.verify();
 const authority = new PostgresAuthority(pool);
 const { service, server, store } = createExecutor({
   pool, authority, market: new PostgresMarketData(pool, feeds), capabilitySecret: Buffer.from(secretHex, 'hex'),

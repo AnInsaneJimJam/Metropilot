@@ -64,9 +64,16 @@ export async function observeDeposit(c: Sql, t: TransferObservation, accepted: r
       owner.tenant_id, owner.agent_id, t.amount.toString(), lower(t.blockHash), t.blockNumber.toString(), asset ? 'pending' : 'quarantined',
       asset ? null : 'Unsupported token: held for manual recovery, never credited.', t.observedAt],
   );
+  // An uncredited record takes every field from the newest canonical observation: after a reorg the same event key
+  // can carry another amount, token or destination, and a transfer abandoned on a discarded block can be re-included.
+  // Finalized records never change (finalizeDeposit compares them instead).
   await c.query(
-    `update deposits set block_hash = $4, block_number = $5 where chain_id = $1 and tx_hash = $2 and log_index = $3 and state = 'pending' and block_hash <> $4`,
-    [t.chainId, lower(t.txHash), t.logIndex, lower(t.blockHash), t.blockNumber.toString()]);
+    `update deposits set token_address = $4, asset_ref = $5, sender = $6, destination = $7, tenant_id = $8, agent_id = $9, amount = $10,
+       block_hash = $11, block_number = $12, state = $13, reason = $14, resolved_at = null
+     where chain_id = $1 and tx_hash = $2 and log_index = $3 and state in ('pending', 'abandoned', 'quarantined')
+       and (block_hash <> $11 or amount <> $10 or token_address <> $4 or destination <> $7 or state = 'abandoned')`,
+    [t.chainId, lower(t.txHash), t.logIndex, lower(t.tokenAddress), asset?.assetRef ?? null, lower(t.sender), lower(t.destination), owner.tenant_id, owner.agent_id,
+      t.amount.toString(), lower(t.blockHash), t.blockNumber.toString(), asset ? 'pending' : 'quarantined', asset ? null : 'Unsupported token: held for manual recovery, never credited.']);
   return depositByKey(c, t.chainId, t.txHash, t.logIndex);
 }
 

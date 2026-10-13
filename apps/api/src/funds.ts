@@ -210,7 +210,9 @@ export class FundsService {
     const r = await c.query<{ purpose: Purpose; action_hash: string; expires_at: Date; verified_at: Date | null; consumed_at: Date | null }>(
       'select purpose, action_hash, expires_at, verified_at, consumed_at from step_up_challenges where tenant_id = $1 and id = $2 for update', [tenantId, stepUpId]);
     const ch = r.rows[0];
-    const fresh = ch?.verified_at && ch.verified_at.getTime() + STEP_UP_TTL_MILLIS > this.#now().getTime();
+    // Both bounds hold: the challenge's advertised expiry and the freshness window after verification.
+    const now = this.#now().getTime();
+    const fresh = ch?.verified_at && ch.verified_at.getTime() + STEP_UP_TTL_MILLIS > now && ch.expires_at.getTime() > now;
     if (!ch || !fresh || ch.consumed_at || ch.purpose !== purpose || ch.action_hash !== (await contentHash(terms))) {
       throw new ControlError(403, 'FORBIDDEN', 'A fresh step-up approval for these exact terms is required.', { fieldPath: '/stepUpId' });
     }
@@ -315,7 +317,8 @@ export class FundsService {
       }
       const dest = await c.query<{ chain_id: number }>('select chain_id from withdrawal_destinations where tenant_id = $1 and id = $2 and agent_id = $3 and revoked_at is null', [tenantId, r.destinationId, agentId]);
       if (!dest.rows[0] || dest.rows[0].chain_id !== config.chainId) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Withdraw only to a verified destination on this network.', { fieldPath: '/destinationId' });
-      const asset = config.assets.find((a) => a.assetRef === r.assetRef);
+      // Funding assets and trade proceeds (traded assets) are withdrawable; neither list credits the other.
+      const asset = [...config.assets, ...(config.tradedAssets ?? [])].find((a) => a.assetRef === r.assetRef);
       if (!asset) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'This asset cannot be withdrawn on this network.', { fieldPath: '/assetRef' });
       const w = await walletFor(c, tenantId, agentId, config.chainId);
       if (!w) throw new ControlError(409, 'FUNDING_PENDING', 'This agent has no wallet.');

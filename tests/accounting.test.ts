@@ -209,6 +209,32 @@ describe('accounting ledger and reservations', { skip }, () => {
     assert.equal((await bal(scope, 'trading')).held, 0n);
   });
 
+  test('expiry racing a dispatch never frees the dispatched hold', async () => {
+    const scope = await funded({ trading: 100n });
+    await db.tx((c) => reserve(c, { operationKey: `race:${scope.agentId}`, mode: 'live', tenantId: scope.tenantId, agentId: scope.agentId, purpose: 'trade', now, expiresAt: later(1000), holds: [{ account: user(scope, 'trading', USD), amount: 40n }] }));
+    const dispatcher = await db.pool.connect();
+    try {
+      await dispatcher.query('begin');
+      await markDispatched(dispatcher, `race:${scope.agentId}`, now);
+      // Expiry read the reservation as held before the dispatch committed; it must recheck under the lock.
+      const expiring = db.tx((c) => expireHeld(c, later(5000)));
+      await new Promise((r) => setTimeout(r, 100));
+      await dispatcher.query('commit');
+      assert.ok(!(await expiring).includes(`race:${scope.agentId}`));
+    } finally {
+      dispatcher.release();
+    }
+    assert.equal((await getReservation(db.pool, `race:${scope.agentId}`))!.state, 'dispatched');
+    assert.equal((await bal(scope, 'trading')).held, 40n);
+  });
+
+  test('a transfer between buckets succeeds whatever order the targets are listed in', async () => {
+    const scope = await funded({ trading: 70n, hosting: 30n });
+    assert.equal((await bal(scope, 'unallocated')).balance, 0n);
+    await db.tx((c) => allocate(c, { scope, assetRef: USD, expectedBudgetVersion: 2, targets: { hosting: 40n, trading: 60n }, actor: 'test', now }));
+    assert.deepEqual([(await bal(scope, 'trading')).balance, (await bal(scope, 'hosting')).balance, (await bal(scope, 'unallocated')).balance], [60n, 40n, 0n]);
+  });
+
   test('daily counters include pending holds, and a new UTC day does not erase an outstanding hold', async () => {
     const scope = await funded({ trading: 1000n });
     const limits = [{ scopeKey: `agent:${scope.agentId}`, maxActions: 2, maxNotionalUsdMicros: 500n }, { scopeKey: 'platform', maxActions: 1_000_000 }];

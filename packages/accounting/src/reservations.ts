@@ -214,13 +214,15 @@ async function moveWindows(c: Sql, reservationId: string, mode: Mode, commit: bo
 }
 
 /** Return every hold to available. Allowed from held, dispatched (provider confirmed no effect) or reconciling. */
-export async function release(c: Sql, operationKey: string, now: Date, reason: string): Promise<ReservationState> {
+export async function release(c: Sql, operationKey: string, now: Date, reason: string, options: { readonly onlyIfHeld?: boolean } = {}): Promise<ReservationState> {
   const r = await find(c, operationKey, false);
   if (!r) throw new AccountingError('NOT_FOUND', 'Reservation not found.');
   const holds = await heldAccounts(c, r.id, r.tenant_id);
   const accounts = await lockAccounts(c, holds.map((h) => h.ref));
   const locked = (await find(c, operationKey, true))!;
   if (locked.state === 'released') return 'released';
+  // Expiry rechecks under the account and reservation locks: a hold dispatched meanwhile must not be freed.
+  if (options.onlyIfHeld && locked.state !== 'held') return locked.state;
   if (locked.state === 'settled') throw new AccountingError('STATE_CONFLICT', 'A settled reservation cannot be released.');
   for (const h of holds) await c.query('update ledger_accounts set held = held - $2 where id = $1', [accounts.get(h.key)!.id, h.amount.toString()]);
   await c.query(`update reservation_holds set consumed = 0 where reservation_id = $1`, [r.id]);
@@ -319,8 +321,7 @@ export async function expireHeld(c: Sql, now: Date, limit = 100): Promise<string
   for (const row of due.rows) {
     const current = await find(c, row.operation_key, false);
     if (current?.state !== 'held') continue;
-    await release(c, row.operation_key, now, 'Expired before dispatch.');
-    released.push(row.operation_key);
+    if ((await release(c, row.operation_key, now, 'Expired before dispatch.', { onlyIfHeld: true })) === 'released') released.push(row.operation_key);
   }
   return released;
 }

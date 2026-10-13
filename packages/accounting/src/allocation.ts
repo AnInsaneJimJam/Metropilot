@@ -40,7 +40,11 @@ export async function allocate(c: Sql, input: AllocateInput): Promise<Allocated>
 
   const postings: PostingInput[] = [];
   let unallocatedChange = 0n;
-  for (const [bucket, target] of Object.entries(input.targets) as [Exclude<Bucket, 'unallocated'>, bigint][]) {
+  // Decreases post before increases: postings apply in order and the unallocated pool must never dip below zero
+  // midway through a transfer whose final totals balance.
+  const ordered = (Object.entries(input.targets) as [Exclude<Bucket, 'unallocated'>, bigint][])
+    .sort(([a, ta], [b, tb]) => Number((ta - row(a).balance) - (tb - row(b).balance)));
+  for (const [bucket, target] of ordered) {
     if (target < 0n) invalid('Bucket targets are non-negative.');
     const r = row(bucket);
     const delta = target - r.balance;

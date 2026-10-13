@@ -7,7 +7,7 @@ import {
   observeDeposit, openWithdrawals, recordWithdrawalSubmitted, reconcileWallet,
 } from '@monad-hack/accounting';
 import type { AcceptedAsset, ReconcileReport } from '@monad-hack/accounting';
-import type { ChainReader } from './chain.ts';
+import type { ChainReader, TransferLog } from './chain.ts';
 import { ChainError, NATIVE_TOKEN } from './chain.ts';
 import { ProviderError, erc20TransferData } from './provider.ts';
 import type { CustodyProvider } from './provider.ts';
@@ -149,16 +149,25 @@ export class DepositScanner {
     return r.rows.map((w) => w.address);
   }
 
+  /** A live trade's output paid back to its own wallet is settled by the executor, never credited as a deposit. */
+  async #withoutOwnTrades(logs: TransferLog[]): Promise<TransferLog[]> {
+    if (!logs.length) return logs;
+    const own = await this.pool.query<{ tx_hash: string; address: string }>(
+      `select a.tx_hash, w.address from transaction_attempts a join wallets w on w.id = a.wallet_id where a.tx_hash = any($1)`, [[...new Set(logs.map((l) => l.txHash.toLowerCase()))]]);
+    const key = new Set(own.rows.map((r) => `${r.tx_hash}:${r.address}`));
+    return logs.filter((l) => !key.has(`${l.txHash.toLowerCase()}:${l.destination.toLowerCase()}`));
+  }
+
   async tick(now: Date): Promise<ScanReport> {
     const addresses = await this.#addresses();
     const accepted = this.#accepted();
     // Every token contract we know about; unaccepted ones are recorded as quarantined.
     const tokens = this.config.assets.filter((a) => a.token !== 'native' && a.chainId === this.chain.chainId).map((a) => a.token as string);
     const native = this.config.assets.some((a) => a.token === 'native' && a.funding && a.chainId === this.chain.chainId);
-    const transfers = async (from: bigint, to: bigint) => [
+    const transfers = async (from: bigint, to: bigint) => this.#withoutOwnTrades([
       ...(await Promise.all(tokens.map((t) => this.chain.transferLogs(t, addresses, from, to)))).flat(),
       ...(native ? await this.chain.nativeTransfers(addresses, from, to) : []),
-    ];
+    ]);
     let observed = 0;
     const latest = await this.chain.latestHeight();
     // The observed pass only feeds the pending display; it starts near the head when behind. The finalized pass
@@ -186,6 +195,9 @@ export class DepositScanner {
             const canonical = await this.chain.blockHashAt(log.blockNumber);
             if (canonical !== log.blockHash) throw new ChainError('A finalized log is not in the canonical chain; settlement pauses.');
             const receipt = await this.chain.receipt(log.txHash);
+            // No receipt yet (e.g. one of two cross-checked endpoints lags) is missing evidence, not a failed transfer:
+            // retry the range instead of abandoning a canonical deposit.
+            if (!receipt) throw new ChainError('A finalized transfer has no receipt yet; the range is retried.');
             const record = await tx(this.pool, (c) => observeDeposit(c, { ...log, observedAt: now }, accepted));
             if (!record) continue;
             seen.add(`${log.txHash}:${log.logIndex}`);
@@ -221,6 +233,38 @@ export interface GatewayReport {
 }
 
 /** Executes reserved withdrawals through the provider and settles them from finalized receipts. */
+/**
+ * Anything unresolved that sends from this wallet: a live trade's transaction, an intent between signing and
+ * settlement, or a withdrawal on chain. Both send paths (withdrawal gateway, executor pipeline) wait for it.
+ */
+export async function walletInFlight(pool: Pick<pg.Pool, 'query'>, walletId: string, except: { intentId?: string; withdrawalId?: string } = {}): Promise<boolean> {
+  const r = await pool.query(
+    `select 1 from intents where wallet_id = $1 and id is distinct from $2 and mode = 'live' and state in ('signing', 'signed', 'submitted', 'included', 'finalized', 'reconciling')
+     union all select 1 from transaction_attempts where wallet_id = $1 and intent_id is distinct from $2 and state in ('prepared', 'sent', 'ambiguous')
+     union all select 1 from withdrawals where wallet_id = $1 and id is distinct from $3 and state in ('submitted', 'reconciling') limit 1`,
+    [walletId, except.intentId ?? null, except.withdrawalId ?? null]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+/**
+ * Durable per-wallet send claim across processes: a session advisory lock held from the in-flight check through the
+ * provider call and its recorded outcome. Returns undefined (skip this pass) when another sender holds the wallet.
+ */
+export async function withWalletSendLock<T>(pool: pg.Pool, walletId: string, work: () => Promise<T>): Promise<T | undefined> {
+  const c = await pool.connect();
+  try {
+    const got = await c.query<{ ok: boolean }>(`select pg_try_advisory_lock(hashtextextended('wallet-send:' || $1, 0)) as ok`, [walletId]);
+    if (!got.rows[0]!.ok) return undefined;
+    try {
+      return await work();
+    } finally {
+      await c.query(`select pg_advisory_unlock(hashtextextended('wallet-send:' || $1, 0))`, [walletId]);
+    }
+  } finally {
+    c.release();
+  }
+}
+
 export class WithdrawalGateway {
   readonly pool: pg.Pool;
   readonly provider: CustodyProvider;
@@ -234,7 +278,8 @@ export class WithdrawalGateway {
   }
 
   #asset(ref: string): ChainAsset {
-    const a = this.config.assets.find((x) => x.assetRef === ref && x.chainId === this.chain.chainId);
+    // Trade proceeds (traded assets) are withdrawable like funding assets.
+    const a = [...this.config.assets, ...(this.config.tradedAssets ?? [])].find((x) => x.assetRef === ref && x.chainId === this.chain.chainId);
     if (!a) throw new Error(`Unknown chain asset ${ref}.`);
     return a;
   }
@@ -245,38 +290,19 @@ export class WithdrawalGateway {
       if (w.state === 'reserved') {
         // A dispatched reservation with no recorded hash means a previous attempt may have sent: reconcile, never resend.
         const reservation = await getReservation(this.pool, w.reservationKey);
+        if (reservation?.state === 'released') {
+          // The hold expired before the gateway ran (outflows were off): nothing was sent, so the withdrawal ends.
+          await tx(this.pool, (c) => failWithdrawalBeforeSend(c, w.tenantId, w.id, 'The withdrawal expired before it was sent.', now));
+          report.failed++;
+          continue;
+        }
         if (reservation?.state !== 'held') {
           await tx(this.pool, (c) => markWithdrawalReconciling(c, w.tenantId, w.id, 'A previous send attempt has no recorded outcome.', now));
           report.reconciling++;
           continue;
         }
-        const claimed = await tx(this.pool, (c) => claimWithdrawalForDispatch(c, w.tenantId, w.id, now));
-        if (!claimed) continue;
-        const wallet = await this.pool.query<{ provider_wallet_id: string; provider_policy_id: string | null }>('select provider_wallet_id, provider_policy_id from wallets where tenant_id = $1 and id = $2', [w.tenantId, w.walletId]);
-        const dest = await this.pool.query<{ address: string }>('select address from withdrawal_destinations where tenant_id = $1 and id = $2', [w.tenantId, w.destinationId]);
-        const asset = this.#asset(w.assetRef);
-        const to = dest.rows[0]!.address;
-        try {
-          if (asset.token === 'native') {
-            // A native transfer goes straight to the recipient: the provider policy must list the verified destinations.
-            const allowedTo = await walletPolicyDestinations(this.pool, this.config, w.agentId);
-            await this.provider.allowDestinations(wallet.rows[0]!.provider_wallet_id, wallet.rows[0]!.provider_policy_id ?? undefined, { chainId: this.chain.chainId, allowedTo });
-          }
-          const sent = await this.provider.send({
-            providerWalletId: wallet.rows[0]!.provider_wallet_id, idempotencyKey: w.id, chainId: this.chain.chainId,
-            to: asset.token === 'native' ? to : asset.token, data: asset.token === 'native' ? '0x' : erc20TransferData(to, w.amount), value: asset.token === 'native' ? w.amount : 0n,
-          });
-          await tx(this.pool, (c) => recordWithdrawalSubmitted(c, w.tenantId, w.id, sent.txHash, now));
-          report.submitted++;
-        } catch (error) {
-          if (error instanceof ProviderError && error.kind === 'refused') {
-            await tx(this.pool, (c) => failWithdrawalBeforeSend(c, w.tenantId, w.id, error.message, now));
-            report.failed++;
-          } else {
-            await tx(this.pool, (c) => markWithdrawalReconciling(c, w.tenantId, w.id, 'The provider did not confirm the send.', now));
-            report.reconciling++;
-          }
-        }
+        // Skipped this pass when another sender holds the wallet or has something in flight.
+        await withWalletSendLock(this.pool, w.walletId, () => this.#send(w, now, report));
         continue;
       }
       if (!w.txHash) continue; // reconciling without a hash: operator investigates with the provider; never resent.
@@ -289,6 +315,39 @@ export class WithdrawalGateway {
       else report.failed++;
     }
     return report;
+  }
+
+  /** Under the wallet send lock: wait for anything else in flight, claim, send once, record the outcome. */
+  async #send(w: Awaited<ReturnType<typeof openWithdrawals>>[number], now: Date, report: { submitted: number; failed: number; reconciling: number }): Promise<boolean> {
+    if (await walletInFlight(this.pool, w.walletId, { withdrawalId: w.id })) return false;
+    const claimed = await tx(this.pool, (c) => claimWithdrawalForDispatch(c, w.tenantId, w.id, now));
+    if (!claimed) return false;
+    const wallet = await this.pool.query<{ provider_wallet_id: string; provider_policy_id: string | null }>('select provider_wallet_id, provider_policy_id from wallets where tenant_id = $1 and id = $2', [w.tenantId, w.walletId]);
+    const dest = await this.pool.query<{ address: string }>('select address from withdrawal_destinations where tenant_id = $1 and id = $2', [w.tenantId, w.destinationId]);
+    const asset = this.#asset(w.assetRef);
+    const to = dest.rows[0]!.address;
+    try {
+      if (asset.token === 'native') {
+        // A native transfer goes straight to the recipient: the provider policy must list the verified destinations.
+        const allowedTo = await walletPolicyDestinations(this.pool, this.config, w.agentId);
+        await this.provider.allowDestinations(wallet.rows[0]!.provider_wallet_id, wallet.rows[0]!.provider_policy_id ?? undefined, { chainId: this.chain.chainId, allowedTo });
+      }
+      const sent = await this.provider.send({
+        providerWalletId: wallet.rows[0]!.provider_wallet_id, idempotencyKey: w.id, chainId: this.chain.chainId,
+        to: asset.token === 'native' ? to : asset.token, data: asset.token === 'native' ? '0x' : erc20TransferData(to, w.amount), value: asset.token === 'native' ? w.amount : 0n,
+      });
+      await tx(this.pool, (c) => recordWithdrawalSubmitted(c, w.tenantId, w.id, sent.txHash, now));
+      report.submitted++;
+    } catch (error) {
+      if (error instanceof ProviderError && error.kind === 'refused') {
+        await tx(this.pool, (c) => failWithdrawalBeforeSend(c, w.tenantId, w.id, error.message, now));
+        report.failed++;
+      } else {
+        await tx(this.pool, (c) => markWithdrawalReconciling(c, w.tenantId, w.id, 'The provider did not confirm the send.', now));
+        report.reconciling++;
+      }
+    }
+    return true;
   }
 }
 

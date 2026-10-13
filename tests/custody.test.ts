@@ -253,6 +253,61 @@ describe('custody, deposits, metering and withdrawals', { skip }, () => {
     assert.deepEqual(await openFreezes(db.pool, 'live', a.tenantId, a.agentId), []);
   });
 
+  test('an uncredited deposit takes the newest canonical values; an abandoned one can be re-included; a missing receipt retries', async () => {
+    const a = await agent();
+    const { observeDeposit, finalizeDeposit } = await import('../packages/accounting/src/index.ts');
+    const accepted = [{ chainId: config.chainId, tokenAddress: USDC, assetRef: 'local.USD', decimals: 6 }];
+    const log = { chainId: config.chainId, txHash: `0x${'d1'.repeat(32)}`, logIndex: 0, tokenAddress: USDC, sender: OTHER, destination: a.address, amount: 5n, blockHash: `0x${'aa'.repeat(32)}`, blockNumber: 10n, observedAt: now };
+    await db.tx((c) => observeDeposit(c, log, accepted));
+    // The block was discarded: abandoned, never credited.
+    assert.equal(await db.tx((c) => finalizeDeposit(c, config.chainId, log.txHash, 0, { receiptSucceeded: true, canonicalBlockHash: `0x${'bb'.repeat(32)}`, finalizedHeight: 20n, at: now })), 'abandoned');
+    // Re-included on the canonical chain with a different amount: the record takes the new values and credits them.
+    const again = { ...log, amount: 7n, blockHash: `0x${'cc'.repeat(32)}`, blockNumber: 12n };
+    const record = await db.tx((c) => observeDeposit(c, again, accepted));
+    assert.deepEqual([record!.state, record!.amount], ['pending', 7n]);
+    assert.equal(await db.tx((c) => finalizeDeposit(c, config.chainId, log.txHash, 0, { receiptSucceeded: true, canonicalBlockHash: again.blockHash, finalizedHeight: 20n, at: now })), 'credited');
+    assert.equal(await bucket(a, 'unallocated'), 7n);
+
+    // A finalized transfer whose receipt is not available yet is retried, not abandoned.
+    const b = await agent();
+    const scanner = new DepositScanner(db.pool, chain, config);
+    await scanner.tick(now); // catch up first
+    chain.fund(USDC, b.address, 3_000_000n);
+    chain.mine(3);
+    const receipt = chain.receipt.bind(chain);
+    chain.receipt = async () => undefined;
+    await assert.rejects(scanner.tick(now), /no receipt yet/);
+    chain.receipt = receipt;
+    await scanner.tick(now);
+    assert.equal(await bucket(b, 'unallocated'), 3_000_000n);
+  });
+
+  test('a withdrawal whose hold expired before the gateway ran ends as failed instead of blocking the gateway', async () => {
+    const a = await agent();
+    const scanner = new DepositScanner(db.pool, chain, config);
+    chain.fund(USDC, a.address, 2_000_000n);
+    chain.fund(NATIVE, a.address, 10n ** 17n);
+    chain.mine(3);
+    await scanner.tick(now);
+    await db.tx(async (c) => {
+      await allocate(c, { scope: a, assetRef: 'local.USD', expectedBudgetVersion: 1, targets: { trading: 2_000_000n }, actor: 't', now });
+      await allocate(c, { scope: a, assetRef: 'local.MON', expectedBudgetVersion: 2, targets: { trading: 10n ** 17n }, actor: 't', now });
+    });
+    const destinationId = await destination(a, '0x00000000000000000000000000000000000000d7');
+    const { withdrawal } = await db.tx(async (c) => requestWithdrawal(c, {
+      tenantId: a.tenantId, agentId: a.agentId, idempotencyKey: 'expired', requestHash: `0x${'e'.repeat(64)}`, walletId: a.walletId, destinationId,
+      assetRef: 'local.USD', amount: 1_000_000n, gasAssetRef: 'local.MON', gasCeiling: chain.feePerTx * 2n, stepUpId: await stepUp(a), now,
+    }));
+    const { expireHeld } = await import('../packages/accounting/src/index.ts');
+    await db.tx((c) => expireHeld(c, new Date(now.getTime() + 24 * 3600_000)));
+    const gateway = new WithdrawalGateway(db.pool, custody, chain, config);
+    await gateway.tick(now);
+    const w = (await withdrawalById(db.pool, a.tenantId, withdrawal.id))!;
+    assert.deepEqual([w.state, w.txHash], ['failed', undefined]);
+    assert.equal(await bucket(a, 'trading'), 2_000_000n, 'nothing left the wallet');
+    await gateway.tick(now); // the gateway keeps running
+  });
+
   test('hosting slices are charged once per slice and stop when the hosting bucket is empty; trading funds are never used', async () => {
     const a = await agent();
     const card: StoredRateCard = { version: 'hosting.test/1', kind: 'hosting', mode: 'live', profileRef: 'runtime.small', assetRef: 'local.USD', sliceSeconds: 60, atomicPerSlice: 4n, marginBps: 2000, effectiveFrom: new Date('2026-01-01T00:00:00Z'), source: 'placeholder (test)' };

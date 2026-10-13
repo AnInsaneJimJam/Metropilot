@@ -27,6 +27,8 @@ const num = (env: NodeJS.ProcessEnv, name: string, fallback: bigint): bigint => 
 
 export interface LiveSetup {
   readonly config: LiveConfig;
+  /** The RPC must serve Monad mainnet; checked before the pipeline starts. */
+  verify(): Promise<void>;
   pipeline(o: { pool: pg.Pool; store: ExecutorStore; authority: AuthoritySource; onError: (intentId: string, error: unknown) => void }): LivePipeline;
 }
 
@@ -72,6 +74,7 @@ export function liveFromEnv(env: NodeJS.ProcessEnv): LiveSetup | undefined {
   };
   return {
     config,
+    verify: () => chain.verifyChainId(),
     pipeline: (o) => new LivePipeline({ pool: o.pool, live: new LiveIntents(o.pool, config), store: o.store, chain, provider, authority: o.authority, route: routeConfig, onError: o.onError }),
   };
 }

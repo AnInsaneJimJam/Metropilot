@@ -23,6 +23,7 @@ import { LiveIntents } from './live.ts';
 import type { LiveConfig } from './live.ts';
 import { LivePipeline } from './live-pipeline.ts';
 import type { LiveChain, LiveRouteConfig } from './live-pipeline.ts';
+import type { AuthoritySource } from './authorization.ts';
 import { ExecutorStore } from './store.ts';
 import { databaseSkip, ExecutorTestHarness } from './testing.ts';
 import type { Arranged } from './testing.ts';
@@ -216,6 +217,7 @@ describe('live Uniswap pipeline', { skip }, () => {
   let chain: PoolChain;
   let provider: Provider;
   let pipeline: LivePipeline;
+  let routeConfig: LiveRouteConfig;
   before(async () => {
     h = await ExecutorTestHarness.start({ migrate, seed: seedPaper, wiring: { live } });
     const c = await h.pool.connect();
@@ -226,7 +228,7 @@ describe('live Uniswap pipeline', { skip }, () => {
     }
     chain = new PoolChain();
     provider = new Provider(chain);
-    const routeConfig: LiveRouteConfig = {
+    routeConfig = {
       connectorRef: CONNECTOR, connectorVersion: '1.0.0', route, quoteTtlSeconds: 60, gasMarginBps: 2_000,
       assets: { 'mainnet.MON': { address: u.wmon, native: true }, 'mainnet.WMON': { address: u.wmon, native: false }, 'mainnet.USDC': { address: u.usdc, native: false } },
       pairs: [['mainnet.MON', 'mainnet.USDC'], ['mainnet.WMON', 'mainnet.USDC'], ['mainnet.USDC', 'mainnet.WMON']],
@@ -378,5 +380,57 @@ describe('live Uniswap pipeline', { skip }, () => {
     assert.equal((await state(first)).state, 'settled');
     assert.deepEqual(await state(second), { state: 'failed', reason_code: 'EXECUTOR_PROVIDER_UNAVAILABLE' });
     assert.deepEqual(await trading(a.scope, 'mainnet.WMON'), { balance: 5n * E18, held: 0n });
+  });
+  test('a cancel landing while the swap is prepared stops it before signing; nothing is sent', async () => {
+    const a = await arrange();
+    const id = await admit(a, 'sell_mon');
+    const intents = new LiveIntents(h.pool, live);
+    let calls = 0;
+    // The second authority read is the recheck at the signing claim: cancel concurrently just before it.
+    const racing: AuthoritySource = {
+      current: async (t, d) => {
+        if (d === a.deploymentId && ++calls === 2) await intents.cancel(id, { code: 'EXECUTOR_QUOTE_INVALID', message: 'Expired (test).' }, new Date());
+        return h.authority.current(t, d);
+      },
+    };
+    const p = new LivePipeline({ pool: h.pool, live: intents, store: new ExecutorStore(h.pool), chain, provider, authority: racing, route: routeConfig });
+    const sentBefore = chain.sent;
+    await p.tick();
+    assert.equal(chain.sent, sentBefore, 'no transaction after the holds were released');
+    assert.equal((await state(id)).state, 'cancelled');
+    assert.deepEqual(await trading(a.scope, 'mainnet.MON'), { balance: 5n * E18, held: 0n });
+  });
+
+  test('a crash between the provider answer and the submitted transition recovers from the saved attempt', async () => {
+    class CrashOnce extends LiveIntents {
+      crash = true;
+      override async markSubmitted(intentId: string, txHash: string, now: Date) {
+        if (this.crash) {
+          this.crash = false;
+          throw new Error('Process died (test).');
+        }
+        return super.markSubmitted(intentId, txHash, now);
+      }
+    }
+    const a = await arrange();
+    const id = await admit(a, 'sell_mon');
+    const p = new LivePipeline({ pool: h.pool, live: new CrashOnce(h.pool, live), store: new ExecutorStore(h.pool), chain, provider, authority: h.authority, route: routeConfig });
+    const sentBefore = chain.sent;
+    await p.tick();
+    chain.mine(chain.finalityDepth + 1);
+    await p.tick();
+    assert.equal((await state(id)).state, 'settled');
+    assert.equal(chain.sent - sentBefore, 1, 'one swap, settled from its saved attempt');
+  });
+
+  // Last: disabling a catalog row is permanent for this database.
+  test('an asset disabled after admission stops the trade before signing', async () => {
+    const a = await arrange();
+    const id = await admit(a, 'sell_mon');
+    await h.pool.query(`update catalog_versions set disabled_reason = 'Disabled (test).' where ref = 'mainnet.USDC'`);
+    const sentBefore = chain.sent;
+    await pipeline.tick();
+    assert.equal(chain.sent, sentBefore);
+    assert.deepEqual(await state(id), { state: 'cancelled', reason_code: 'EXECUTOR_ASSET_NOT_ALLOWED' });
   });
 });
