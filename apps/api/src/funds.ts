@@ -222,7 +222,7 @@ export class FundsService {
     await c.query('update step_up_challenges set consumed_at = $3 where tenant_id = $1 and id = $2', [tenantId, stepUpId, this.#now()]);
   }
 
-  // ---- live trading caps (D60) ---------------------------------------------------------------------------------
+  // ---- live trading caps (D61) ---------------------------------------------------------------------------------
 
   /**
    * Set the agent's live trading caps as a new immutable policy version. Consent is a step-up approval for exactly

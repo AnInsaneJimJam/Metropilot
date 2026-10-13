@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs';
 import { after, before, describe, test } from 'node:test';
 import pg from 'pg';
 import { MARKETS, checkedObservation, validateSwapLog } from '@monad-hack/connectors';
-import type { Market } from '@monad-hack/connectors';
-import { MarketIngestion } from './market-ingestion.ts';
+import type { MainnetMarkets, Market } from '@monad-hack/connectors';
+import { MarketIngestion, RpcMarketSource } from './market-ingestion.ts';
 import { transitionPrice } from '@monad-hack/strategy';
 import type { CrossingState } from '@monad-hack/strategy';
 import type { Trigger } from '@monad-hack/contracts';
@@ -166,4 +166,16 @@ describe('finalized market ingestion / PostgreSQL',{skip},()=>{
     s.block=async(n)=>({number:n,hash:'0x'+'aa'.repeat(32)});
     await assert.rejects(worker.process(MARKETS[0],await s.finalized()),/cursor hash changed/);
   });
+});
+
+test('RPC log reads split into provider-sized ranges (MARKET_LOG_SPAN, D60) and keep order', async () => {
+  const ranges: [bigint, bigint][] = [];
+  const client = { getLogs: async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => { ranges.push([fromBlock, toBlock]); return []; } };
+  const source = new RpcMarketSource({ client } as unknown as MainnetMarkets, 10n);
+  await source.logs(MARKETS[0]!, 101n, 125n);
+  assert.deepEqual(ranges, [[101n, 110n], [111n, 120n], [121n, 125n]]);
+  ranges.length = 0;
+  await new RpcMarketSource({ client } as unknown as MainnetMarkets).logs(MARKETS[0]!, 101n, 200n);
+  assert.deepEqual(ranges, [[101n, 200n]], 'default stays one 100-block request');
+  assert.throws(() => new RpcMarketSource({ client } as unknown as MainnetMarkets, 0n), /at least one block/);
 });

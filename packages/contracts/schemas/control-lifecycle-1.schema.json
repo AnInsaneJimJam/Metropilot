@@ -574,7 +574,7 @@
           "$ref": "common.schema.json#/$defs/timestamp"
         }
       },
-      "description": "Live run estimate for a saved strategy promoted to live (paper refs mapped to their live twins, D60), with the live policy version whose caps bind it. Not a priced quote or reservation; trades spend the agent's allocated trading funds within those caps."
+      "description": "Live run estimate for a saved strategy promoted to live (paper refs mapped to their live twins, D61), with the live policy version whose caps bind it. Not a priced quote or reservation; trades spend the agent's allocated trading funds within those caps."
     }
   }
 }

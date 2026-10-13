@@ -181,7 +181,7 @@ changes; rerun `vercel-config.sh`.
 - **One-time codes (step-up) go to the API log** (`stepUp.code` lines in CloudWatch `/monad-hack/demo/api`): MFA or
   email delivery is not built, so codes reach the team operating the demo, not outside users.
 - **Live launch** needs `LIVE_LAUNCH=1` in `service_env.api`, and signing additionally needs `EXECUTOR_LIVE=1` and
-  `LIVE_OUTFLOWS=1` on the executor. Live v1 runs schedule triggers and swaps only (D60).
+  `LIVE_OUTFLOWS=1` on the executor. Live v1 runs schedule triggers and swaps only (D61).
 - **Event streams** pass through Vercel and CloudFront (60 s origin read timeout; the stream sends a keep-alive
   about every 15 s). If a proxy cuts long streams, the studio reconnects with `Last-Event-ID`.
 - No WAF, autoscaling, cost budget alert or multi-region recovery.

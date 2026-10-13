@@ -18,6 +18,7 @@ Live outflows stay disabled until the E03 proof (`pnpm custody:proof`) has dated
   - Progress 2026-10-12: one wallet per agent, observed/finalized scanner passes (reorg, duplicate, quarantine) on the local chain ([custody.test.ts](../../tests/custody.test.ts)).
   - Progress 2026-10-13: real Monad testnet deposit (contract-forwarded MON, found via call traces) credited once after finality, withdrawn and reconciled exactly (evidence in decisions). Open: scanner throughput (indexer, E10).
   - Progress 2026-10-13: `HyperSyncChain` deposit index (D50) with balance-bisection for forwarded MON; `pnpm custody:hypersync` PASS 5/5 on Monad testnet; the scanner caught up ~149k blocks through it and automated reconciliation passed (evidence under E10 in decisions).
+  - Progress 2026-10-14: Alchemy as `CUSTODY_RPC_SECONDARY` (D60): `pnpm alchemy:check` 6/6 PASS on Monad testnet (finality, block hashes, E03 receipts, current and historical balances agree with the public RPC); keyed endpoints never appear in chain errors ([chain.test.ts](src/chain.test.ts)). Open: a deposit credited with both witnesses.
 - [ ] EXE-7 / G5: withdrawal gateway against a provider sandbox.
   - Progress 2026-10-12: reserve, send, finalize, revert-gas and never-resend-ambiguous on the local provider; API with step-up in [funds-api.test.ts](../../tests/funds-api.test.ts).
   - Progress 2026-10-13: native MON withdrawal through Privy on Monad testnet finalized and settled with actual gas.

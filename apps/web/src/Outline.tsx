@@ -64,6 +64,16 @@ function children(block: Block): { label: string; blocks: Block[] }[] {
     .filter((group) => group.blocks.length > 0 || block.type === BLOCK.root);
 }
 
+/** Clearer form labels where the block's inline wording reads poorly on its own. */
+const LABELS: Record<string, string> = {
+  [FIELD.maxAge]: "Ignore prices older than (s)",
+  [FIELD.cooldown]: "Cooldown before firing again (s)",
+  [FIELD.maxSteps]: "Max steps per run",
+  [FIELD.maxAiCalls]: "Max AI calls per run",
+  [FIELD.maxIntents]: "Max trades per run",
+  [FIELD.maxActiveSeconds]: "Max active seconds per run",
+};
+
 /** Editable fields with the label text that precedes each one on its row. */
 function editableFields(
   block: Block,
@@ -82,7 +92,8 @@ function editableFields(
         result.push({
           field,
           label:
-            pending.join(" ") ||
+            LABELS[field.name] ??
+            (pending.join(" ") ||
             ({
               [FIELD.amountKind]: "Amount type",
               [FIELD.tokenIn]: "From asset",
@@ -90,7 +101,7 @@ function editableFields(
               [FIELD.recordField]: "Result field",
               [FIELD.binding]: "Read from",
             }[field.name] ??
-              field.name.replaceAll("_", " ").toLowerCase()),
+              field.name.replaceAll("_", " ").toLowerCase())),
         });
         pending = [];
       } else if (field.getText().trim()) pending.push(field.getText().trim());
@@ -258,21 +269,26 @@ export function Outline({
     : undefined;
   const fields = block ? editableFields(block) : [];
   return (
-    <section aria-labelledby="outline-heading">
-      <h2 id="outline-heading">Rule inspector</h2>
-      <p className="muted">
-        Select any block to edit its parameters.
-      </p>
+    <section className="inspector" aria-labelledby="outline-heading">
+      <h2 id="outline-heading" className="visually-hidden">
+        Rule inspector
+      </h2>
       <div ref={form} role="group" aria-labelledby="outline-edit-heading">
         <h3 id="outline-edit-heading">
-          {block ? `Edit: ${summary(block)}` : "Edit"}
+          {block && (
+            <span
+              className="block-key"
+              style={{ background: (block as Blockly.BlockSvg).style.colourTertiary }}
+              aria-hidden="true"
+            />
+          )}
+          <span className="visually-hidden">Edit: </span>
+          {block ? summary(block) : "Nothing selected"}
         </h3>
         {!block ? (
-          <p className="muted">
-            Choose a block in the outline or a problem above.
-          </p>
+          <p className="muted">Select a block to edit it.</p>
         ) : fields.length === 0 ? (
-          <p className="muted">This block has no fields.</p>
+          <p className="muted">No settings.</p>
         ) : (
           fields.map(({ field, label }) => (
             <FieldEditor

@@ -1,6 +1,6 @@
 // Funds wiring shared by the local and hosted API entry points: custody from the environment, the FundsService,
 // the funds worker (deposit scanner, withdrawal gateway, reconciliation, hold expiry, unknown-usage escalation)
-// and, on the live network, the options that enable live launches (D60).
+// and, on the live network, the options that enable live launches (D61).
 import type pg from "pg";
 import { escalateUnknownUsage, expireHeld } from "@monad-hack/accounting";
 import { DepositScanner, NATIVE, WithdrawalGateway, reconcileWallets } from "@monad-hack/custody";

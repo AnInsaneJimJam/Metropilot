@@ -1,42 +1,38 @@
 import { useState } from "react";
 import type { SavedAgent } from "./api.ts";
-import { Icon } from "./Icon.tsx";
+import { BrandMark, Icon } from "./Icon.tsx";
 export function WorkspaceSidebar({
   agents,
   currentId,
   connected,
   onNew,
-  onBuild,
   onOpen,
   onReconnect,
+  onSignOut,
 }: {
   agents: SavedAgent[];
   currentId: string | undefined;
   connected: boolean;
   onNew: () => void;
-  onBuild: () => void;
   onOpen: (agent: SavedAgent) => void;
   onReconnect: () => void;
+  /** Hosted builds only (signed in with Privy). */
+  onSignOut?: (() => void) | undefined;
 }) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   return (
     <aside className="sidebar">
-      <a className="brand" href="/" aria-label="Monad strategy studio">
-        <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-          <path d="M16 3 28 10v12L16 29 4 22V10Z" />
-          <path d="m4 10 12 7 12-7M16 17v12" />
-        </svg>
-        <span>
-          monad<span className="brand-sub">STRATEGY STUDIO</span>
+      <a className="brand" href="/" aria-label="Metropilot home">
+        <BrandMark size={30} />
+        <span className="brand-lockup">
+          <span className="brand-word">Metropilot</span>
+          <span className="brand-motto">
+            Your strategy, <em>on autopilot.</em>
+          </span>
         </span>
       </a>
-      <div className="workspace-label">
-        <div>
-          Personal workspace<small>Local development</small>
-        </div>
-      </div>
       <button className="new-strategy" onClick={() => onNew()}>
-        <Icon name="plus" />
+        <Icon name="plus" size={15} />
         New strategy
       </button>
       <button
@@ -44,15 +40,13 @@ export function WorkspaceSidebar({
         aria-expanded={libraryOpen}
         onClick={() => setLibraryOpen((open) => !open)}
       >
+        <Icon name="folder" size={15} />
         Saved
       </button>
-      <div className="nav-caption">WORKSPACE</div>
-      <button className="nav-active" onClick={() => onBuild()}>
-        <Icon name="layers" />
-        Strategies<span>{agents.length}</span>
-      </button>
       <div className={`library ${libraryOpen ? "mobile-open" : ""}`}>
-        <div className="nav-caption">SAVED STRATEGIES</div>
+        <div className="nav-caption">
+          Saved{agents.length > 0 && <span>{agents.length}</span>}
+        </div>
         {agents.length ? (
           agents.map((agent) => (
             <button
@@ -63,36 +57,27 @@ export function WorkspaceSidebar({
                 setLibraryOpen(false);
               }}
             >
-              <span className="draft-dot" />
-              <span>
-                {agent.name}
-                <small>Draft · Revision {agent.version}</small>
-              </span>
+              <span>{agent.name}</span>
+              <small>Draft · v{agent.version}</small>
             </button>
           ))
         ) : (
-          <p>
-            Your saved strategies
-            <br />
-            will live here.
-          </p>
+          <p>Nothing saved yet</p>
         )}
       </div>
       <div className="sidebar-bottom">
-        <div className="local-status">
-          <span className={`status-dot ${connected ? "" : "amber"}`} />
-          {connected ? "Control API connected" : "Control API offline"}
-        </div>
+        <span className={`status-dot ${connected ? "" : "amber"}`} />
+        {connected ? "Control API connected" : "Control API offline"}
         {!connected && (
           <button className="link" onClick={() => onReconnect()}>
             Reconnect
           </button>
         )}
-        <p>
-          Mainnet observations · Paper effects
-          <br />
-          No real funds connected
-        </p>
+        {onSignOut && (
+          <button className="link" onClick={() => onSignOut()}>
+            Sign out
+          </button>
+        )}
       </div>
     </aside>
   );

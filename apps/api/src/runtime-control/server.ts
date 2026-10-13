@@ -54,7 +54,7 @@ const app = createInternalApp({
 // New-head pushes are hints only. Every tick fetches the finalized head independently.
 // A 5-second watchdog also covers quiet pools and missed/disconnected subscriptions.
 if (process.env['LOCAL_SYNTHETIC_FEED'] === '1') throw new Error('Synthetic market feeds are disabled.');
-const ingestion = new MarketIngestion(pool, new RpcMarketSource(new MainnetMarkets(rpcClient(process.env['MARKET_RPC_URL']))), (o) => store.ingestPrice(o), undefined, (entry) => console.log(JSON.stringify(entry)));
+const ingestion = new MarketIngestion(pool, new RpcMarketSource(new MainnetMarkets(rpcClient(process.env['MARKET_RPC_URL'], { maxRequestsPerSecond: Number(process.env['MARKET_RPC_MAX_RPS'] ?? '0') })), BigInt(process.env['MARKET_LOG_SPAN'] ?? '100')), (o) => store.ingestPrice(o), undefined, (entry) => console.log(JSON.stringify(entry)));
 let refreshBusy = false, recoveryBusy = false;
 let stopping = false;
 let socket: WebSocket | undefined;
@@ -70,7 +70,15 @@ const marketLane = async (phase: 'refresh' | 'recovery', wake: string): Promise<
     // MarketIngestion reports safe per-feed reason codes. Provider errors must never be printed here.
   } finally { if(phase==='refresh')refreshBusy=false;else recoveryBusy=false; }
 };
+// Push wakes can be spaced out for metered providers (Alchemy free tier rate limit, D60); the watchdog is unaffected.
+const pushMinMillis = Number(process.env['MARKET_PUSH_MIN_MILLIS'] ?? '0');
+if (!Number.isSafeInteger(pushMinMillis) || pushMinMillis < 0) throw new Error('MARKET_PUSH_MIN_MILLIS must be a non-negative integer.');
+let lastPush = 0;
 const marketTick = (wake = 'watchdog'): void => {
+  if (wake === 'push') {
+    if (Date.now() - lastPush < pushMinMillis) return;
+    lastPush = Date.now();
+  }
   void marketLane('refresh',wake);
   void marketLane('recovery',wake);
 };

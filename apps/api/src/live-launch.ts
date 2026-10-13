@@ -1,4 +1,4 @@
-// Live launch helpers (D60). A live agent runs a saved, paper-tested strategy: its paper refs are mapped to their
+// Live launch helpers (D61). A live agent runs a saved, paper-tested strategy: its paper refs are mapped to their
 // live twins, declared by the newest enabled live catalog rows (`paperTwin`), and the result is stored as a derived,
 // immutable revision with its provenance. Live v1 runs schedule triggers and swaps only: the API Broker serves paper
 // deployments only and no live price feed exists yet, so read, ai.decide and price triggers are refused up front.

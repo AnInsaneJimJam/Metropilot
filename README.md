@@ -97,8 +97,20 @@ Language entry points and implemented semantics: [strategy specification](docs/s
 
 `pnpm stack:dev` starts the studio on 5173, user API on 3001, control/ingestion on 3002, paper executor on 3003 and a warm runtime. PostgreSQL uses 5432. RPC access belongs to the API worker; the runtime receives no RPC endpoint or database credential.
 
-The worker uses `https://rpc.monad.xyz` and `wss://rpc.monad.xyz`; optional `MARKET_RPC_URL`/`MARKET_WS_URL` overrides belong only in your ignored local environment. HTTPS/WSS are required. New-head notifications are hints; finalized heads, canonical hashes and bounded 100-block recovery determine acceptance. A 5-second watchdog handles disconnects and quiet markets. No Envio account is required and no synthetic market fallback is enabled.
+The worker uses `https://rpc.monad.xyz` and `wss://rpc.monad.xyz`; optional `MARKET_RPC_URL`/`MARKET_WS_URL` overrides (Alchemy is recommended, see below) belong only in your ignored local environment. HTTPS/WSS are required. New-head notifications are hints; finalized heads, canonical hashes and bounded 100-block recovery determine acceptance. A 5-second watchdog handles disconnects and quiet markets. No Envio account is required and no synthetic market fallback is enabled.
 
 Trading budget values become virtual USDC units on launch, with six decimals; this is an explicit simulation denomination, not a USD/USDC conversion. Operating budget limits remain USD-denominated. Example thresholds are editable examples, not current quotes. Scenario playback for native oracle methods is unavailable; legacy synthetic rehearsal remains a test fixture.
 
 Live transaction builders and signing belong to issues #38–42, the complete broker service to #5, and connector-selection onboarding to #44. The market-read route here implements only authenticated, replayable observation reads.
+
+## Sponsor integrations
+
+### Alchemy
+
+Alchemy is the second witness for money and can carry market data ([D60](docs/decisions.md)):
+
+- **Custody cross-check.** With `CUSTODY_RPC_SECONDARY` set to an Alchemy Monad endpoint, a deposit credits and a withdrawal settles only when the public Monad RPC and Alchemy agree on the finalized height, block hashes, receipts and balances. If they disagree, settlement pauses. One lying or lagging provider cannot cause a credit.
+- **Market transport.** `MARKET_RPC_URL` and `MARKET_WS_URL` on Alchemy's Monad mainnet endpoints carry finalized pool reads and `eth_subscribe newHeads` wakeups. For the free tier also set `MARKET_LOG_SPAN=10`, `MARKET_RPC_MAX_RPS=15` and `MARKET_PUSH_MIN_MILLIS=2500` ([funds guide](docs/integration/funds.md#second-rpc-alchemy-d60)).
+- **Probe.** `pnpm alchemy:check` compares Alchemy with the public RPC (chain, finality and block hashes, recorded testnet receipts, current and historical balances, mainnet market RPC, WSS heads) and prints PASS/FAIL with host names only.
+
+The Alchemy key is part of the URL, so it belongs only in `.env` or a hosting secret store; errors and logs never include the endpoint. Gas Manager and Webhooks were reviewed and deferred ([sponsor research](docs/research/sponsors.md#rpc-provider-alchemy)).

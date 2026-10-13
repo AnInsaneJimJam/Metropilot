@@ -71,10 +71,24 @@ export function checkedObservation(input: unknown, now = Date.now()): PriceObser
   return o;
 }
 
-export function rpcClient(url = HTTP_RPC) {
+/** Spaces requests to at most `perSecond` (metered providers such as the Alchemy free tier, D60). */
+export function pacedFetch(perSecond: number, fetchFn: typeof globalThis.fetch = globalThis.fetch, now = () => Date.now()): typeof globalThis.fetch {
+  if (!Number.isFinite(perSecond) || perSecond <= 0) throw new Error('Request rate must be positive.');
+  const gap = 1000 / perSecond;
+  let next = 0;
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const at = Math.max(now(), next);
+    next = at + gap;
+    if (at > now()) await new Promise((resolve) => setTimeout(resolve, at - now()));
+    return fetchFn(input, init);
+  }) as typeof globalThis.fetch;
+}
+
+export function rpcClient(url = HTTP_RPC, options: { maxRequestsPerSecond?: number } = {}) {
   const endpoint = new URL(url);
   if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password) throw new Error('Market RPC must use HTTPS without URL credentials.');
-  return createPublicClient({ transport: http(url, { retryCount: 2, timeout: 10_000, fetchOptions: { redirect: 'error' } }) });
+  const fetchFn = options.maxRequestsPerSecond ? pacedFetch(options.maxRequestsPerSecond) : undefined;
+  return createPublicClient({ transport: http(url, { retryCount: 2, timeout: 10_000, fetchOptions: { redirect: 'error' }, ...(fetchFn ? { fetchFn } : {}) }) });
 }
 export type RpcClient = ReturnType<typeof rpcClient>;
 export class MainnetMarkets {

@@ -1,4 +1,4 @@
-// Live launch over the user API (D60; executor.md section 9; funds-and-budgets.md sections 3–4). Real PostgreSQL and
+// Live launch over the user API (D61; executor.md section 9; funds-and-budgets.md sections 3–4). Real PostgreSQL and
 // Fastify routes; the custody provider and chain are the labelled local stand-ins on chain 143's identity, so nothing
 // touches a network. A saved paper strategy is promoted to live refs, caps are set with a step-up, the agent's wallet
 // is funded and allocated, and the launch creates a live deployment the executor's catalog check accepts.

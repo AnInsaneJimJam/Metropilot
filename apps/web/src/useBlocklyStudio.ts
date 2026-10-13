@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as Blockly from "blockly/core";
 import * as En from "blockly/msg/en";
-import { BLOCK } from "@monad-hack/strategy";
+import { BLOCK, INPUT } from "@monad-hack/strategy";
 import { ensureRoot, injectOptions, setUpBlockly } from "./blocks/index.ts";
 import { PRESETS, loadPreset } from "./presets/index.ts";
 import { saveEnvelope } from "./useLiveValidation.ts";
@@ -11,8 +11,8 @@ setUpBlockly();
 export function fitWorkspace(workspace: Blockly.WorkspaceSvg) {
   Blockly.svgResize(workspace);
   workspace.zoomToFit();
-  if (workspace.scale > 0.85) {
-    workspace.setScale(0.85);
+  if (workspace.scale > 0.9) {
+    workspace.setScale(0.9);
     workspace.scrollCenter();
   }
 }
@@ -34,14 +34,19 @@ export function useBlocklyStudio(
       ...injectOptions,
       theme,
       renderer: "zelos",
-      grid: { spacing: 24, length: 1, colour: "#394145", snap: false },
-      zoom: { controls: true, startScale: 0.85, minScale: 0.35, maxScale: 1.5 },
+      grid: { spacing: 32, length: 32, colour: "#141820", snap: false },
+      // Zoom and fit live in the canvas toolbar; delete by dragging to the toolbox or pressing Delete.
+      zoom: { controls: false, startScale: 0.9, minScale: 0.35, maxScale: 1.5, pinch: true },
+      trashcan: false,
     });
     if (PRESETS[0]) loadPreset(ws, PRESETS[0]);
     else ensureRoot(ws);
     setWorkspace(ws);
     let last = JSON.stringify(saveEnvelope(ws));
-    const first = ws.getBlocksByType(BLOCK.crossesAbove, false)[0];
+    // Open on the first trigger, whatever its type, so the inspector starts with something to edit.
+    const first = ws
+      .getBlocksByType(BLOCK.root, false)[0]
+      ?.getInputTargetBlock(INPUT.triggers);
     if (first) callbacks.current.onSelect(first.id);
     const frame = requestAnimationFrame(() => fitWorkspace(ws));
     const observer = new ResizeObserver(() => Blockly.svgResize(ws));

@@ -8,7 +8,7 @@ type Limits = { maxSlippageBps: number; dailyActionCount: number; dailyNotionalU
 const LIVE_CONNECTOR = "mainnet.uniswap-v3";
 
 /**
- * Go live with the saved strategy (D60): set caps with a one-time code, then launch on the live network with real
+ * Go live with the saved strategy (D61): set caps with a one-time code, then launch on the live network with real
  * funds from the agent's trading allocation. The server promotes the paper strategy to live tokens and refuses what
  * live v1 cannot run (market reads, AI steps, price triggers).
  */

@@ -49,7 +49,7 @@ export function liveCatalog(): CatalogEntry[] {
       },
     },
     // 1.1.0: the complete shape the catalog resolver (D55) compiles against, plus each entry's paper twin so a saved,
-    // paper-tested strategy can be launched live by mapping its refs (D60). The 1.0.0 rows stay as history.
+    // paper-tested strategy can be launched live by mapping its refs (D61). The 1.0.0 rows stay as history.
     { kind: 'network', ref: MONAD_MAINNET.networkRef, version: '1.1.0', modes: ['live'], definition: { registry: 'monad', chainId: MONAD_MAINNET.chainId, finality: 'finalized', blockMillis: 400, finalityBlocks: 2 } },
     ...(['MON', 'WMON', 'USDC'] as const).map((symbol): CatalogEntry => ({
       kind: 'asset', ref: `mainnet.${symbol}`, version: '1.1.0', modes: ['live'],

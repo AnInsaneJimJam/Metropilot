@@ -1,5 +1,5 @@
 // User-facing deployment lifecycle and history (API-2, API-6; docs/specs/api-and-data.md sections 3–4).
-// Paper and live (D60): a launch pins a saved revision into a deployment manifest, creates the policy snapshot and the
+// Paper and live (D61): a launch pins a saved revision into a deployment manifest, creates the policy snapshot and the
 // simulation account the executor trades in, and hands the deployment to the runtime control plane in one
 // transaction. Provisioning is immediate locally (a warm runtime polls); cloud provisioning is INF-3.
 import pg from 'pg';
@@ -43,7 +43,7 @@ export interface LifecycleOptions {
   readonly catalog?: CatalogResolver;
   /** Explicit virtual denomination; this is not a USDC/USD market conversion. */
   readonly paperFundingAsset?: string;
-  /** Live launches (D60): the custody network agents trade on. Absent: live requests are refused. */
+  /** Live launches (D61): the custody network agents trade on. Absent: live requests are refused. */
   readonly live?: LiveLaunchOptions;
   readonly now?: () => Date;
 }
@@ -307,7 +307,7 @@ export class LifecycleService {
     await this.#agent(this.#pool, tenantId, agentId);
   }
 
-  // ---- live (D60) -------------------------------------------------------------------------------------------
+  // ---- live (D61) -------------------------------------------------------------------------------------------
 
   /** The live network when live launches are enabled on this server. */
   get liveNetworkRef(): string | undefined {
