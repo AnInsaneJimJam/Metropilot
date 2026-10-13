@@ -15,7 +15,8 @@
     "@monad-hack/strategy": "workspace:*",
     "blockly": "13.3.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "@monad-hack/connectors": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

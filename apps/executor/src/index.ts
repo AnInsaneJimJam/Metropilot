@@ -5,6 +5,8 @@ import type pg from 'pg';
 import type { ActionLimits } from '@monad-hack/policy';
 import type { AuthoritySource } from './authorization.ts';
 import type { MarketData } from './paper.ts';
+import { LiveIntents } from './live.ts';
+import type { LiveConfig } from './live.ts';
 import { checkReadiness } from './readiness.ts';
 import { createExecutorServer } from './server.ts';
 import type { LogEntry } from './server.ts';
@@ -19,6 +21,8 @@ export interface ExecutorWiring {
   readonly platformLimits: ActionLimits;
   readonly maxQuoteAgeSeconds: number;
   readonly dispatchInline?: boolean;
+  /** Live intents on the funds ledger (G5/G8). Absent: live capabilities answer 403. */
+  readonly live?: LiveConfig;
   readonly now?: () => Date;
   readonly log?: (entry: LogEntry) => void;
 }
@@ -33,6 +37,7 @@ export function createExecutor(wiring: ExecutorWiring): { service: ExecutorServi
     platformLimits: wiring.platformLimits, maxQuoteAgeSeconds: wiring.maxQuoteAgeSeconds,
     ...(wiring.dispatchInline === undefined ? {} : { dispatchInline: wiring.dispatchInline }),
     ...(wiring.now ? { now: wiring.now } : {}),
+    ...(wiring.live ? { live: new LiveIntents(wiring.pool, wiring.live) } : {}),
   });
   const server = createExecutorServer({ service, readiness: () => checkReadiness(wiring.pool), ...(wiring.log ? { log: wiring.log } : {}) });
   return { service, server, store };
@@ -44,6 +49,8 @@ export type { AuthoritySource, DeploymentAuthority, DesiredState } from './autho
 export { PAPER_ADAPTER_VERSION, PAPER_ASSUMPTIONS } from './paper.ts';
 export type { MarketData, RecordedQuote } from './paper.ts';
 export { ExecutorService } from './service.ts';
+export { LiveIntents } from './live.ts';
+export type { LiveConfig, LiveValuation } from './live.ts';
 export { ExecutorStore } from './store.ts';
 export { PostgresAuthority } from './authority.ts';
 export { PostgresMarketData } from './market.ts';

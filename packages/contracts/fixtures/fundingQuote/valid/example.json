@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "funding-quote/1",
+  "id": "019a0000-0000-7000-8000-0000000000e1",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "assetRef": "live.USD",
+  "rateCardVersions": [
+    "hosting.small/2026-10-12"
+  ],
+  "allocations": [
+    {
+      "bucket": "hosting",
+      "amount": "19333333"
+    },
+    {
+      "bucket": "api",
+      "amount": "9666667"
+    },
+    {
+      "bucket": "trading",
+      "amount": "71000000"
+    }
+  ],
+  "gasAtomic": "1000000",
+  "feasible": true,
+  "shortfallAtomic": "0",
+  "runwaySeconds": 1670400,
+  "dailyCost": [
+    {
+      "bucket": "hosting",
+      "amount": "1000000"
+    },
+    {
+      "bucket": "api",
+      "amount": "500000"
+    }
+  ],
+  "createdAt": "2026-10-12T12:00:00.000Z",
+  "expiresAt": "2026-10-12T12:05:00.000Z"
+}

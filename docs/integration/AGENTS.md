@@ -4,6 +4,8 @@ Scope: how another service owner integrates with an implemented component. A gui
 
 Every guide names the conformance kit that proves an integration and keeps its examples equal to contract fixtures or tested vectors.
 
+Funds, custody and withdrawals: [funds.md](funds.md) (G5, track #29).
+
 ## Checklist
 
 - [ ] INT-0 / G4: build the runtime HTTP clients and `main.ts` per [runtime HTTP clients](runtime-http-clients.md), proven first against a loopback server wrapping the stand-ins.

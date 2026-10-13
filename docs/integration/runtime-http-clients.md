@@ -1,6 +1,6 @@
 # Runtime HTTP clients
 
-**Status 2026-10-12: the control API and executor clients and the process entry are written; the broker client is not (no API Broker service exists).** [`dispatch/control-api.ts`](../../apps/runtime/src/dispatch/control-api.ts) and [`dispatch/executor.ts`](../../apps/runtime/src/dispatch/executor.ts) pass their conformance kits against the real services on PostgreSQL ([`runtime-control.test.ts`](../../tests/runtime-control.test.ts), [`executor-conformance.test.ts`](../../tests/executor-conformance.test.ts)); [`main.ts`](../../apps/runtime/src/main.ts) runs the warm supervisor with them and a synthetic broker ([D41](../decisions.md)). The executor capability comes from the control API's exchange route ([D38](../decisions.md)); the runtime sends only that token to the executor. Both clients send UUIDv7 `X-Request-ID`s.
+**Status 2026-10-12: the control API and executor clients and the process entry are written; a narrow market-read adapter is also written; the full broker service remains issue #5.** [`dispatch/control-api.ts`](../../apps/runtime/src/dispatch/control-api.ts) and [`dispatch/executor.ts`](../../apps/runtime/src/dispatch/executor.ts) pass their conformance kits against the real services on PostgreSQL ([`runtime-control.test.ts`](../../tests/runtime-control.test.ts), [`executor-conformance.test.ts`](../../tests/executor-conformance.test.ts)); [`main.ts`](../../apps/runtime/src/main.ts) runs the warm supervisor with them and the capability-scoped finalized-market read adapter ([D42–43](../decisions.md)). The executor capability comes from the control API's exchange route ([D38](../decisions.md)); the runtime sends only that token to the executor. Both clients send UUIDv7 `X-Request-ID`s.
 
 What is missing, and where it goes ([agent runtime §16](../specs/agent-runtime.md#16-suggested-source-layout)):
 
@@ -74,5 +74,11 @@ Servers answer failures with an [`error-1`](../../packages/contracts/schemas/err
 - [x] Control API conformance kit green through the client against the real control API on PostgreSQL ([INT-1](AGENTS.md)).
 - [x] `dispatch/executor.ts`: closed intent, `Idempotency-Key = logicalKey`, exchanged executor capability (refreshed once on `401`), identical-body retries.
 - [x] Executor conformance kit green through its client against the real paper executor ([INT-2](AGENTS.md)).
-- [x] `main.ts` with closed configuration (credential guard, endpoint origins), signal-driven drain and a synthetic broker (`pnpm stack:dev`).
+- [x] `main.ts` with closed configuration (credential guard, endpoint origins), signal-driven drain and a finalized-market read adapter (`pnpm stack:dev`).
 - [ ] `dispatch/broker.ts` once the API Broker exists; broker-audience capabilities through the same exchange.
+
+## Native market reads
+
+`HttpControlApi.marketRead()` posts `broker-request/1` to `/internal/v1/market/read` with the current assignment capability. The store requires a matching persisted waiting read, approved node/connector/operation, current lease and generation; the returned `broker-result/1` is durably pinned per run/operation. Replacement runtimes replay that result. Read-only calls use persisted finalized observations, with no provider access in the runtime. Tests cover both swap venues and Aave prices/rates, including process death after a read.
+
+This is intentionally narrower than #5: no broker-audience exchange, model calls, provider charging or pending paid-call reconciliation is implemented. It grants no new external financial authority.
