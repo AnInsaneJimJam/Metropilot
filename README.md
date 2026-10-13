@@ -233,6 +233,9 @@ Sponsor evidence and priorities: [docs/research/sponsors.md](docs/research/spons
 
 Read [AGENTS.md](AGENTS.md) and the nearest scoped `AGENTS.md` before editing — every directory has one with its checklist. Claim your scope in [plan.md](plan.md), keep `pnpm check` green, and tick a task only with linked evidence. Never commit credentials, private keys, user prompts or wallet exports.
 
----
+## Future work
 
-<sub>Metropilot is a working product name; the repository is <code>monad-hack</code>. Paper mode uses virtual funds and simulated fills. Nothing here is investment advice, and the platform does not promise profitable trading.</sub>
+- **AI decisions:** metered, bounded AI blocks powered by Kimi (Qwen optional) that can allow or skip a trade but never change its size.
+- **Scenario playback:** rehearse strategies on native oracle prices before launching them.
+- **Connector distribution:** a versioned library and MCP server so other operators can run Metropilot connectors with their own keys.
+- **More markets and actions:** additional verified protocols, historical evaluation, deeper monitoring and an optional mobile client.
