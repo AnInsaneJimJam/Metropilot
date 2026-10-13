@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "price-observation/1",
+  "feedRef": "paper.ausd-usdc",
+  "connectorRef": "paper.curve",
+  "connectorVersion": "1.0.0",
+  "networkRef": "monad-mainnet",
+  "sourceEventKey": "143:0x942644106b073e30d72c2c5d7529d5c296ea91ab:0xc8cd7e20204019073eeaa27f1373147a7712741b41e6195e66156e4cc3557aa2:curve-native-ema",
+  "poolAddress": "0x942644106b073e30d72c2c5d7529d5c296ea91ab",
+  "finality": "finalized",
+  "method": "curve-native-ema",
+  "windowSeconds": 866,
+  "price": {
+    "baseAssetRef": "paper.AUSD",
+    "quoteUnit": "USDC",
+    "decimal": "0.999754766165179688"
+  },
+  "observedAt": "2026-10-12T17:36:40.000Z",
+  "receivedAt": "2026-10-12T17:36:44.520Z",
+  "block": {
+    "chainId": 143,
+    "number": "112816054",
+    "hash": "0xc8cd7e20204019073eeaa27f1373147a7712741b41e6195e66156e4cc3557aa2"
+  },
+  "provenanceHash": "0x678d849eb17a070d81c1e79e6e302d3e3837154646c3dadb55470c0fd802e0a3"
+}

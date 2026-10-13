@@ -98,6 +98,9 @@ export class Supervisor {
         authority, ...(this.#deps.crashAt ? { crashAt: this.#deps.crashAt } : {}),
       });
       const timings = stageTimings(assignment.trigger, received, verifiedAt, firstDispatch);
+      for (const [stage, millis] of Object.entries(timings)) {
+        this.telemetry.emit({ at: this.#clock.now(), event: 'run.stage', runId: assignment.run.runId, kind: stage, millis });
+      }
       this.telemetry.emit({ at: this.#clock.now(), event: 'run.released', runId: assignment.run.runId, outcome: outcome.status, millis: Date.parse(this.#clock.now()) - Date.parse(received) });
       return { disposition: 'assigned', assignmentId: assignment.assignmentId, outcome: outcome.status, timings };
     } catch (error) {

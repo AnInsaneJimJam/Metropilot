@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "agent-funds/1",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "mode": "live",
+  "budgetVersion": 3,
+  "wallet": {
+    "address": "0x00000000000000000000000000000000000000d5",
+    "chainId": 10143,
+    "networkRef": "monad-testnet",
+    "provider": "privy"
+  },
+  "buckets": [
+    {
+      "bucket": "trading",
+      "assetRef": "live.USD",
+      "balance": "70000000",
+      "held": "5000000",
+      "available": "65000000"
+    }
+  ],
+  "pendingDeposits": [
+    {
+      "txHash": "0xabababababababababababababababababababababababababababababababab",
+      "logIndex": 0,
+      "assetRef": "live.USD",
+      "amount": "1000000",
+      "state": "pending",
+      "blockHeight": "123"
+    }
+  ],
+  "frozen": false,
+  "freezeReasons": [],
+  "asOf": "2026-10-12T12:00:00.000Z"
+}

@@ -7,6 +7,7 @@ import type { MarketData, RecordedQuote } from './paper.ts';
 /** A feed quoting `baseAssetRef` in `quoteAssetRef` (for example paper.WETH in paper.USD), with asset decimals. */
 export interface FeedPair {
   readonly feedRef: string;
+  readonly connectorRef?: string;
   readonly baseAssetRef: string;
   readonly quoteAssetRef: string;
   readonly baseDecimals: number;
@@ -27,8 +28,8 @@ export class PostgresMarketData implements MarketData {
     this.#feeds = feeds;
   }
 
-  async quote(tokenInRef: string, tokenOutRef: string): Promise<RecordedQuote | undefined> {
-    const feed = this.#feeds.find((f) => (f.baseAssetRef === tokenInRef && f.quoteAssetRef === tokenOutRef) || (f.baseAssetRef === tokenOutRef && f.quoteAssetRef === tokenInRef));
+  async quote(tokenInRef: string, tokenOutRef: string, connectorRef?: string): Promise<RecordedQuote | undefined> {
+    const feed = this.#feeds.find((f) => (!connectorRef || f.connectorRef === connectorRef) && ((f.baseAssetRef === tokenInRef && f.quoteAssetRef === tokenOutRef) || (f.baseAssetRef === tokenOutRef && f.quoteAssetRef === tokenInRef)));
     if (!feed) return undefined;
     const { rows } = await this.#pool.query<{ source_event_key: string; price: string; observed_at: Date }>(
       'select source_event_key, price::text as price, observed_at from market_observations where feed_ref = $1 order by observed_at desc limit 1',

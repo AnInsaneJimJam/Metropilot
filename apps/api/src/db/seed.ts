@@ -1,6 +1,7 @@
 // Synthetic paper seed data: every row and catalog entry referenced by the normative deployment/1 and
 // strategy/1 examples. IDs and refs are read from the contracts fixtures so they cannot drift from the specs.
 // Seeds are local/CI test data only; they never describe real networks, contracts or accounts.
+import { catalogSeeds } from '@monad-hack/connectors/registry';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { contentHash, validate, type DeploymentRequest, type Strategy } from '@monad-hack/contracts';
@@ -64,7 +65,7 @@ export function paperSeed() {
       definition: { note: 'Synthetic paper profile; CPU/memory sizing is measured at G4.' },
     },
   ];
-  return { request, strategy, catalog };
+  return { request, strategy, catalog: [...catalog, ...catalogSeeds()] };
 }
 
 /** Insert the paper seed in one transaction. Re-running is a no-op; a conflicting existing row is an error. */

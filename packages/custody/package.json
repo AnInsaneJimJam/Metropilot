@@ -1,0 +1,17 @@
+{
+  "name": "@monad-hack/custody",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@monad-hack/accounting": "workspace:*",
+    "@monad-hack/contracts": "workspace:*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

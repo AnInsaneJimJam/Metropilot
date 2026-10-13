@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "withdrawal/1",
+  "id": "019a0000-0000-7000-8000-0000000000e1",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "state": "finalized",
+  "assetRef": "live.USD",
+  "amount": "5000000",
+  "gasAssetRef": "live.MON",
+  "gasCeiling": "42000000000000",
+  "destination": {
+    "id": "019a0000-0000-7000-8000-0000000000d1",
+    "chainId": 10143,
+    "address": "0x00000000000000000000000000000000000000d5",
+    "label": "My wallet"
+  },
+  "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+  "gasUsed": "21000000000000",
+  "createdAt": "2026-10-12T12:00:00.000Z",
+  "updatedAt": "2026-10-12T12:00:00.000Z"
+}

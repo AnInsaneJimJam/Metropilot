@@ -40,7 +40,7 @@ export interface ServiceEndpoints {
   readonly controlApiOrigin: string;
   readonly executorOrigin: string;
   /** No API Broker service exists yet: `synthetic` answers reads and AI from scripts, paper only. */
-  readonly broker: 'synthetic';
+  readonly broker: 'synthetic' | 'market';
   /** Development workload identity header for the poll (gate E02 selects the real mechanism). */
   readonly devWorkloadHeader: boolean;
 }
@@ -60,6 +60,6 @@ export function parseEndpoints(env: Readonly<Record<string, string | undefined>>
     if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) throw new RuntimeError('ASSIGNMENT_INVALID', `${name} must use https outside loopback.`);
     return url.origin;
   };
-  if (env['RUNTIME_BROKER'] !== 'synthetic' || mode !== 'paper') throw new RuntimeError('ASSIGNMENT_INVALID', 'Only RUNTIME_BROKER=synthetic in paper mode is available until the API Broker exists.');
-  return { controlApiOrigin: origin('RUNTIME_CONTROL_API_ORIGIN'), executorOrigin: origin('RUNTIME_EXECUTOR_ORIGIN'), broker: 'synthetic', devWorkloadHeader: env['RUNTIME_DEV_WORKLOAD'] === '1' };
+  if (!['synthetic', 'market'].includes(env['RUNTIME_BROKER'] ?? '') || mode !== 'paper') throw new RuntimeError('ASSIGNMENT_INVALID', 'Only paper mode with a market or explicit test broker is available.');
+  return { controlApiOrigin: origin('RUNTIME_CONTROL_API_ORIGIN'), executorOrigin: origin('RUNTIME_EXECUTOR_ORIGIN'), broker: env['RUNTIME_BROKER'] as 'market' | 'synthetic', devWorkloadHeader: env['RUNTIME_DEV_WORKLOAD'] === '1' };
 }

@@ -4,6 +4,8 @@ import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.
 import ajvFormats from 'ajv-formats';
 import schema from './strategy.schema.json' with { type: 'json' };
 import control from '../schemas/control-workspace-1.schema.json' with { type: 'json' };
+import connectorManifest from '../schemas/connector-manifest-1.schema.json' with { type: 'json' };
+import priceObservation from '../schemas/price-observation-1.schema.json' with { type: 'json' };
 import common from '../schemas/common.schema.json' with { type: 'json' };
 import deploymentRequest from '../schemas/deployment-request-1.schema.json' with { type: 'json' };
 import errorBody from '../schemas/error-1.schema.json' with { type: 'json' };
@@ -30,6 +32,7 @@ import audienceCapabilitySchema from '../schemas/audience-capability-1.schema.js
 import deploymentManifestSchema from '../schemas/deployment-manifest-1.schema.json' with { type: 'json' };
 import auditEvent2Schema from '../schemas/audit-event-2.schema.json' with { type: 'json' };
 import lifecycle from '../schemas/control-lifecycle-1.schema.json' with { type: 'json' };
+import funds from '../schemas/funds-1.schema.json' with { type: 'json' };
 import type { Strategy } from './generated.ts';
 import type { RunCheckpoint } from './generated.ts';
 import type { ErrorCode, GeneratedContractMap, RunComplete as GeneratedRunComplete, RunState as GeneratedRunState, RunWait as GeneratedRunWait } from './generated-contracts.ts';
@@ -49,11 +52,13 @@ export type ContractDocumentMap = Omit<GeneratedContractMap, 'runWait' | 'runCom
 export type ContractKind = keyof ContractDocumentMap;
 
 export const schemaBaseUri = 'https://monad-hack.example/schemas/';
-export const schemaDocuments: readonly object[] = [persistedBrokerResultSchema, schema, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, auditEvent2Schema, lifecycle];
+export const schemaDocuments: readonly object[] = [persistedBrokerResultSchema, schema, connectorManifest, priceObservation, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, auditEvent2Schema, lifecycle, funds];
 
 /** Schema reference per kind; strategy is absolute because its schema lives beside the language core. */
 export const contractRefs = {
   persistedBrokerResult: schemaBaseUri + 'persisted-broker-result-1.schema.json',
+  connectorManifest: schemaBaseUri + 'connector-manifest-1.schema.json',
+  priceObservation: schemaBaseUri + 'price-observation-1.schema.json',
   controlSave: control.$id + '#/$defs/SaveStrategy',
   controlAgent: control.$id + '#/$defs/SavedAgent',
   strategy: schema.$id,
@@ -86,11 +91,22 @@ export const contractRefs = {
   agentDeployment: lifecycle.$id + '#/$defs/AgentDeployment',
   runSummary: lifecycle.$id + '#/$defs/RunSummary',
   runDetail: lifecycle.$id + '#/$defs/RunDetail',
+  allocationRequest: funds.$id + '#/$defs/AllocationRequest',
+  stepUpRequest: funds.$id + '#/$defs/StepUpRequest',
+  stepUpVerification: funds.$id + '#/$defs/StepUpVerification',
+  destinationRequest: funds.$id + '#/$defs/DestinationRequest',
+  withdrawalRequest: funds.$id + '#/$defs/WithdrawalRequest',
+  fundingQuoteRequest: funds.$id + '#/$defs/FundingQuoteRequest',
+  agentFunds: funds.$id + '#/$defs/AgentFunds',
+  withdrawal: funds.$id + '#/$defs/Withdrawal',
+  fundingQuote: funds.$id + '#/$defs/FundingQuote',
 } as const satisfies Record<ContractKind, string>;
 
 /** UTF-8 byte ceilings checked before JSON parsing (strategy-language.md section 7, runtime.md limits). */
 export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
   persistedBrokerResult: 68 * 1024,
+  connectorManifest: 16 * 1024,
+  priceObservation: 16 * 1024,
   controlSave: 512 * 1024,
   controlAgent: 512 * 1024,
   strategy: 256 * 1024,
@@ -123,6 +139,15 @@ export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
   agentDeployment: 4 * 1024,
   runSummary: 4 * 1024,
   runDetail: 64 * 1024,
+  allocationRequest: 4 * 1024,
+  stepUpRequest: 4 * 1024,
+  stepUpVerification: 1 * 1024,
+  destinationRequest: 2 * 1024,
+  withdrawalRequest: 2 * 1024,
+  fundingQuoteRequest: 4 * 1024,
+  agentFunds: 64 * 1024,
+  withdrawal: 4 * 1024,
+  fundingQuote: 8 * 1024,
 };
 
 export type ContractIssueCode = Extract<ErrorCode, 'SCHEMA_INVALID' | 'LIMIT_EXCEEDED' | 'MALFORMED_REQUEST'>;

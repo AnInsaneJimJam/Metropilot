@@ -9,6 +9,8 @@ await writeFile(new URL('./generated.ts', import.meta.url), await compile(schema
 // Keep these refs in step with contractRefs in index.ts; strategy is typed from generated.ts above.
 const refs = {
   persistedBrokerResult: 'persisted-broker-result-1.schema.json',
+  connectorManifest: 'connector-manifest-1.schema.json',
+  priceObservation: 'price-observation-1.schema.json',
   controlSave: 'control-workspace-1.schema.json#/$defs/SaveStrategy',
   controlAgent: 'control-workspace-1.schema.json#/$defs/SavedAgent',
   deploymentRequest: 'deployment-request-1.schema.json',
@@ -40,6 +42,15 @@ const refs = {
   agentDeployment: 'control-lifecycle-1.schema.json#/$defs/AgentDeployment',
   runSummary: 'control-lifecycle-1.schema.json#/$defs/RunSummary',
   runDetail: 'control-lifecycle-1.schema.json#/$defs/RunDetail',
+  allocationRequest: 'funds-1.schema.json#/$defs/AllocationRequest',
+  stepUpRequest: 'funds-1.schema.json#/$defs/StepUpRequest',
+  stepUpVerification: 'funds-1.schema.json#/$defs/StepUpVerification',
+  destinationRequest: 'funds-1.schema.json#/$defs/DestinationRequest',
+  withdrawalRequest: 'funds-1.schema.json#/$defs/WithdrawalRequest',
+  fundingQuoteRequest: 'funds-1.schema.json#/$defs/FundingQuoteRequest',
+  agentFunds: 'funds-1.schema.json#/$defs/AgentFunds',
+  withdrawal: 'funds-1.schema.json#/$defs/Withdrawal',
+  fundingQuote: 'funds-1.schema.json#/$defs/FundingQuote',
 };
 const root = {
   title: 'GeneratedContractMap',
