@@ -2,9 +2,10 @@ import { validate } from '@monad-hack/contracts';
 import type { BrokerRequest, BrokerResult } from '@monad-hack/contracts';
 import { newId } from './control.ts';
 
-export const KIMI_MODEL = 'kimi-k2.6';
-/** Published 2026-10-13, micro-USD per million tokens; E05 still needs an account-level probe. */
-export const KIMI_RATES = Object.freeze({ version: 'kimi-k2.6-2026-10-13', input: 950000n, cachedInput: 160000n, output: 4000000n });
+export const KIMI_MODEL = 'moonshotai/kimi-k2.7-code';
+export const KIMI_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
+/** Published 2026-10-14, micro-USD per million tokens; enablement requires current account evidence. */
+export const KIMI_RATES = Object.freeze({ version: 'vercel-kimi-k2.7-code-2026-10-14', input: 950000n, cachedInput: 190000n, output: 4000000n });
 export interface TokenUsage { input: number; cachedInput: number; output: number }
 export interface KimiPlan { body: string; maxInputTokens: number; maxOutputTokens: number; reservedUsdMicros: bigint }
 export interface KimiAnswer { result: BrokerResult; usage?: TokenUsage; providerRequestId?: string }
@@ -26,7 +27,7 @@ export function usageCost(usage: TokenUsage, rates: { input: bigint; cachedInput
 interface ProviderResponse {
   model?: string; id?: string;
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cached_tokens?: number; prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number } };
-  choices?: { finish_reason?: string; message?: { role?: string; content?: string; tool_calls?: unknown; refusal?: unknown; reasoning_content?: unknown } }[];
+  choices?: { finish_reason?: string; message?: { role?: string; content?: string; tool_calls?: unknown; refusal?: unknown; reasoning_content?: unknown; reasoning?: unknown } }[];
 }
 
 export class KimiAdapter {
@@ -46,14 +47,14 @@ export class KimiAdapter {
     const maxOutputTokens = request.maxOutputTokens!;
     const reservedUsdMicros = usageCost({ input: maxInputTokens, cachedInput: 0, output: maxOutputTokens });
     if (reservedUsdMicros > 100000n) throw new Error('AI request exceeds its cost ceiling.');
-    return { maxInputTokens, maxOutputTokens, reservedUsdMicros, body: JSON.stringify({ model: KIMI_MODEL, messages, thinking: { type: 'disabled' }, max_completion_tokens: maxOutputTokens, response_format: { type: 'json_object' }, stream: false, n: 1 }) };
+    return { maxInputTokens, maxOutputTokens, reservedUsdMicros, body: JSON.stringify({ model: KIMI_MODEL, messages, reasoning: { effort: 'low', exclude: true }, providerOptions: { gateway: { only: ['moonshotai'], models: [] } }, max_completion_tokens: maxOutputTokens, response_format: { type: 'json_object' }, stream: false, n: 1 }) };
   }
   async call(request: BrokerRequest, plan: KimiPlan): Promise<KimiAnswer> {
     const refuse = (code: NonNullable<BrokerResult['reason']>['code'], message: string, disposition: 'refused' | 'unknown' = 'refused'): KimiAnswer => ({ result: { schemaVersion: 'broker-result/1', operationKey: request.operationKey, disposition, reason: { code, message } } });
     if (!this.enabled) return refuse('BROKER_NOT_ALLOWED', 'Kimi is disabled until provider verification is recorded.');
     let raw: ProviderResponse;
     try {
-      const response = await (this.#options.fetch ?? globalThis.fetch)('https://api.moonshot.ai/v1/chat/completions', {
+      const response = await (this.#options.fetch ?? globalThis.fetch)(KIMI_ENDPOINT, {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(request.timeoutSeconds!*1000),
         headers: { authorization: `Bearer ${this.#options.apiKey}`, 'content-type': 'application/json' }, body: plan.body,
       });
@@ -77,7 +78,7 @@ export class KimiAdapter {
     const choice = raw.choices?.[0];
     let value: Record<string, unknown>;
     try {
-      if (!Array.isArray(raw.choices) || raw.choices.length !== 1 || choice?.finish_reason !== 'stop' || choice.message?.role !== 'assistant' || choice.message.tool_calls || choice.message.refusal || choice.message.reasoning_content || typeof choice.message.content !== 'string') throw new Error('Invalid completion.');
+      if (!Array.isArray(raw.choices) || raw.choices.length !== 1 || choice?.finish_reason !== 'stop' || choice.message?.role !== 'assistant' || choice.message.tool_calls || choice.message.refusal || typeof choice.message.content !== 'string') throw new Error('Invalid completion.');
       value = JSON.parse(choice.message.content);
       const keys = request.outputSchemaRef === 'decision/1' ? 'decision,summary' : 'summary';
       if (!value || Array.isArray(value) || Object.keys(value).sort().join() !== keys || typeof value.summary !== 'string' || !value.summary.isWellFormed() || value.summary.length < 1 || value.summary.length > 500 || (keys === 'decision,summary' && value.decision !== 'allow' && value.decision !== 'skip')) throw new Error('Invalid output.');
