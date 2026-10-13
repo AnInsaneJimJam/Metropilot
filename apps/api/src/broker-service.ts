@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { checkedObservation, rayToApr, SOURCES } from '@monad-hack/connectors';
 import { canonicalize, contentHash, parse } from "@monad-hack/contracts";
 import type {
   BrokerRequest,
@@ -130,6 +131,25 @@ export class PaperBrokerService {
       if (request.kind === "read") {
         const connector = request.connectorRef!;
         const definition = catalog.reads[connector]?.[request.operation!];
+        const nativeSource = SOURCES.find(source => source.connectorRef === connector &&
+          catalog.connectors[connector]?.version === source.connectorVersion &&
+          (source.protocol !== 'aave-v3' || source.base === (request.operation?.startsWith('ausd.') ? 'AUSD' : 'USDC')));
+        if (nativeSource) {
+          if (!definition || !row.connector_versions[connector] || row.connector_versions[connector] !== claims.connectors[connector] || Object.keys(request.arguments ?? {}).length)
+            return refuse('BROKER_NOT_ALLOWED', 'The native read capability is not pinned for this deployment.');
+          const saved = (await this.options.pool.query<{ document: unknown }>('select document from finalized_market_observations where feed_ref=$1 order by (document->>\'observedAt\') desc limit 1', [nativeSource.feedRef])).rows[0];
+          let observation;
+          try { observation = saved ? checkedObservation(saved.document, now.getTime()) : undefined; }
+          catch { return refuse('BROKER_STALE_DATA', 'A verified finalized market observation is required.'); }
+          if (!observation || now.getTime() - Date.parse(observation.observedAt) > definition.maxAgeSeconds * 1000)
+            return refuse('BROKER_STALE_DATA', 'A fresh finalized market observation is required.');
+          const value = request.operation?.endsWith('reserve.read') && observation.reserve
+            ? { supplyApr: rayToApr(observation.reserve.supplyRateRay), variableBorrowApr: rayToApr(observation.reserve.variableBorrowRateRay), observedAt: observation.observedAt }
+            : { price: observation.price, observedAt: observation.observedAt };
+          provenance.sourceRef = nativeSource.feedRef;
+          provenance.contentHash = await contentHash(observation);
+          result = { schemaVersion: 'broker-result/1', operationKey: request.operationKey, disposition: 'completed', resultId: newId(), value, observedAt: observation.observedAt, receivedAt: now.toISOString() };
+        } else {
         if (
           !definition ||
           request.operation !== "price.read" ||
@@ -198,6 +218,7 @@ export class PaperBrokerService {
           observedAt: value.observedAt,
           receivedAt: now.toISOString(),
         };
+        }
       } else {
         const profile = catalog.modelProfiles[request.modelProfileRef!];
         if (
