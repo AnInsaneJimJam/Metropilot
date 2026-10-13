@@ -1,7 +1,18 @@
+import { useEffect } from "react";
 import type { Validation } from "./validation.ts";
 import type { SavedAgent } from "./api.ts";
 import { Icon } from "./Icon.tsx";
 export type Stage = "build" | "rehearse" | "review" | "operate";
+export interface Notice {
+  readonly text: string;
+  readonly tone: "ok" | "warn" | "error";
+}
+const STAGES = [
+  ["build", "Build"],
+  ["rehearse", "Rehearse"],
+  ["review", "Review"],
+  ["operate", "Operate"],
+] as const;
 export function StrategyHeading({
   name,
   dirty,
@@ -10,7 +21,7 @@ export function StrategyHeading({
   saving,
   validation,
   budgetIssue,
-  message,
+  notice,
   stage,
   onName,
   onSave,
@@ -25,7 +36,7 @@ export function StrategyHeading({
   saving: boolean;
   validation: Validation | undefined;
   budgetIssue: string | undefined;
-  message: string;
+  notice: Notice | undefined;
   stage: Stage;
   onName: (name: string) => void;
   onSave: () => void;
@@ -33,96 +44,102 @@ export function StrategyHeading({
   onReconnect: () => void;
   onStage: (stage: Stage) => void;
 }) {
+  const problems = validation?.problems.length ?? 0;
+  const valid = Boolean(validation?.program && !problems);
+  // Why Save is unavailable, shown as its tooltip rather than as more text on the page.
+  const blocked = !connected
+    ? "Control API offline"
+    : !name.trim()
+      ? "Name the strategy first"
+      : !validation?.program || problems
+        ? "Fix the strategy problems first"
+        : budgetIssue
+          ? budgetIssue
+          : current && !dirty
+            ? "No changes to save"
+            : undefined;
+  useEffect(() => {
+    if (notice?.tone !== "ok") return;
+    const timer = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(timer);
+  }, [notice, onDismiss]);
   return (
     <>
-      <div className="strategy-header">
-        <div>
+      <header className="topbar">
+        <div className="topbar-title">
           <h1 className="visually-hidden">{name || "Untitled strategy"}</h1>
-          <div className="title-meta">
-            <span className="pill">
-              <span className="status-dot" />
-              Paper
-            </span>
-            <span className="muted">
-              {current ? `Revision ${current.version}` : "Unsaved draft"}
-            </span>
-          </div>
           <label className="strategy-name">
             <span className="visually-hidden">Strategy name</span>
             <input
               maxLength={120}
               value={name}
+              placeholder="Untitled strategy"
+              size={Math.max(12, Math.min(name.length + 1, 36))}
               onChange={(e) => {
                 onName(e.target.value);
               }}
             />
           </label>
-          <p className="header-caption">
-            Define the rules. See every consequence.
-          </p>
+          <span
+            className="pill paper"
+            title="Paper execution on mainnet market data. No real funds move."
+          >
+            Paper
+          </span>
         </div>
+        <nav className="stage-tabs" aria-label="Strategy workflow">
+          <ol>
+            {STAGES.map(([s, label], i) => (
+              <li key={s}>
+                <button
+                  aria-current={stage === s ? "step" : undefined}
+                  onClick={() => onStage(s)}
+                >
+                  <span>0{i + 1}</span>
+                  {label}
+                  {s === "build" && valid && <Icon name="check" size={13} />}
+                  {s === "build" && problems > 0 && (
+                    <em className="tab-count" aria-hidden="true">
+                      {problems}
+                    </em>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </nav>
         <div className="save-controls">
-          <span className="save-state">
-            {dirty
-              ? "Unsaved changes"
-              : current
-                ? "All changes saved"
-                : "Not saved yet"}
+          <span className={`save-state ${dirty ? "dirty" : ""}`}>
+            {dirty ? "Unsaved" : current ? `Rev ${current.version}` : "Draft"}
           </span>
           <button
             className="primary"
             onClick={() => onSave()}
-            disabled={
-              !connected ||
-              !name.trim() ||
-              !validation?.program ||
-              Boolean(validation.problems.length) ||
-              Boolean(budgetIssue) ||
-              saving ||
-              Boolean(current && !dirty)
-            }
+            title={blocked}
+            disabled={saving || Boolean(blocked)}
           >
-            {saving ? "Saving…" : "Save revision"}
-            <span className="button-arrow">
-              <Icon name="arrow" />
-            </span>
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
-      </div>
-      {message && (
-        <div className="message" role="status">
-          <span>{message}</span>
+      </header>
+      {notice && (
+        <div className={`toast tone-${notice.tone}`} role="status">
+          <Icon name={notice.tone === "ok" ? "check" : "alert"} size={15} />
+          <span>{notice.text}</span>
           {!connected && (
             <button className="link" onClick={onReconnect}>
               Reconnect
             </button>
           )}
-          <button aria-label="Dismiss message" onClick={() => onDismiss()}>
-            ×
+          <button
+            className="toast-close"
+            aria-label="Dismiss message"
+            onClick={() => onDismiss()}
+          >
+            <Icon name="close" size={13} />
           </button>
         </div>
       )}
-      <nav className="stage-tabs" aria-label="Strategy workflow">
-        {(["build", "rehearse", "review", "operate"] as const).map((s, i) => (
-          <button
-            key={s}
-            aria-current={stage === s ? "step" : undefined}
-            onClick={() => onStage(s)}
-          >
-            <span>0{i + 1}</span>
-            {s === "build" ? "Build" : s === "rehearse" ? "Rehearse" : s === "review" ? "Review" : "Operate"}
-            {s === "build" &&
-              validation?.program &&
-              !validation.problems.length && <Icon name="check" size={14} />}
-          </button>
-        ))}
-        <span className="workflow-note">
-          <Icon name="shield" size={14} />
-          {validation?.program && !validation.problems.length
-            ? "Strategy validated"
-            : "Validation required"}
-        </span>
-      </nav>
     </>
   );
 }

@@ -14,13 +14,11 @@ import { useSaveRevision } from "./useSaveRevision.ts";
 import { useBlocklyStudio, fitWorkspace } from "./useBlocklyStudio.ts";
 import { api, ApiError } from "./api.ts";
 import type { SaveRequest, SavedAgent } from "./api.ts";
-import { Icon } from "./Icon.tsx";
 import { editorCatalog } from "./catalog.ts";
 import { StrategyHeading } from "./StrategyHeading.tsx";
-import type { Stage } from "./StrategyHeading.tsx";
+import type { Notice, Stage } from "./StrategyHeading.tsx";
 import { WorkspaceSidebar } from "./WorkspaceSidebar.tsx";
 import { PresetPicker } from "./PresetPicker.tsx";
-import { StrategyScope } from "./StrategyScope.tsx";
 import { OperatePanel } from "./OperatePanel.tsx";
 export function EditorPage() {
   const [stage, setStage] = useState<Stage>("build");
@@ -34,7 +32,7 @@ export function EditorPage() {
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [current, setCurrent] = useState<SavedAgent>();
   const [connected, setConnected] = useState(false);
-  const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState<Notice>();
   const { saving, persist } = useSaveRevision();
   const [dirty, setDirty] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
@@ -64,10 +62,9 @@ export function EditorPage() {
       const list = await api<{ items: SavedAgent[] }>("/agents?limit=100");
       setAgents(list.items);
       setConnected(true);
-      setMessage("");
-    } catch (error) {
+      setNotice(undefined);
+    } catch {
       setConnected(false);
-      setMessage((error as Error).message);
     }
   }, []);
   useEffect(() => {
@@ -82,6 +79,7 @@ export function EditorPage() {
     window.addEventListener("beforeunload", prevent);
     return () => window.removeEventListener("beforeunload", prevent);
   }, [dirty]);
+  const dismiss = useCallback(() => setNotice(undefined), []);
   const change = () => {
     generation.current++;
     setDirty(true);
@@ -107,13 +105,16 @@ export function EditorPage() {
   );
   const replace = (action: () => void) => {
     if (saving) {
-      setMessage("Wait for this save to finish before switching strategies.");
+      setNotice({
+        text: "Wait for this save to finish before switching strategies.",
+        tone: "warn",
+      });
       return;
     }
     if (dirty && !window.confirm("Replace your unsaved draft?")) return;
     setSelected(undefined);
     action();
-    setMessage("");
+    setNotice(undefined);
   };
   const open = (agent: SavedAgent) =>
     replace(() => {
@@ -168,7 +169,7 @@ export function EditorPage() {
       budget,
     };
     const mine = generation.current;
-    setMessage("");
+    setNotice(undefined);
     try {
       const result = await persist(body, current);
       setCurrent(result);
@@ -177,11 +178,12 @@ export function EditorPage() {
         baselineWorkspace.current = JSON.stringify(saveEnvelope(workspace));
         setDirty(false);
       }
-      setMessage(
-        `Revision ${result.version} saved. ${mine !== generation.current ? "Newer edits are still unsaved." : ""}`,
-      );
+      setNotice({
+        text: `Revision ${result.version} saved. ${mine !== generation.current ? "Newer edits are still unsaved." : ""}`,
+        tone: mine !== generation.current ? "warn" : "ok",
+      });
     } catch (error) {
-      setMessage((error as Error).message);
+      setNotice({ text: (error as Error).message, tone: "error" });
       if (error instanceof ApiError && error.status === 401)
         setConnected(false);
       if (error instanceof ApiError && error.nodeId)
@@ -198,7 +200,7 @@ export function EditorPage() {
     />
   );
   return (
-    <div className="studio">
+    <div className={`studio stage-${stage}`}>
       <a className="skip-link" href="#workspace">
         Skip to strategy
       </a>
@@ -206,49 +208,37 @@ export function EditorPage() {
         agents={agents}
         currentId={current?.id}
         connected={connected}
-        onNew={() => setShowPresets(!showPresets)}
-        onBuild={() => setStage("build")}
+        onNew={() => setShowPresets(true)}
         onOpen={open}
         onReconnect={() => void refresh()}
       />
       <div className="main-shell">
-        <header className="topbar">
-          <div className="breadcrumbs">
-            Strategies <Icon name="chevron" size={12} /> Editor{" "}
-            <Icon name="chevron" size={12} />
-            <span>{current ? "Saved draft" : "New draft"}</span>
-          </div>
-          <span className="local-label">
-            <span className="environment-mark" /> LOCAL · MAINNET DATA
-          </span>
-        </header>
+        <StrategyHeading
+          name={name}
+          dirty={dirty}
+          current={current}
+          connected={connected}
+          saving={saving}
+          validation={validation}
+          budgetIssue={budgetIssue}
+          notice={notice}
+          stage={stage}
+          onName={(value) => {
+            setName(value);
+            change();
+          }}
+          onSave={() => void save()}
+          onDismiss={dismiss}
+          onReconnect={() => void refresh()}
+          onStage={setStage}
+        />
         <main id="workspace">
-          <StrategyHeading
-            name={name}
-            dirty={dirty}
-            current={current}
-            connected={connected}
-            saving={saving}
-            validation={validation}
-            budgetIssue={budgetIssue}
-            message={message}
-            stage={stage}
-            onName={(value) => {
-              setName(value);
-              change();
-            }}
-            onSave={() => void save()}
-            onDismiss={() => setMessage("")}
-            onReconnect={() => void refresh()}
-            onStage={setStage}
-          />
           {showPresets && (
             <PresetPicker
               onClose={() => setShowPresets(false)}
               onPick={preset}
             />
           )}
-          {stage === "build" && <StrategyScope validation={validation} />}
           <StrategyCanvas
             visible={stage === "build"}
             canvas={canvas}
@@ -264,12 +254,14 @@ export function EditorPage() {
             focus={focus}
             onPatterns={() => setShowPresets(true)}
             onFit={() => workspace && fitWorkspace(workspace)}
+            onZoom={(step) => workspace?.zoomCenter(step)}
             onUndo={() => workspace?.undo(false)}
           />
           {stage === "rehearse" && (
             <RehearsePanel
               workspace={workspace}
               program={validation?.program}
+              onOperate={() => setStage("operate")}
             />
           )}
           {stage === "review" && (
@@ -292,10 +284,6 @@ export function EditorPage() {
             />
           )}
         </main>
-        <footer className="app-footer">
-          <span>MONAD / STRATEGY STUDIO</span>
-          <span>Mainnet data · Paper execution · No real funds connected</span>
-        </footer>
       </div>
     </div>
   );

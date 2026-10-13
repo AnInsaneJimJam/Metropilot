@@ -15,6 +15,7 @@ export function StrategyCanvas({
   focus,
   onPatterns,
   onFit,
+  onZoom,
   onUndo,
 }: {
   visible: boolean;
@@ -28,20 +29,14 @@ export function StrategyCanvas({
   focus: (id: string, field: string | undefined) => void;
   onPatterns: () => void;
   onFit: () => void;
+  onZoom: (step: number) => void;
   onUndo: () => void;
 }) {
   return (
     <div className="build-stage" hidden={!visible}>
       <div className="canvas-column">
         <div className="canvas-toolbar">
-          <div>
-            <span className="canvas-label">
-              <Icon name="layers" size={15} />
-              <h2>Strategy canvas</h2>
-              <span className="canvas-version">strategy/1</span>
-            </span>
-            <p>Compose your logic. Select a block to fine-tune it.</p>
-          </div>
+          <h2 className="visually-hidden">Strategy canvas</h2>
           <div className="segmented" aria-label="Editor view">
             <button
               aria-pressed={view === "blocks"}
@@ -56,6 +51,47 @@ export function StrategyCanvas({
               Rules
             </button>
           </div>
+          {view === "blocks" && (
+            <div className="canvas-tools">
+              <button
+                className="icon-button"
+                aria-label="Undo"
+                title="Undo"
+                onClick={onUndo}
+              >
+                <Icon name="undo" size={15} />
+              </button>
+              <span className="tool-divider" aria-hidden="true" />
+              <button
+                className="icon-button"
+                aria-label="Zoom out"
+                title="Zoom out"
+                onClick={() => onZoom(-1)}
+              >
+                <Icon name="minus" size={15} />
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Zoom in"
+                title="Zoom in"
+                onClick={() => onZoom(1)}
+              >
+                <Icon name="plus" size={15} />
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Fit canvas"
+                title="Fit canvas"
+                onClick={onFit}
+              >
+                <Icon name="fit" size={15} />
+              </button>
+            </div>
+          )}
+          <button className="ghost templates" onClick={onPatterns}>
+            <Icon name="blocks" size={14} />
+            Templates
+          </button>
         </div>
         <div
           ref={canvas}
@@ -65,36 +101,13 @@ export function StrategyCanvas({
           aria-label="Strategy blocks canvas"
         />
         {view === "rules" && <div className="rules-view">{outline}</div>}
-        <div className="canvas-footer">
-          <span>
-            <span className="status-dot" />
-            {validation?.program
-              ? `${validation.program.bounds.steps} steps · ${validation.program.bounds.intents} trade${validation.program.bounds.intents === 1 ? "" : "s"} per run`
-              : "Waiting for valid rules"}
-          </span>
-          <button className="link" onClick={onFit}>
-            Fit canvas
-          </button>
-          <button className="link" onClick={onUndo}>
-            Undo
-          </button>
-          <button className="link" onClick={onPatterns}>
-            Browse patterns
-          </button>
-        </div>
       </div>
       <StrategyPanel
         experience={experience}
         onExperience={onExperience}
         validation={validation}
         onFocusBlock={focus}
-        outline={
-          view === "blocks" ? (
-            outline
-          ) : (
-            <p className="muted">Edit a rule in the main workspace.</p>
-          )
-        }
+        outline={view === "blocks" ? outline : null}
       />
     </div>
   );

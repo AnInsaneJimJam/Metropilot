@@ -3,7 +3,9 @@ import { createRoot } from "react-dom/client";
 import { api } from "./api.ts";
 import { setEditorModels } from "./catalog.ts";
 import { App } from "./App.tsx";
-import "@fontsource-variable/dm-sans/index.css";
+import "@fontsource-variable/geist/index.css";
+import "@fontsource-variable/geist-mono/index.css";
+import "@fontsource/instrument-serif/latin-400-italic.css";
 import "./styles.css";
 
 const root = document.getElementById("root");

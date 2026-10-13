@@ -9,9 +9,11 @@ import { Icon } from "../Icon.tsx";
 export function RehearsePanel({
   workspace,
   program,
+  onOperate,
 }: {
   workspace: Blockly.WorkspaceSvg | undefined;
   program: CompiledStrategy | undefined;
+  onOperate: () => void;
 }) {
   const scheduled = Boolean(
     program &&
@@ -104,30 +106,31 @@ export function RehearsePanel({
     ),
   );
   const trades = shown.filter((e) => e.kind === "settled").length;
-  if (Object.values(editorCatalog.feeds).some((f) => f.quoteUnit === 'USDC')) return (
-    <section className="rehearse-page" aria-labelledby="rehearse-heading">
-      <div className="section-intro"><span className="eyebrow">02 / REHEARSE</span><h2 id="rehearse-heading">Native market observations.</h2></div>
-      <p>These strategies use finalized Monad mainnet data: Uniswap’s 30-second geometric TWAP, Curve’s native EMA, and Aave’s native USD prices and reserve rates. Scenario playback for these oracle methods is not available yet.</p>
-      <p>Review your example threshold and virtual USDC budget, then launch in Operate to run against actual observations with simulated fills.</p>
-    </section>
-  );
+  if (Object.values(editorCatalog.feeds).some((f) => f.quoteUnit === "USDC"))
+    return (
+      <section className="rehearse-page" aria-labelledby="rehearse-heading">
+        <div className="native-note">
+          <span className="eyebrow">Mainnet data</span>
+          <h2 id="rehearse-heading">Native market observations.</h2>
+          <p>
+            These strategies use finalized Monad mainnet data: Uniswap’s
+            30-second geometric TWAP, Curve’s native EMA, and Aave’s native USD
+            prices and reserve rates. Scenario playback for these oracle methods
+            is not available yet.
+          </p>
+          <button className="primary" onClick={onOperate}>
+            Run on paper in Operate
+          </button>
+        </div>
+      </section>
+    );
   return (
     <section className="rehearse-page" aria-labelledby="rehearse-heading">
-      <div className="section-intro">
-        <span className="eyebrow">02 / REHEARSE</span>
-        <h2 id="rehearse-heading">See your rules in motion.</h2>
-        <p>
-          Try a market scenario. Watch what fires, what waits, and what stays
-          untouched.
-        </p>
-      </div>
-      <p className="synthetic-label">
-        Synthetic rehearsal — not a paper or live fill
-      </p>
+      <h2 id="rehearse-heading" className="visually-hidden">
+        Rehearse
+      </h2>
       {!program ? (
-        <div className="empty-state">
-          Fix the strategy problems in Build to rehearse this revision.
-        </div>
+        <div className="empty-state">Fix the problems in Build to rehearse.</div>
       ) : (
         <>
           <div className="scenario-bar">
@@ -144,11 +147,6 @@ export function RehearsePanel({
                 ))}
               </select>
             </label>
-            <p>
-              {scheduled
-                ? "Three schedule slots at a fixed synthetic reference price. Playback compresses time."
-                : SCENARIOS.find((s) => s.id === scenario)?.summary}
-            </p>
             {usesAi && (
               <label>
                 Scripted AI answer
@@ -162,15 +160,24 @@ export function RehearsePanel({
                     </option>
                   ))}
                 </select>
-                <small>No model is called.</small>
               </label>
             )}
+            <p
+              className="synthetic-label"
+              title={
+                scheduled
+                  ? "Three schedule slots at a fixed synthetic reference price. Playback compresses time."
+                  : SCENARIOS.find((s) => s.id === scenario)?.summary
+              }
+            >
+              Synthetic rehearsal — not a paper or live fill
+            </p>
           </div>
           {result && "error" in result && <p role="alert">{result.error}</p>}
           <div className="chart-panel">
             <div className="chart-heading">
               <div>
-                <span className="eyebrow">SYNTHETIC WETH / USD</span>
+                <span className="eyebrow">Synthetic WETH / USD</span>
                 <strong>
                   {tick?.twap ?? "—"}
                   <small>30s TWAP</small>
@@ -178,11 +185,11 @@ export function RehearsePanel({
               </div>
               <span className="chart-legend">
                 <span className="status-dot" />
-                Price observation{" "}
+                TWAP{" "}
                 {threshold !== undefined && (
                   <>
                     <span className="legend-threshold" />
-                    Trigger threshold
+                    Threshold
                   </>
                 )}
               </span>
@@ -202,7 +209,7 @@ export function RehearsePanel({
                 disabled={!rehearsal || done}
                 onClick={() => setPlaying((p) => !p)}
               >
-                <Icon name="play" size={15} />
+                <Icon name={playing ? "pause" : "play"} size={14} />
                 {playing ? "Pause" : block ? "Resume" : "Play"}
               </button>
               <label className="scrubber">
@@ -229,6 +236,7 @@ export function RehearsePanel({
                   setBlock(last);
                 }}
               >
+                <Icon name="skip" size={14} />
                 Skip to end
               </button>
               <button
@@ -238,6 +246,7 @@ export function RehearsePanel({
                   setBlock(0);
                 }}
               >
+                <Icon name="reset" size={14} />
                 Reset
               </button>
               <label className="speed">
@@ -258,23 +267,22 @@ export function RehearsePanel({
           </div>
           <div className="outcome-strip" aria-live="polite">
             <div>
-              <span className="eyebrow">TRIGGER EVENTS</span>
+              <span className="eyebrow">Triggers</span>
               <strong>{shown.filter((e) => e.kind === "fire").length}</strong>
             </div>
             <div>
-              <span className="eyebrow">SETTLED SIMULATIONS</span>
+              <span className="eyebrow">Settled</span>
               <strong>{trades}</strong>
             </div>
             <div className="outcome-status">
-              <span className="eyebrow">CURRENT OUTCOME</span>
+              <span className="eyebrow">Outcome</span>
               <p>
-                {outcome?.text ??
-                  "Ready. Play the scenario to follow your strategy."}
+                {outcome?.text ?? "Press play to run the scenario."}
               </p>
             </div>
           </div>
           <section className="holdings">
-            <h3>Synthetic holdings</h3>
+            <h3 className="eyebrow">Holdings</h3>
             <div>
               {Object.entries(
                 done && rehearsal ? rehearsal.holdings : START_HOLDINGS,
