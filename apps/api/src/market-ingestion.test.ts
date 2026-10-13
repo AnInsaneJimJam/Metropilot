@@ -7,6 +7,9 @@ import pg from 'pg';
 import { MARKETS, checkedObservation, validateSwapLog } from '@monad-hack/connectors';
 import type { Market } from '@monad-hack/connectors';
 import { MarketIngestion } from './market-ingestion.ts';
+import { transitionPrice } from '@monad-hack/strategy';
+import type { CrossingState } from '@monad-hack/strategy';
+import type { Trigger } from '@monad-hack/contracts';
 import type { MarketSource, MarketLog } from './market-ingestion.ts';
 import { migrate } from './db/migrate.ts';
 import { seedPaper } from './db/seed.ts';
@@ -75,7 +78,7 @@ describe('finalized market ingestion / PostgreSQL',{skip},()=>{
       assert.equal(count,0);assert.equal((await pool.query('select * from market_cursors')).rowCount,0);
     }
   });
-  test('fresh heads continue while a historical oracle read stalls and fails, without moving its cursor', async(t)=>{
+  test('cached fresh heads continue while historical recovery stalls and fails, without advancing triggers or its cursor', async(t)=>{
     await reset();t.mock.timers.enable({apis:['Date'],now:Date.now()});
     const market=MARKETS[1],s=source(),original=s.observe;
     let current=head;
@@ -93,13 +96,46 @@ describe('finalized market ingestion / PostgreSQL',{skip},()=>{
     const recoveryFailed=assert.rejects(worker.tick(),/provider.invalid/);
     await reading;
     try {
-      await worker.refresh();assert.deepEqual(accepted,[head]);
+      await worker.refresh();assert.deepEqual(accepted,[]);
       t.mock.timers.tick(6000);current++;
-      await worker.refresh();assert.deepEqual(accepted,[head,head+1n]);
+      await worker.refresh();assert.deepEqual(accepted,[]);
+      const cached=(await pool.query("select document->'block'->>'number' as number from finalized_market_observations order by (document->'block'->>'number')::bigint")).rows;
+      assert.deepEqual(cached.map(row=>row.number),[String(head),String(head+1n)]);
       assert.equal((await pool.query('select block_number::text from market_cursors')).rows[0].block_number,String(start));
     } finally {release();await recoveryFailed;}
     assert.ok(reports.some(r=>r.event==='market.ingestion.failed'&&r.feedRef===market.feedRef&&r.phase==='recovery'&&r.code==='SOURCE_OR_STORAGE_FAILURE'));
     assert.ok(!JSON.stringify(reports).includes('private-marker'));
+  });
+  test('current cached heads cannot overtake a fresh crossing and return in ordered recovery',async()=>{
+    await reset();
+    const market=MARKETS[0],s=source(),original=s.observe,now=new Date().toISOString();
+    const trigger:Extract<Trigger,{type:'price.crossesAbove'}>={id:'crossing',type:'price.crossesAbove',feedRef:market.feedRef,threshold:{...fixtures[0].price,decimal:'0.025'},maxAgeSeconds:30,cooldownSeconds:0,body:[]};
+    let state:CrossingState={baseline:'0.024',observedAt:new Date(Date.parse(now)-3000).toISOString(),sourceEventKey:'baseline'};
+    const delivered:bigint[]=[],reasons:string[]=[];
+    const start=head-3n;
+    await pool.query('insert into market_cursors values ($1,$2,$3,now())',[market.feedRef,String(start),hash(start)]);
+    let release!:()=>void,entered!:()=>void;
+    const stalled=new Promise<void>(resolve=>{release=resolve;}),reading=new Promise<void>(resolve=>{entered=resolve;});
+    s.logs=async()=>{
+      entered();await stalled;
+      return [head-2n,head-1n].map(n=>({blockNumber:n,blockHash:hash(n),logIndex:0,address:market.pool,data:'0x',topics:[]}));
+    };
+    s.observe=async(m,n)=>checkedObservation({...await original(m,n),price:{...fixtures[0].price,decimal:n===head-2n?'0.026':'0.024'},observedAt:new Date(Date.parse(now)-Number(head-n)*1000).toISOString(),receivedAt:now});
+    const worker=new MarketIngestion(pool,s,async(o)=>{
+      delivered.push(BigInt(checkedObservation(o).block.number));
+      const decision=transitionPrice(trigger,state,o,now);state=decision.state;reasons.push(decision.reason);return [];
+    },[market]);
+    const recovery=worker.tick();
+    await reading;
+    try {
+      await worker.refresh();
+      assert.equal((await pool.query("select 1 from finalized_market_observations where feed_ref=$1 and document->'block'->>'number'=$2",[market.feedRef,String(head)])).rowCount,1);
+    } finally {release();await recovery;}
+    assert.equal(reasons.filter(reason=>reason==='crossing').length,1,'the still-fresh crossing must fire exactly once');
+    assert.deepEqual(delivered,[head-2n,head-1n,head]);
+    assert.deepEqual(reasons,['crossing','no-crossing','no-crossing']);
+    assert.equal((await pool.query('select block_number::text from market_cursors')).rows[0].block_number,String(head));
+    await new MarketIngestion(pool,s,async()=>{throw new Error('advanced cursor must not replay crossing');},[market]).tick();
   });
   test('failure logs distinguish cursor changes, oversized batches and contradictory oracle results',async()=>{
     const market=MARKETS[0];

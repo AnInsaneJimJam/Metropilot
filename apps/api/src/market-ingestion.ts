@@ -53,7 +53,7 @@ export class RpcMarketSource implements MarketSource {
 
 /** Cursor advances only after persistence and fan-out. A failed fan-out replays the same canonical identities.
  * At most 100 blocks/feed/tick; no catch-up trade from stale observations (transitionPrice enforces freshness).
- * New deployment state is baselined by the next finalized heartbeat even if the pool has no swaps.
+ * Ordered recovery checkpoints baseline new deployments even if the pool has no swaps.
  */
 export class MarketIngestion {
   readonly pool: pg.Pool;
@@ -94,8 +94,8 @@ export class MarketIngestion {
       await this.source.verify(market,head.number);
       const canonical=await this.source.block(head.number);
       if(canonical.hash!==head.hash)throw new MarketIngestionError('FINALIZED_HEAD_CHANGED','Finalized heartbeat head hash changed.');
-      await this.#accept(c,market,head.number,head.hash);
-      // Fresh reads never advance (or repair) the historical recovery cursor.
+      await this.#accept(c,market,head.number,head.hash,[],false);
+      // Cache-only: a newer head must not overtake unprocessed event blocks in trigger state.
     } finally {
       try {if(locked)await c.query('select pg_advisory_unlock(hashtextextended($1, 11))',[market.feedRef]);}
       finally {c.release();}
@@ -142,7 +142,7 @@ export class MarketIngestion {
       }
     }
   }
-  async #accept(c: pg.PoolClient, market: Market, number: bigint, canonicalHash: string, logs: readonly MarketLog[] = []): Promise<void> {
+  async #accept(c: pg.PoolClient, market: Market, number: bigint, canonicalHash: string, logs: readonly MarketLog[] = [], deliver = true): Promise<void> {
     const oracleStarted = performance.now();
     const observation = checkedObservation(await this.source.observe(market, number));
     if (observation.feedRef !== market.feedRef || BigInt(observation.block.number) !== number || observation.block.hash !== canonicalHash) throw new MarketIngestionError('OBSERVATION_BLOCK_MISMATCH', 'Oracle observation block mismatch.');
@@ -155,7 +155,7 @@ export class MarketIngestion {
     const prior = (await c.query<{ document: PriceObservation }>('select document from finalized_market_observations where feed_ref=$1 and source_event_key=$2',[market.feedRef,observation.sourceEventKey])).rows[0]!.document;
     if (prior.provenanceHash !== observation.provenanceHash || await contentHash(prior.price) !== await contentHash(observation.price) || await contentHash(prior.reserve ?? null) !== await contentHash(observation.reserve ?? null)) throw new MarketIngestionError('ORACLE_RESULT_CONFLICT', 'Conflicting oracle result for a finalized block.');
     const persistedAt = new Date().toISOString(), fanOutStarted = performance.now();
-    const results = await this.ingest(prior);
-    this.report({event:'market.observation.accepted',feedRef:market.feedRef,method:market.method,observedAt:prior.observedAt,receivedAt:prior.receivedAt,persistedAt,fanOutCompletedAt:new Date().toISOString(),sourceLagMillis:Date.parse(prior.receivedAt)-Date.parse(prior.observedAt),oracleReadMillis:Math.round(oracleReadMillis),persistenceMillis:Math.round(fanOutStarted-persistenceStarted),fanOutMillis:Math.round(performance.now()-fanOutStarted),runs:results.flatMap(r=>r.runId?[r.runId]:[])});
+    const results = deliver ? await this.ingest(prior) : [];
+    this.report({event:'market.observation.accepted',feedRef:market.feedRef,method:market.method,observedAt:prior.observedAt,receivedAt:prior.receivedAt,persistedAt,triggerDelivery:deliver?'ordered-recovery':'cache-only',fanOutCompletedAt:deliver?new Date().toISOString():null,sourceLagMillis:Date.parse(prior.receivedAt)-Date.parse(prior.observedAt),oracleReadMillis:Math.round(oracleReadMillis),persistenceMillis:Math.round(fanOutStarted-persistenceStarted),fanOutMillis:Math.round(performance.now()-fanOutStarted),runs:results.flatMap(r=>r.runId?[r.runId]:[])});
   }
 }
