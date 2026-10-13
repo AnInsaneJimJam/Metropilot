@@ -1,5 +1,5 @@
 // User-facing deployment lifecycle and history (API-2, API-6; docs/specs/api-and-data.md sections 3–4).
-// Paper only: a launch pins a saved revision into a deployment manifest, creates the policy snapshot and the
+// Paper and live (D61): a launch pins a saved revision into a deployment manifest, creates the policy snapshot and the
 // simulation account the executor trades in, and hands the deployment to the runtime control plane in one
 // transaction. Provisioning is immediate locally (a warm runtime polls); cloud provisioning is INF-3.
 import pg from 'pg';
@@ -10,6 +10,10 @@ import type { Catalog, CompiledStrategy, Experience } from '@monad-hack/strategy
 import { CatalogResolver, type CatalogKind, type ResolvedCatalog } from './catalog.ts';
 import { ControlError, newId } from './control.ts';
 import { admitPaper, quotaDocument } from './quota.ts';
+import { agentBalances } from '@monad-hack/accounting';
+import type { Strategy } from '@monad-hack/contracts';
+import { checkLivePairs, liveTwins, promoteStrategy } from './live-launch.ts';
+import type { LiveLaunchOptions } from './live-launch.ts';
 import type { AuditActor, RuntimeControlStore } from './runtime-control/store.ts';
 import { RunControlError } from './runtime-control/store.ts';
 
@@ -22,6 +26,8 @@ const BUDGET_ERROR = `(select b.response->'reason' || jsonb_build_object('nodeId
 /** Virtual denomination the market presets trade from (D42): the stack and the hosted entry point both fund it. */
 export const MARKET_PAPER_FUNDING_ASSET = 'paper.USDC';
 const ESTIMATE_MINUTES = 15;
+/** How recent the caps approval must be for a live launch to rely on it. */
+const LIVE_APPROVAL_MILLIS = 60 * 60_000;
 /** Paper policy defaults by experience (product.md modes); live authority is never granted here. */
 const PAPER_POLICY: Record<Experience, { maxSlippageBps: number; dailyActionCount: number }> = {
   rookie: { maxSlippageBps: 50, dailyActionCount: 24 },
@@ -37,6 +43,8 @@ export interface LifecycleOptions {
   readonly catalog?: CatalogResolver;
   /** Explicit virtual denomination; this is not a USDC/USD market conversion. */
   readonly paperFundingAsset?: string;
+  /** Live launches (D61): the custody network agents trade on. Absent: live requests are refused. */
+  readonly live?: LiveLaunchOptions;
   readonly now?: () => Date;
 }
 
@@ -61,6 +69,7 @@ export class LifecycleService {
   readonly #image: string;
   readonly #catalog: CatalogResolver;
   readonly #fundingAsset: string;
+  readonly #live: LiveLaunchOptions | undefined;
   readonly #now: () => Date;
 
   constructor(options: LifecycleOptions) {
@@ -69,6 +78,7 @@ export class LifecycleService {
     this.#image = options.runtimeImageDigest;
     this.#catalog = options.catalog ?? new CatalogResolver();
     this.#fundingAsset = options.paperFundingAsset ?? "paper.USD";
+    this.#live = options.live;
     this.#now = options.now ?? (() => new Date());
   }
 
@@ -78,11 +88,12 @@ export class LifecycleService {
    * A paper estimate from the strategy's cadence and worst-case bounds, plus the policy snapshot a launch needs
    * (version 1 from the agent's experience when the agent has none). Not a priced quote or reservation.
    */
-  async estimate(tenantId: string, agentId: string, strategyRevisionId?: string): Promise<Record<string, unknown>> {
+  async estimate(tenantId: string, agentId: string, strategyRevisionId?: string, mode: 'paper' | 'live' = 'paper'): Promise<Record<string, unknown>> {
     return this.#tx(async (c) => {
       const agent = await this.#agent(c, tenantId, agentId);
       const revisionId = strategyRevisionId ?? agent.revision_id;
       if (!revisionId) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Save a strategy revision before estimating.');
+      if (mode === 'live') return this.#estimateLive(c, tenantId, agentId, revisionId, agent);
       const { catalog } = await this.#catalog.resolve(c, { mode: 'paper' });
       const program = await this.#program(c, tenantId, agentId, revisionId, catalog);
       const policy = await c.query<{ version: number }>('select max(version) as version from policies where tenant_id = $1 and agent_id = $2', [tenantId, agentId]);
@@ -91,11 +102,7 @@ export class LifecycleService {
         policyVersion = 1;
         await c.query('insert into policies (tenant_id, agent_id, version, limits) values ($1, $2, 1, $3)', [tenantId, agentId, PAPER_POLICY[agent.experience]]);
       }
-      const runsPerDay = program.strategy.triggers.reduce((sum, trigger) => {
-        if (trigger.type === 'schedule') return sum + Math.ceil(86_400 / trigger.intervalSeconds);
-        if (trigger.type === 'price.crossesAbove' || trigger.type === 'price.crossesBelow') return sum + Math.ceil(86_400 / Math.max(trigger.cooldownSeconds, 60));
-        return sum;
-      }, 0);
+      const runsPerDay = dailyRuns(program);
       const now = this.#now();
       const estimate = {
         schemaVersion: 'paper-estimate/1' as const, id: newId(), agentId, strategyRevisionId: revisionId, budgetVersion: agent.budget_version, policyVersion, mode: 'paper' as const,
@@ -119,7 +126,7 @@ export class LifecycleService {
     const request = checked.value;
     if (request.agentId !== agentId) throw new ControlError(400, 'SCHEMA_INVALID', 'agentId must match the route.', { fieldPath: '/agentId' });
     return this.#idempotent(tenantId, `POST /v1/agents/${agentId}/deployments`, key, request, async (c) => {
-      if (request.mode !== 'paper') throw new ControlError(422, 'CAPABILITY_DISABLED', 'Live deployments are not enabled; launch in paper mode.');
+      if (request.mode === 'live') return this.#launchLive(c, tenantId, agentId, request);
       const agent = await this.#agent(c, tenantId, agentId, true);
       const open = await c.query<{ desired_state: string }>('select desired_state from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3', [tenantId, agentId, 'stopped']);
       if (open.rows[0]?.desired_state === 'stopping') throw new ControlError(409, 'REVISION_CONFLICT', 'This agent is still stopping while its open trades settle; launch it again once it has stopped.');
@@ -181,7 +188,9 @@ export class LifecycleService {
       const actor: AuditActor = { kind: 'user', id: tenantId };
       if (kind === 'resume') {
         await this.#checkPins(c, tenantId, deploymentId);
-        await this.#admit(c, tenantId, deploymentId);
+        // Paper sandbox quotas apply to paper deployments only; live agents spend their own funds within caps.
+        const mode = await c.query<{ mode: string }>('select mode from deployments where id = $1', [deploymentId]);
+        if (mode.rows[0]?.mode === 'paper') await this.#admit(c, tenantId, deploymentId);
       }
       try {
         if (kind === 'pause') await this.#runtime.pauseIn(c, deploymentId, actor);
@@ -298,6 +307,124 @@ export class LifecycleService {
     await this.#agent(this.#pool, tenantId, agentId);
   }
 
+  // ---- live (D61) -------------------------------------------------------------------------------------------
+
+  /** The live network when live launches are enabled on this server. */
+  get liveNetworkRef(): string | undefined {
+    return this.#live?.networkRef;
+  }
+
+  /** Newest enabled live connector and model versions (what a live deployment request pins). */
+  async liveVersions(): Promise<{ connectors: Record<string, string>; modelProfiles: Record<string, string> }> {
+    return this.#catalog.latestVersions(this.#pool, 'live');
+  }
+
+  #liveOptions(): LiveLaunchOptions {
+    if (!this.#live) throw new ControlError(422, 'CAPABILITY_DISABLED', 'Live trading is not enabled on this server; launch in paper mode.');
+    return this.#live;
+  }
+
+  /** The newest live policy version: caps set with a step-up approval (FundsService.setLivePolicy). */
+  async #livePolicy(c: pg.PoolClient, tenantId: string, agentId: string, version?: number): Promise<number | undefined> {
+    const { rows } = await c.query<{ version: number }>(
+      `select version from policies where tenant_id = $1 and agent_id = $2 and limits ->> 'mode' = 'live'${version === undefined ? '' : ' and version = $3'} order by version desc limit 1`,
+      version === undefined ? [tenantId, agentId] : [tenantId, agentId, version]);
+    return rows[0]?.version;
+  }
+
+  /** The saved revision with its paper refs mapped to live twins, compiled against the live catalog. */
+  async #promoted(c: pg.PoolClient, tenantId: string, agentId: string, revisionId: string, catalog: Catalog, networkRef: string, connectorVersions?: Readonly<Record<string, string>>): Promise<{ strategy: Strategy; program: CompiledStrategy }> {
+    const { rows } = await c.query<{ ast: Strategy }>('select ast from strategy_revisions where tenant_id = $1 and agent_id = $2 and id = $3', [tenantId, agentId, revisionId]);
+    if (!rows[0]) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Strategy revision not found for this agent.', { fieldPath: '/strategyRevisionId' });
+    const strategy = promoteStrategy(rows[0].ast, await liveTwins(c, networkRef));
+    await checkLivePairs(c, strategy, connectorVersions);
+    try {
+      return { strategy, program: await compileStrategy(JSON.stringify(strategy), catalog) };
+    } catch (error) {
+      throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `This strategy cannot run live: ${(error as Error).message}`);
+    }
+  }
+
+  async #estimateLive(c: pg.PoolClient, tenantId: string, agentId: string, revisionId: string, agent: { experience: Experience; budget_version: number }): Promise<Record<string, unknown>> {
+    const live = this.#liveOptions();
+    if (agent.experience !== 'advanced') throw new ControlError(422, 'POLICY_DENIED', 'Live trading needs the advanced experience; rookie strategies run in paper mode.');
+    const policyVersion = await this.#livePolicy(c, tenantId, agentId);
+    if (!policyVersion) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Set live trading limits (with a one-time code) before estimating a live launch.');
+    const { catalog } = await this.#catalog.resolve(c, { mode: 'live', networkRef: live.networkRef });
+    const { program } = await this.#promoted(c, tenantId, agentId, revisionId, catalog, live.networkRef);
+    const now = this.#now();
+    const estimate = {
+      schemaVersion: 'live-estimate/1' as const, id: newId(), agentId, strategyRevisionId: revisionId, budgetVersion: agent.budget_version, policyVersion, mode: 'live' as const,
+      runsPerDay: Math.min(dailyRuns(program), 100_000), worstCaseAiCallsPerDay: 0,
+      createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + ESTIMATE_MINUTES * 60_000).toISOString(),
+    };
+    await c.query(
+      'insert into estimates (tenant_id, id, agent_id, strategy_revision_id, assumptions, created_at, expires_at) values ($1, $2, $3, $4, $5, $6, $7)',
+      [tenantId, estimate.id, agentId, revisionId, { kind: 'live', networkRef: live.networkRef, runsPerDay: estimate.runsPerDay, bounds: program.bounds }, estimate.createdAt, estimate.expiresAt],
+    );
+    return estimate;
+  }
+
+  /**
+   * Live launch: the saved revision promoted to live refs and stored as a derived revision, live caps from a
+   * step-up-approved policy, a funded custodial wallet on the live network, and no simulation account.
+   */
+  async #launchLive(c: pg.PoolClient, tenantId: string, agentId: string, request: DeploymentRequest): Promise<Operation> {
+    const live = this.#liveOptions();
+    if (request.networkRef !== live.networkRef) throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `Live agents trade on ${live.networkRef}.`, { fieldPath: '/networkRef' });
+    const agent = await this.#agent(c, tenantId, agentId, true);
+    const open = await c.query<{ desired_state: string }>('select desired_state from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3', [tenantId, agentId, 'stopped']);
+    if (open.rows[0]) throw new ControlError(409, 'REVISION_CONFLICT', 'This agent already has a deployment; pause, resume or stop it instead.');
+    const estimate = await c.query<{ strategy_revision_id: string; expires_at: Date; assumptions: { kind?: string } }>('select strategy_revision_id, expires_at, assumptions from estimates where tenant_id = $1 and id = $2 and agent_id = $3', [tenantId, request.estimateId, agentId]);
+    if (!estimate.rows[0] || estimate.rows[0].assumptions.kind !== 'live') throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Live estimate not found for this agent.', { fieldPath: '/estimateId' });
+    if (estimate.rows[0].strategy_revision_id !== request.strategyRevisionId) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'The estimate is for a different revision.', { fieldPath: '/estimateId' });
+    if (estimate.rows[0].expires_at.getTime() <= this.#now().getTime()) throw new ControlError(409, 'ESTIMATE_EXPIRED', 'The estimate expired; request a new one.', { fieldPath: '/estimateId' });
+    if (request.budgetVersion !== agent.budget_version) throw new ControlError(409, 'REVISION_CONFLICT', 'The budget changed; refresh the estimate.', { fieldPath: '/budgetVersion' });
+    if ((await this.#livePolicy(c, tenantId, agentId, request.policyVersion)) === undefined) {
+      throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Live launches need a live policy version (caps set with a one-time code).', { fieldPath: '/policyVersion' });
+    }
+    // Consent: the step-up approval that set these exact caps, verified within the last hour.
+    const approval = await c.query<{ verified_at: Date | null }>(
+      `select s.verified_at from step_up_challenges s join policies p on p.tenant_id = s.tenant_id and p.limits ->> 'approvedBy' = s.id::text
+       where s.tenant_id = $1 and s.id = $2 and s.purpose = 'livePolicy' and s.consumed_at is not null and p.agent_id = $3 and p.version = $4`,
+      [tenantId, request.stepUpApprovalId, agentId, request.policyVersion]);
+    const verifiedAt = approval.rows[0]?.verified_at;
+    if (!verifiedAt || this.#now().getTime() - verifiedAt.getTime() > LIVE_APPROVAL_MILLIS) {
+      throw new ControlError(403, 'FORBIDDEN', 'Going live needs the one-time-code approval of these caps from the last hour; set the caps again.', { fieldPath: '/stepUpApprovalId' });
+    }
+    const connectorVersions = pinsOf(request.connectorSelections, '/connectorSelections');
+    const modelProfiles = pinsOf(request.modelProfiles, '/modelProfiles');
+    const resolved = await this.#catalog.resolve(c, { mode: 'live', networkRef: live.networkRef, connectors: connectorVersions, modelProfiles, resourceProfileRef: request.resourceProfileRef });
+    const { strategy, program } = await this.#promoted(c, tenantId, agentId, request.strategyRevisionId, resolved.catalog, live.networkRef, connectorVersions);
+    const issue = profileIssues(program.strategy, { experience: agent.experience, mode: 'live' })[0];
+    if (issue) throw new ControlError(422, issue.code, issue.message);
+    checkConnectors(request, program, resolved);
+    checkModels(modelProfiles, program);
+    // Funds: an active custodial wallet on the live chain holding enough trading MON for gas and the reserve.
+    const wallet = await c.query('select 1 from wallets where tenant_id = $1 and agent_id = $2 and chain_id = $3 and status = $4', [tenantId, agentId, live.chainId, 'active']);
+    if (!wallet.rowCount) throw new ControlError(422, 'FUNDING_PENDING', `Open this agent's wallet on ${live.networkRef} and fund it before going live.`);
+    const gas = (await agentBalances(c, { mode: 'live', tenantId, agentId })).find((b) => b.kind === 'user' && b.bucket === 'trading' && b.assetRef === live.gasAssetRef);
+    if (!gas || gas.available < live.minTradingGasAtomic) {
+      throw new ControlError(422, 'FUNDING_PENDING', 'Allocate more MON to trading: the agent needs its gas reserve plus one trade\'s gas before it can go live.');
+    }
+    // The promoted strategy is its own immutable revision, linked to the saved one it came from.
+    const derivedId = newId();
+    await c.query(
+      `insert into strategy_revisions (tenant_id, id, agent_id, language_version, content_hash, ast, validation) values ($1, $2, $3, $4, $5, $6, $7)`,
+      [tenantId, derivedId, agentId, strategy.schemaVersion, program.hash, strategy, { kind: 'livePromotion', derivedFrom: request.strategyRevisionId, networkRef: live.networkRef }]);
+    let deployed;
+    try {
+      deployed = await this.#runtime.deployIn(c, {
+        tenantId, agentId, strategyRevisionId: derivedId, mode: 'live', catalog: resolved.catalog, catalogPins: resolved.pins, connectorVersions, modelProfiles,
+        runtimeImageDigest: this.#image, networkRef: live.networkRef, policyVersion: request.policyVersion, budgetVersion: request.budgetVersion,
+        resourceProfileRef: request.resourceProfileRef, estimateId: request.estimateId, actor: { kind: 'user', id: tenantId },
+      });
+    } catch (error) {
+      userError(error);
+    }
+    return this.#operation(c, tenantId, agentId, deployed.deploymentId, 'deploy');
+  }
+
   // ---- internals ---------------------------------------------------------------------------------------------
 
   async #agent(c: pg.Pool | pg.PoolClient, tenantId: string, agentId: string, lock = false) {
@@ -402,6 +529,15 @@ function runSummary(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 /** Exact {ref: version} pins from request selections; a ref selected twice is refused. */
+/** Runs a day from the trigger cadence (schedule interval, or price cooldown with a one-minute floor). */
+function dailyRuns(program: CompiledStrategy): number {
+  return program.strategy.triggers.reduce((sum, trigger) => {
+    if (trigger.type === 'schedule') return sum + Math.ceil(86_400 / trigger.intervalSeconds);
+    if (trigger.type === 'price.crossesAbove' || trigger.type === 'price.crossesBelow') return sum + Math.ceil(86_400 / Math.max(trigger.cooldownSeconds, 60));
+    return sum;
+  }, 0);
+}
+
 function pinsOf(selections: readonly { ref: string; version: string }[], fieldPath: string): Record<string, string> {
   const pins: Record<string, string> = {};
   for (const [i, selection] of selections.entries()) {

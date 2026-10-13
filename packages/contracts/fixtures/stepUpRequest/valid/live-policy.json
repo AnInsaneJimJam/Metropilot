@@ -1,0 +1,9 @@
+{
+  "purpose": "livePolicy",
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "limits": {
+    "maxSlippageBps": 50,
+    "dailyActionCount": 5,
+    "dailyNotionalUsdMicros": "5000000"
+  }
+}

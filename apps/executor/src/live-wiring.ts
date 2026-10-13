@@ -40,7 +40,8 @@ export function liveFromEnv(env: NodeJS.ProcessEnv): LiveSetup | undefined {
     if (!v) throw new Error(`${name} is required for EXECUTOR_LIVE=1.`);
     return v;
   };
-  const chain = new JsonRpcChain({ endpoint: env['LIVE_RPC'] ?? need('CUSTODY_RPC'), chainId: CHAIN });
+  // An empty optional value (a secret stored as "") counts as absent.
+  const chain = new JsonRpcChain({ endpoint: env['LIVE_RPC'] || need('CUSTODY_RPC'), chainId: CHAIN });
   const provider = new PrivyCustody({ appId: need('PRIVY_APP_ID'), appSecret: need('PRIVY_APP_SECRET'), authorizationKey: need('PRIVY_AUTHORIZATION_KEY') });
   const route: UniswapRoute = mainnetRoute();
   const gasCeiling = num(env, 'LIVE_GAS_CEILING_WEI', 5n * 10n ** 16n);
@@ -68,7 +69,7 @@ export function liveFromEnv(env: NodeJS.ProcessEnv): LiveSetup | undefined {
     assets: [{ assetRef: 'mainnet.MON', chainId: CHAIN, token: 'native', decimals: 18, funding: true }], tradingContracts: [ROUTE.router, ROUTE.wmon, ROUTE.usdc],
   };
   const routeConfig: LiveRouteConfig = {
-    connectorRef: 'mainnet.uniswap-v3', connectorVersion: '1.0.0', route, quoteTtlSeconds: 60, gasMarginBps: 2_000, custody,
+    connectorRef: 'mainnet.uniswap-v3', connectorVersions: ['1.0.0', '1.1.0'], route, quoteTtlSeconds: 60, gasMarginBps: 2_000, custody,
     assets: { 'mainnet.MON': { address: ROUTE.wmon, native: true }, 'mainnet.WMON': { address: ROUTE.wmon, native: false }, 'mainnet.USDC': { address: ROUTE.usdc, native: false } },
     pairs: [['mainnet.MON', 'mainnet.USDC'], ['mainnet.WMON', 'mainnet.USDC'], ['mainnet.USDC', 'mainnet.WMON']],
   };

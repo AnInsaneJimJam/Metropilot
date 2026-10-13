@@ -12,7 +12,7 @@ import { BudgetReview, DEFAULT_BUDGET } from "./BudgetReview.tsx";
 import { fieldOf } from "./validation.ts";
 import { useSaveRevision } from "./useSaveRevision.ts";
 import { useBlocklyStudio, fitWorkspace } from "./useBlocklyStudio.ts";
-import { api, ApiError } from "./api.ts";
+import { api, ApiError, HOSTED_PRIVY_APP_ID } from "./api.ts";
 import type { SaveRequest, SavedAgent } from "./api.ts";
 import { editorCatalog } from "./catalog.ts";
 import { StrategyHeading } from "./StrategyHeading.tsx";
@@ -20,7 +20,7 @@ import type { Notice, Stage } from "./StrategyHeading.tsx";
 import { WorkspaceSidebar } from "./WorkspaceSidebar.tsx";
 import { PresetPicker } from "./PresetPicker.tsx";
 import { OperatePanel } from "./OperatePanel.tsx";
-export function EditorPage() {
+export function EditorPage({ onSignOut, onSessionExpired }: { onSignOut?: () => void; onSessionExpired?: () => void } = {}) {
   const [stage, setStage] = useState<Stage>("build");
   const [experience, setExperience] = useState<Experience>("rookie");
   const [name, setName] = useState(PRESETS[0]!.title);
@@ -58,15 +58,20 @@ export function EditorPage() {
   );
   const refresh = useCallback(async () => {
     try {
-      await api("/session");
+      if (!HOSTED_PRIVY_APP_ID) await api("/session");
       const list = await api<{ items: SavedAgent[] }>("/agents?limit=100");
       setAgents(list.items);
       setConnected(true);
       setNotice(undefined);
-    } catch {
+    } catch (error) {
+      // A hosted session that expired goes back to sign-in instead of looking like an offline API.
+      if (error instanceof ApiError && error.status === 401 && onSessionExpired) {
+        onSessionExpired();
+        return;
+      }
       setConnected(false);
     }
-  }, []);
+  }, [onSessionExpired]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -211,6 +216,7 @@ export function EditorPage() {
         onNew={() => setShowPresets(true)}
         onOpen={open}
         onReconnect={() => void refresh()}
+        onSignOut={onSignOut}
       />
       <div className="main-shell">
         <StrategyHeading

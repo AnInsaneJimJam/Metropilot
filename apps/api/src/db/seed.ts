@@ -143,25 +143,42 @@ function completeMarketCatalog(): CatalogSeed[] {
   ];
 }
 
+/**
+ * The paper catalog rows only (networks, connectors, assets, feeds, model and resource profiles), with no tenant,
+ * agent or strategy data, so a hosted database can be given the catalog the resolver compiles against. Idempotent;
+ * a conflicting existing row is an error.
+ */
+export async function seedPaperCatalog(client: pg.ClientBase): Promise<void> {
+  await client.query('begin');
+  try {
+    await insertCatalog(client, paperSeed().catalog);
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  }
+}
+
+async function insertCatalog(client: pg.ClientBase, catalog: ReturnType<typeof paperSeed>['catalog']): Promise<void> {
+  for (const entry of catalog) {
+    const hash = await contentHash(entry.definition);
+    await client.query(
+      `insert into catalog_versions (kind, ref, version, modes, content_hash, definition)
+       values ($1, $2, $3, $4, $5, $6) on conflict (ref, version) do nothing`,
+      [entry.kind, entry.ref, entry.version, entry.modes, hash, entry.definition],
+    );
+    const { rows } = await client.query<{ content_hash: string }>('select content_hash from catalog_versions where ref = $1 and version = $2', [entry.ref, entry.version]);
+    if (rows[0]?.content_hash !== hash) throw new Error(`catalog ${entry.ref}@${entry.version} exists with different content`);
+  }
+}
+
 /** Insert the paper seed in one transaction. Re-running is a no-op; a conflicting existing row is an error. */
 export async function seedPaper(client: pg.Client): Promise<void> {
   const { request, strategy, catalog } = paperSeed();
   const revisionHash = await contentHash(strategy);
   await client.query('begin');
   try {
-    for (const entry of catalog) {
-      const hash = await contentHash(entry.definition);
-      await client.query(
-        `insert into catalog_versions (kind, ref, version, modes, content_hash, definition)
-         values ($1, $2, $3, $4, $5, $6) on conflict (ref, version) do nothing`,
-        [entry.kind, entry.ref, entry.version, entry.modes, hash, entry.definition],
-      );
-      const { rows } = await client.query<{ content_hash: string }>(
-        'select content_hash from catalog_versions where ref = $1 and version = $2',
-        [entry.ref, entry.version],
-      );
-      if (rows[0]?.content_hash !== hash) throw new Error(`catalog ${entry.ref}@${entry.version} exists with different content`);
-    }
+    await insertCatalog(client, catalog);
     await client.query(
       `insert into tenants (id, auth_subject) values ($1, 'synthetic|paper-demo') on conflict do nothing`,
       [seedTenantId],

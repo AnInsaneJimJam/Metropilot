@@ -8,6 +8,7 @@ export function WorkspaceSidebar({
   onNew,
   onOpen,
   onReconnect,
+  onSignOut,
 }: {
   agents: SavedAgent[];
   currentId: string | undefined;
@@ -15,6 +16,8 @@ export function WorkspaceSidebar({
   onNew: () => void;
   onOpen: (agent: SavedAgent) => void;
   onReconnect: () => void;
+  /** Hosted builds only (signed in with Privy). */
+  onSignOut?: (() => void) | undefined;
 }) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   return (
@@ -68,6 +71,11 @@ export function WorkspaceSidebar({
         {!connected && (
           <button className="link" onClick={() => onReconnect()}>
             Reconnect
+          </button>
+        )}
+        {onSignOut && (
+          <button className="link" onClick={() => onSignOut()}>
+            Sign out
           </button>
         )}
       </div>

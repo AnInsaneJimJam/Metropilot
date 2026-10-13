@@ -48,8 +48,31 @@ export function liveCatalog(): CatalogEntry[] {
         referencePrice: 'pool 30 s geometric TWAP (packages/connectors MainnetMarkets.observe)',
       },
     },
+    // 1.1.0: the complete shape the catalog resolver (D55) compiles against, plus each entry's paper twin so a saved,
+    // paper-tested strategy can be launched live by mapping its refs (D61). The 1.0.0 rows stay as history.
+    { kind: 'network', ref: MONAD_MAINNET.networkRef, version: '1.1.0', modes: ['live'], definition: { registry: 'monad', chainId: MONAD_MAINNET.chainId, finality: 'finalized', blockMillis: 400, finalityBlocks: 2 } },
+    ...(['MON', 'WMON', 'USDC'] as const).map((symbol): CatalogEntry => ({
+      kind: 'asset', ref: `mainnet.${symbol}`, version: '1.1.0', modes: ['live'],
+      definition: symbol === 'MON'
+        ? { identity: { kind: 'native', networkRef: MONAD_MAINNET.networkRef, chainId: MONAD_MAINNET.chainId }, decimals: 18, symbol, native: true, paperTwin: 'paper.MON' }
+        : { identity: { kind: 'erc20', networkRef: MONAD_MAINNET.networkRef, chainId: MONAD_MAINNET.chainId, contractAddress: symbol === 'WMON' ? u.wmon : u.usdc }, decimals: symbol === 'WMON' ? 18 : 6, symbol, paperTwin: `paper.${symbol}` },
+    })),
+    {
+      kind: 'connector', ref: u.ref, version: '1.1.0', modes: ['live'],
+      definition: {
+        networkRef: MONAD_MAINNET.networkRef, chainId: MONAD_MAINNET.chainId, adapterVersion: '1.1.0', venue: 'uniswap-v3', actions: ['swap.exactInput'],
+        capabilities: ['swap.quote', 'swap.exactInput'], reads: {}, protocol: 'uniswap-v3',
+        factory: u.factory, router: u.router, quoter: u.quoter, pool: u.pool, fee: u.fee,
+        pairs: [['mainnet.MON', 'mainnet.USDC'], ['mainnet.WMON', 'mainnet.USDC'], ['mainnet.USDC', 'mainnet.WMON']],
+        referencePrice: 'pool 30 s geometric TWAP (packages/connectors MainnetMarkets.observe)', paperTwin: 'paper.uniswap',
+      },
+    },
+    { kind: 'resourceProfile', ref: 'live-small-v1', version: '1.0.0', modes: ['live'], definition: { note: 'Live runtime profile; CPU/memory sizing is measured on the hosted platform.' } },
   ];
 }
+
+/** Current live connector version: the one deployments pin and the executor route serves. */
+export const LIVE_CONNECTOR_VERSION = '1.1.0';
 
 /** Refs seeded under an earlier name for the testnet assets; disabled so nothing resolves them. */
 const LEGACY_TESTNET_REFS = ['live.MON', 'live.WMON', 'live.USDC'];

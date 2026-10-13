@@ -303,7 +303,12 @@ describe('paper runs end to end over HTTP and PostgreSQL', { skip }, () => {
     const origin = (s.client as unknown as { origin: string }).origin;
     const anonymous = await fetch(`${origin}/internal/v1/runtime/assignments:poll`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schemaVersion: 'assignment-poll/1', runtimeId: 'x', state: 'ready', waitSeconds: 0 }) });
     assert.equal(anonymous.status, 401);
-    const offer = await s.client.poll({ schemaVersion: 'assignment-poll/1', runtimeId: 'runtime-test-1', state: 'ready', waitSeconds: 0 });
+    // A worker only claims runs of its own mode and pinned image; a live worker leaves this paper run queued.
+    const live = await s.client.poll({ schemaVersion: 'assignment-poll/1', runtimeId: 'runtime-test-1', mode: 'live', state: 'ready', waitSeconds: 0 });
+    assert.equal(live.disposition, 'none');
+    const otherImage = await s.client.poll({ schemaVersion: 'assignment-poll/1', runtimeId: 'runtime-test-1', mode: 'paper', imageDigest: `0x${'99'.repeat(32)}`, state: 'ready', waitSeconds: 0 });
+    assert.equal(otherImage.disposition, 'none');
+    const offer = await s.client.poll({ schemaVersion: 'assignment-poll/1', runtimeId: 'runtime-test-1', mode: 'paper', state: 'ready', waitSeconds: 0 });
     const runId = offer.assignment!.run.runId;
     const noBearer = await fetch(`${origin}/internal/v1/runs/${runId}?assignmentId=${offer.assignment!.assignmentId}&fencingToken=1`);
     assert.equal(noBearer.status, 401);

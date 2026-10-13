@@ -153,6 +153,27 @@
               }
             }
           }
+        },
+        {
+          "title": "LivePolicyStepUp",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "purpose",
+            "agentId",
+            "limits"
+          ],
+          "properties": {
+            "purpose": {
+              "const": "livePolicy"
+            },
+            "agentId": {
+              "$ref": "common.schema.json#/$defs/uuidv7"
+            },
+            "limits": {
+              "$ref": "#/$defs/LiveLimits"
+            }
+          }
         }
       ]
     },
@@ -620,6 +641,60 @@
         }
       },
       "description": "A stored, expiring runway recommendation. Re-estimation is advisory; allocation always needs an explicit user command."
+    },
+    "LiveLimits": {
+      "title": "LiveLimits",
+      "description": "User caps for live trading, combined with the platform limits by the most restrictive value. Amounts are integer strings.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxSlippageBps",
+        "dailyActionCount",
+        "dailyNotionalUsdMicros"
+      ],
+      "properties": {
+        "maxSlippageBps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "dailyActionCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "dailyNotionalUsdMicros": {
+          "$ref": "common.schema.json#/$defs/positiveAtomicAmount"
+        },
+        "maxInputAtomic": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "$ref": "common.schema.json#/$defs/catalogRef"
+          },
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/positiveAtomicAmount"
+          }
+        }
+      }
+    },
+    "LivePolicyRequest": {
+      "title": "LivePolicyRequest",
+      "description": "Set the agent's live trading caps; needs a step-up approval for exactly these limits. Creates a new immutable policy version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "limits",
+        "stepUpId"
+      ],
+      "properties": {
+        "limits": {
+          "$ref": "#/$defs/LiveLimits"
+        },
+        "stepUpId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        }
+      }
     }
   }
 }

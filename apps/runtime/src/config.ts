@@ -62,6 +62,8 @@ export function parseEndpoints(env: Readonly<Record<string, string | undefined>>
     return url.origin;
   };
   const broker = env['RUNTIME_BROKER'] ?? 'http';
-  if ((broker !== 'http' && broker !== 'synthetic') || mode !== 'paper') throw new RuntimeError('ASSIGNMENT_INVALID', 'Broker mode must be http or synthetic; only paper is enabled.');
+  if (broker !== 'http' && broker !== 'synthetic') throw new RuntimeError('ASSIGNMENT_INVALID', 'Broker mode must be http or synthetic.');
+  // Live runtimes (D61) use the HTTP broker only; live strategies are refused at launch if they read or ask the model.
+  if (mode === 'live' && broker !== 'http') throw new RuntimeError('ASSIGNMENT_INVALID', 'Live runtimes use the HTTP broker.');
   return { controlApiOrigin: origin('RUNTIME_CONTROL_API_ORIGIN'), executorOrigin: origin('RUNTIME_EXECUTOR_ORIGIN'), broker, brokerOrigin: origin(env['RUNTIME_BROKER_ORIGIN'] ? 'RUNTIME_BROKER_ORIGIN' : 'RUNTIME_CONTROL_API_ORIGIN'), devWorkloadHeader: env['RUNTIME_DEV_WORKLOAD'] === '1' };
 }

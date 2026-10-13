@@ -4,7 +4,7 @@ import { api } from "./api.ts";
 
 type Funds = GeneratedContractMap["agentFunds"];
 type Withdrawal = GeneratedContractMap["withdrawal"];
-type Wallet = { address: string; chainId: number; networkRef: string; provider: string; acceptedAssets: { assetRef: string; token: string; decimals: number }[] };
+type Wallet = { address: string; chainId: number; networkRef: string; provider: string; acceptedAssets: { assetRef: string; token: string; decimals: number }[]; tradedAssets?: { assetRef: string; token: string; decimals: number }[] };
 type Bucket = "hosting" | "api" | "trading";
 const BUCKET_LABEL: Record<string, string> = { unallocated: "Unallocated", hosting: "Hosting", api: "AI and data", trading: "Trading" };
 
@@ -39,7 +39,7 @@ export function FundsPanel({ agentId, localFaucet }: { agentId: string; localFau
   const [withdrawal, setWithdrawal] = useState<Withdrawal>();
 
   // Unknown decimals show atomic units (0) rather than a wrong scale; the wallet metadata loads below.
-  const decimalsOf = (ref: string) => wallet?.acceptedAssets.find((a) => a.assetRef === ref)?.decimals ?? 0;
+  const decimalsOf = (ref: string) => [...(wallet?.acceptedAssets ?? []), ...(wallet?.tradedAssets ?? [])].find((a) => a.assetRef === ref)?.decimals ?? 0;
   const refresh = useCallback(async () => {
     setFunds(await api<Funds>(`/agents/${agentId}/balances`));
   }, [agentId]);

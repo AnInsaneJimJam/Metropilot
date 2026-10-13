@@ -177,6 +177,15 @@ export function createApp(options: ApiOptions) {
           : {}),
     });
   });
+  // Load-balancer health check: unauthenticated, no tenant data, 200 only when the database answers.
+  app.get("/healthz", async (_, reply) => {
+    try {
+      await options.store.ping();
+      return { status: "ok" };
+    } catch {
+      return reply.code(503).send({ status: "unavailable" });
+    }
+  });
   app.get("/v1/session", async (_, reply) => {
     if (!options.localSession)
       throw new ControlError(
@@ -247,8 +256,9 @@ export function createApp(options: ApiOptions) {
       mode: "paper",
       synthetic: options.catalog === undefined,
       catalog: await draftCatalog(),
-      capabilities: { save: true, deploy: Boolean(options.lifecycle), cloudExecution: false, live: false, custody: Boolean(options.funds?.liveCustody), localFaucet: Boolean(options.funds?.hasLocalFaucet) },
+      capabilities: { save: true, deploy: Boolean(options.lifecycle), cloudExecution: false, live: Boolean(options.lifecycle?.liveNetworkRef), ...(options.lifecycle?.liveNetworkRef ? { liveNetworkRef: options.lifecycle.liveNetworkRef } : {}), custody: Boolean(options.funds?.liveCustody), localFaucet: Boolean(options.funds?.hasLocalFaucet) },
       ...(options.lifecycle ? { paperVersions: await options.lifecycle.paperVersions() } : {}),
+      ...(options.lifecycle?.liveNetworkRef ? { liveVersions: await options.lifecycle.liveVersions() } : {}),
     }));
     routes.get(
       "/v1/agents",
@@ -377,10 +387,11 @@ export function createApp(options: ApiOptions) {
       return Number(q.limit ?? 25);
     };
     routes.post("/v1/agents/:id/estimates", async (request) => {
-      const body = (request.body ?? {}) as { strategyRevisionId?: unknown };
-      if (typeof body !== "object" || Object.keys(body).some((k) => k !== "strategyRevisionId") || (body.strategyRevisionId !== undefined && (typeof body.strategyRevisionId !== "string" || !UUIDV7.test(body.strategyRevisionId))))
-        throw new ControlError(400, "SCHEMA_INVALID", "Send {} or {strategyRevisionId}.");
-      return lifecycle().estimate(requestTenant(request), agentId(request), body.strategyRevisionId as string | undefined);
+      const body = (request.body ?? {}) as { strategyRevisionId?: unknown; mode?: unknown };
+      if (typeof body !== "object" || Object.keys(body).some((k) => k !== "strategyRevisionId" && k !== "mode") || (body.strategyRevisionId !== undefined && (typeof body.strategyRevisionId !== "string" || !UUIDV7.test(body.strategyRevisionId)))
+        || (body.mode !== undefined && body.mode !== "paper" && body.mode !== "live"))
+        throw new ControlError(400, "SCHEMA_INVALID", "Send {}, {strategyRevisionId} and optionally {mode: 'live'}.");
+      return lifecycle().estimate(requestTenant(request), agentId(request), body.strategyRevisionId as string | undefined, (body.mode as "paper" | "live" | undefined) ?? "paper");
     });
     routes.post("/v1/agents/:id/deployments", async (request, reply) => {
       const operation = await lifecycle().launch(requestTenant(request), agentId(request), request.body, idempotencyKey(request));
@@ -483,6 +494,10 @@ export function createApp(options: ApiOptions) {
     routes.post("/v1/agents/:id/allocations", async (request) =>
       funds().allocate(requestTenant(request), agentId(request), request.body, idempotencyKey(request)));
     routes.post("/v1/agents/:id/funding-quotes", async (request) => funds().fundingQuote(requestTenant(request), agentId(request), request.body));
+    routes.post("/v1/agents/:id/live-policy", async (request, reply) => {
+      reply.code(201);
+      return funds().setLivePolicy(requestTenant(request), agentId(request), request.body);
+    });
     routes.post("/v1/step-up/challenges", async (request, reply) => {
       reply.code(201);
       return funds().startStepUp(requestTenant(request), request.body);

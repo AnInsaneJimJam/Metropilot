@@ -7,7 +7,7 @@ import pg from 'pg';
 import { ConfigError, databaseUrl, isLoopback, redactUrl, requireEnv } from '../config.ts';
 import { migrate } from './migrate.ts';
 import { seedLiveCatalog } from './live-catalog.ts';
-import { seedPaper } from './seed.ts';
+import { seedPaper, seedPaperCatalog } from './seed.ts';
 
 const repoRoot = join(import.meta.dirname, '..', '..', '..', '..');
 const examplePassword = 'change-me-local-only';
@@ -79,6 +79,13 @@ const commands: Record<string, () => Promise<void>> = {
       if (!isLoopback(url)) throw new ConfigError('refusing to seed a non-local database');
       await seedPaper(client);
       console.log(`${redactUrl(url)}: paper seed data present`);
+    }),
+  // Catalog rows only (no tenant, agent or strategy data): safe for a hosted database, which needs the paper catalog
+  // the resolver compiles launches against.
+  'seed-catalog': () =>
+    withClient(async (client, url) => {
+      await seedPaperCatalog(client);
+      console.log(`${redactUrl(url)}: paper catalog present`);
     }),
   'seed-live': () =>
     withClient(async (client, url) => {

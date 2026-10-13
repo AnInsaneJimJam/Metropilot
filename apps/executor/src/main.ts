@@ -12,7 +12,11 @@ import { PostgresMarketData } from './market.ts';
 import type { FeedPair } from './market.ts';
 
 if (process.env['AI_GATEWAY_API_KEY'] || process.env['KIMI_API_KEY'] || process.env['MOONSHOT_API_KEY']) throw new Error('Model credentials are restricted to the broker process.');
-if (process.env['LOCAL_EXECUTOR'] !== '1' || process.env['NODE_ENV'] === 'production') {
+// Hosted (HOSTED=1, NODE_ENV=production): listens on the private network; only runtime tasks reach it (security group).
+const hosted = process.env['HOSTED'] === '1';
+if (hosted) {
+  if (process.env['NODE_ENV'] !== 'production' || process.env['LOCAL_EXECUTOR'] === '1') throw new Error('HOSTED=1 needs NODE_ENV=production and no LOCAL_EXECUTOR.');
+} else if (process.env['LOCAL_EXECUTOR'] !== '1' || process.env['NODE_ENV'] === 'production') {
   throw new Error('Local development only. Set LOCAL_EXECUTOR=1; hosted executors need the selected identity and a restricted database role.');
 }
 const url = process.env['EXECUTOR_DATABASE_URL'] ?? process.env['DATABASE_URL'];
@@ -46,7 +50,7 @@ const liveLoop = pipeline ? setInterval(() => {
   pipeline.tick().catch((error: unknown) => console.error(`live pipeline failed: ${(error as Error).message}`)).finally(() => { liveBusy = false; });
 }, 2_000) : undefined;
 const port = Number(process.env['EXECUTOR_PORT'] ?? 3003);
-server.listen(port, '127.0.0.1', () => console.log(`Local ${live ? 'paper + LIVE (Monad mainnet)' : 'paper'} executor listening on http://127.0.0.1:${port} (development only)`));
+server.listen(port, hosted ? '0.0.0.0' : '127.0.0.1', () => console.log(`${hosted ? 'Hosted' : 'Local'} ${live ? 'paper + LIVE (Monad mainnet)' : 'paper'} executor listening on ${hosted ? `0.0.0.0:${port} (private network only)` : `http://127.0.0.1:${port} (development only)`}`));
 const close = (): void => {
   clearInterval(reconciler);
   if (liveLoop) clearInterval(liveLoop);

@@ -61,6 +61,9 @@ export function policyLimits(limits: Record<string, unknown> | undefined, tokenI
   const daily = int(limits['dailyActionCount'], 1_000_000);
   if (slippage !== undefined) out.maxSlippageBps = slippage;
   if (daily !== undefined) out.dailyActionCount = daily;
+  // Live caps (D61): the daily notional is an integer micro-USD string.
+  const notional = limits['dailyNotionalUsdMicros'];
+  if (typeof notional === 'string' && /^[0-9]{1,30}$/.test(notional)) out.dailyNotionalUsdMicros = BigInt(notional);
   const perAsset = limits['maxInputAtomic'];
   if (typeof perAsset === 'object' && perAsset !== null) {
     const raw = (perAsset as Record<string, unknown>)[tokenInRef];

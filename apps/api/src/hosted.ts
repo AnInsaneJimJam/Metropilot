@@ -9,6 +9,9 @@ import { CatalogResolver } from "./catalog.ts";
 import { RuntimeControlStore } from "./runtime-control/store.ts";
 import { SessionService } from "./auth/sessions.ts";
 import { AuthError, PrivyVerifier } from "./auth/verifier.ts";
+import type { FundsService } from "./funds.ts";
+import { fundsFromEnv } from "./funds-wiring.ts";
+import type { LiveLaunchOptions } from "./live-launch.ts";
 
 export interface HostedConfig {
   databaseUrl: URL;
@@ -48,7 +51,7 @@ export function hostedConfig(env: Env): HostedConfig {
 }
 
 /** The production app: sessions come only from verified provider tokens; there is no localSession. */
-export function createHostedApp(pool: pg.Pool, config: HostedConfig) {
+export function createHostedApp(pool: pg.Pool, config: HostedConfig, wiring: { funds?: FundsService; live?: LiveLaunchOptions } = {}) {
   let verifier: PrivyVerifier;
   try {
     verifier = new PrivyVerifier({ appId: config.privyAppId, verificationKey: config.privyVerificationKey });
@@ -64,10 +67,12 @@ export function createHostedApp(pool: pg.Pool, config: HostedConfig) {
     catalog: new CatalogResolver(),
     // Same funding as the local market stack: the market presets spend paper.USDC.
     paperFundingAsset: MARKET_PAPER_FUNDING_ASSET,
+    ...(wiring.live ? { live: wiring.live } : {}),
   });
   return createApp({
     store: new ControlStore(pool),
     lifecycle,
+    ...(wiring.funds ? { funds: wiring.funds } : {}),
     catalog: () => lifecycle.paperCatalog(),
     origin: config.origin,
     authenticate: (cookie) => sessions.authenticate(cookie),
@@ -79,8 +84,14 @@ if (import.meta.main) {
   const config = hostedConfig(process.env);
   const pool = new pg.Pool({ connectionString: config.databaseUrl.toString(), max: 10, connectionTimeoutMillis: 3000 });
   pool.on("error", (error) => console.error(`database pool error: ${error.name}`));
-  const app = createHostedApp(pool, config);
+  // Step-up codes: the production MFA delivery is not built yet, so hosted codes go to the operator log only
+  // (team demo; a known limitation). Funds stay off unless CUSTODY_PROVIDER is set.
+  const wiring = await fundsFromEnv(pool, process.env, {
+    deliver: async (_tenant, challengeId, code, purpose) => console.log(JSON.stringify({ event: "stepUp.code", purpose, challengeId, code })),
+  });
+  const app = createHostedApp(pool, config, { funds: wiring.funds, ...(wiring.live ? { live: wiring.live } : {}) });
   const close = async () => {
+    wiring.stop();
     await app.close();
     await pool.end();
     process.exit(0);

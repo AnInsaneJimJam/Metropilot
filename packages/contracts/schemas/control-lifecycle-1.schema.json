@@ -517,6 +517,64 @@
           "type": "boolean"
         }
       }
+    },
+    "LiveEstimate": {
+      "title": "LiveEstimate",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "agentId",
+        "strategyRevisionId",
+        "budgetVersion",
+        "policyVersion",
+        "mode",
+        "runsPerDay",
+        "worstCaseAiCallsPerDay",
+        "createdAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "live-estimate/1"
+        },
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "agentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "strategyRevisionId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "budgetVersion": {
+          "$ref": "common.schema.json#/$defs/recordVersion"
+        },
+        "policyVersion": {
+          "$ref": "common.schema.json#/$defs/recordVersion"
+        },
+        "mode": {
+          "const": "live"
+        },
+        "runsPerDay": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "worstCaseAiCallsPerDay": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300000
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "expiresAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      },
+      "description": "Live run estimate for a saved strategy promoted to live (paper refs mapped to their live twins, D61), with the live policy version whose caps bind it. Not a priced quote or reservation; trades spend the agent's allocated trading funds within those caps."
     }
   }
 }

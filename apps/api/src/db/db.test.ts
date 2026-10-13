@@ -12,7 +12,7 @@ import pg from 'pg';
 import { contentHash, validate } from '@monad-hack/contracts';
 import { migrate, readMigrations } from './migrate.ts';
 import { liveCatalog, seedLiveCatalog } from './live-catalog.ts';
-import { paperSeed, seedPaper, seedTenantId } from './seed.ts';
+import { paperSeed, seedPaper, seedPaperCatalog, seedTenantId } from './seed.ts';
 
 const required = process.env['REQUIRE_DB'] === '1';
 let skip: string | false = false;
@@ -161,12 +161,23 @@ describe('database', { skip }, () => {
     for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok);
   });
 
+  test('the catalog-only seed (hosted databases) adds every paper catalog row and no tenant data', async () => {
+    const hosted = await freshClient();
+    await migrate(hosted);
+    await seedPaperCatalog(hosted);
+    await seedPaperCatalog(hosted);
+    assert.equal((await hosted.query('select count(*)::int as n from catalog_versions')).rows[0].n, paperSeed().catalog.length);
+    for (const table of ['tenants', 'agents', 'strategy_revisions', 'policies']) {
+      assert.equal((await hosted.query(`select count(*)::int as n from ${table}`)).rows[0].n, 0, table);
+    }
+  });
+
   test('live catalog: idempotent, valid on-chain identities, and found by the executor catalog query', async () => {
     const live = await freshClient();
     await migrate(live);
     await seedLiveCatalog(live);
     await seedLiveCatalog(live);
-    const { rows } = await live.query<{ ref: string; definition: { identity: unknown } }>(`select ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) order by ref`);
+    const { rows } = await live.query<{ ref: string; definition: { identity: unknown } }>(`select distinct on (ref) ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) order by ref, version desc`);
     assert.deepEqual(rows.map((r) => r.ref), ['mainnet.MON', 'mainnet.USDC', 'mainnet.WMON', 'testnet.MON', 'testnet.USDC', 'testnet.WMON']);
     for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok, row.ref);
     // Same predicate as the executor store's catalogAllows for live assets.
