@@ -20,3 +20,5 @@ Progress 2026-10-07 (G4 Phase 1, local only): [host](src/host.ts), [supervisor](
 Progress 2026-10-12 (branch `feat/lifecycle-executor-integration`): [executor HTTP client](src/dispatch/executor.ts), executor capability exchange in the control client, UUIDv7 request IDs, [`main.ts`](src/main.ts) with endpoint configuration and a synthetic broker ([D41](../../docs/decisions.md)); `pnpm stack:dev` runs it. Not yet written: the broker client (no API Broker service).
 
 Prerequisites: [strategy](../../packages/strategy/AGENTS.md), [API](../api/AGENTS.md), [infra](../../infra/AGENTS.md). Runtime intent integration depends on [executor](../executor/AGENTS.md). Tick after behavior and verification evidence exist.
+
+- [x] BROKER-3 / #6: authenticated HTTP broker client, separate audience exchange/cache, bounded responses and identical-body retries. [Client tests](src/dispatch/broker.test.ts), [real-service kit](../../tests/broker-service.test.ts), [paper stack](../../tests/paper-stack.test.ts). Evidence 2026-10-13: `REQUIRE_DB=1 pnpm check` 542 passed, zero skipped; `pnpm stack:dev` starts with HTTP broker. RUN-4 remains open for paid metering.

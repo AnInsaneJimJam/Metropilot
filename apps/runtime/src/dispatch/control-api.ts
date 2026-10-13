@@ -33,6 +33,7 @@ export class HttpControlApi implements ControlApi {
   /** Capability per assignment. Kept for older assignments too, so a stale writer is fenced by the server. */
   readonly #held = new Map<string, Held>();
   #current: string | undefined;
+  readonly #brokerTokens = new Map<string, { token: string; expiresAt: string }>();
   readonly #executorTokens = new Map<string, { token: string; expiresAt: string }>();
 
   constructor(options: HttpControlApiOptions) {
@@ -117,6 +118,18 @@ export class HttpControlApi implements ControlApi {
   forgetExecutorCapability(): void {
     if (this.#current) this.#executorTokens.delete(this.#current);
   }
+
+  /** A separate audience and cache: the broker never receives an executor/control capability. */
+  async brokerCapability(): Promise<string> {
+    const id = this.#current;
+    if (!id) throw new RuntimeError('ASSIGNMENT_INVALID', 'No assignment holds a capability.');
+    const cached = this.#brokerTokens.get(id);
+    if (cached && Date.parse(cached.expiresAt)-Date.now()>30_000) return cached.token;
+    const grant = await this.#call('POST', '/internal/v1/runtime/capabilities:exchange', { body: { audience: 'broker' }, responseKind: 'audienceCapability', headers: this.#bearer(id) });
+    if (grant.audience !== 'broker') throw new RuntimeError('RESULT_INVALID', 'Capability exchange returned the wrong audience.');
+    this.#brokerTokens.set(id, { token: grant.token, expiresAt: grant.expiresAt }); return grant.token;
+  }
+  forgetBrokerCapability(): void { if (this.#current) this.#brokerTokens.delete(this.#current); }
 
   #bearer(assignmentId: string): Record<string, string> {
     const held = this.#held.get(assignmentId);

@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { MARKET_PRESETS } from '../packages/strategy/src/index.ts';
 // The whole local paper stack on real PostgreSQL (TEST-2, INT-2): user API launch → runtime-facing control API
 // → runtime HTTP clients → real paper executor (Postgres authority, recorded prices) → executor outbox → resumed
-// runs, history and the live event stream. Synthetic paper data; the broker is the scripted stand-in.
+// runs, history and the live event stream. Synthetic paper data; the broker serves recorded reads and explicitly synthetic AI over HTTP.
 // Skips without a reachable DATABASE_URL unless REQUIRE_DB=1.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
@@ -26,8 +26,8 @@ import { ControlStore } from '../apps/api/src/store.ts';
 import { createExecutor, PostgresAuthority, PostgresMarketData } from '../apps/executor/src/index.ts';
 import { HttpControlApi } from '../apps/runtime/src/dispatch/control-api.ts';
 import { HttpExecutor } from '../apps/runtime/src/dispatch/executor.ts';
-import { ScriptedBroker } from '../apps/runtime/src/local/scripted-broker.ts';
-import type { ScriptAnswer } from '../apps/runtime/src/local/scripted-broker.ts';
+import { HttpBroker } from '../apps/runtime/src/dispatch/broker.ts';
+import { PaperBrokerService } from '../apps/api/src/broker-service.ts';
 import { systemClock } from '../apps/runtime/src/ports.ts';
 import type { CrashPoint } from '../apps/runtime/src/host.ts';
 import type { HostCommand } from '../packages/strategy/src/index.ts';
@@ -90,12 +90,14 @@ const listen = async (server: { listen: (port: number, host: string, cb: () => v
 
 const budget = { tradingUsdMicros: '1000000000', hostingUsdMicros: '10000000', dataAndAiUsdMicros: '5000000', monReserveAtomic: '1000000000000000000' };
 
-async function stack(options: { dispatchInline?: boolean; decisions?: ScriptAnswer[]; mainnet?: boolean } = {}) {
+async function stack(options: { dispatchInline?: boolean; mainnet?: boolean } = {}) {
   const pool = await freshPool();
   const catalog: import("../packages/strategy/src/index.ts").Catalog = options.mainnet ? marketCatalog : syntheticCatalog;
   const presets = options.mainnet ? MARKET_PRESETS : PRESETS;
   const secret = randomBytes(32);
-  const runtimeStore = new RuntimeControlStore({ pool, executorCapabilitySecret: secret });
+  const brokerSecret = randomBytes(32);
+  const runtimeStore = new RuntimeControlStore({ pool, executorCapabilitySecret: secret, brokerCapabilitySecret: brokerSecret });
+  const service = new PaperBrokerService({ pool, secret: brokerSecret });
   const controlStore = new ControlStore(pool);
   const tenant = await controlStore.tenant(`stack-${randomBytes(4).toString('hex')}`);
   // The lifecycle clock can be skewed forward to expire estimates (estimate rows are immutable).
@@ -104,7 +106,7 @@ async function stack(options: { dispatchInline?: boolean; decisions?: ScriptAnsw
   const user = createApp({ store: controlStore, lifecycle, catalog, origin: 'http://127.0.0.1:5173', authenticate: async (cookie) => (cookie === 'me' ? tenant : undefined), streamPollMillis: 20 });
   await user.ready();
   const userOrigin = await (async () => { await user.listen({ host: '127.0.0.1', port: 0 }); closers.push(() => user.close()); return `http://127.0.0.1:${(user.server.address() as AddressInfo).port}`; })();
-  const internal = createInternalApp({ store: runtimeStore, authenticateWorkload: (h) => (typeof h['x-runtime-workload'] === 'string' ? h['x-runtime-workload'] : undefined), pollIntervalMillis: 20 });
+  const internal = createInternalApp({ broker: service, store: runtimeStore, authenticateWorkload: (h) => (typeof h['x-runtime-workload'] === 'string' ? h['x-runtime-workload'] : undefined), pollIntervalMillis: 20 });
   await internal.listen({ host: '127.0.0.1', port: 0 });
   closers.push(() => internal.close());
   const internalOrigin = `http://127.0.0.1:${(internal.server.address() as AddressInfo).port}`;
@@ -115,15 +117,10 @@ async function stack(options: { dispatchInline?: boolean; decisions?: ScriptAnsw
   });
   const executorOrigin = await listen(executor.server);
   const control = new HttpControlApi({ origin: internalOrigin, workload: { 'x-runtime-workload': 'runtime-stack-1' } });
-  const decisions = [...(options.decisions ?? [])];
-  const broker = new ScriptedBroker({
-    clock: systemClock,
-    read: () => ({ value: { price: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal: '2500' }, observedAt: systemClock.now() } }),
-    decide: () => decisions.shift() ?? { value: { decision: 'allow', summary: 'Synthetic AI: allow.' } },
-  });
+  const broker = new HttpBroker({ origin: internalOrigin, capability: () => control.brokerCapability(), forgetCapability: () => control.forgetBrokerCapability() });
   const httpExecutor = new HttpExecutor({ origin: executorOrigin, capability: () => control.executorCapability(), forgetCapability: () => control.forgetExecutorCapability() });
   const config = { runtimeId: 'runtime-stack-1', mode: 'paper' as const, imageDigest: IMAGE, heartbeatMillis: 10_000, pollWaitSeconds: 0 };
-  const runtime = (crashAt?: (point: CrashPoint, command: HostCommand) => void) => new Supervisor({ config, control, broker: options.mainnet ? {request: (body) => control.marketRead(body)} : broker, executor: httpExecutor, clock: systemClock, ...(crashAt ? { crashAt } : {}) });
+  const runtime = (crashAt?: (point: CrashPoint, command: HostCommand) => void) => new Supervisor({ config, control, broker, executor: httpExecutor, clock: systemClock, ...(crashAt ? { crashAt } : {}) });
 
   const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
     const response = await fetch(`${userOrigin}/v1${path}`, { method, headers: { cookie: 'me', ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -173,12 +170,12 @@ describe('paper stack end to end', { skip }, () => {
     const runner=s.runtime((point,command)=>{if(point==='after-dispatch'&&command.kind==='read'&&!crashed){crashed=true;throw new Error('test crash after native read');}});
     await assert.rejects(runner.cycle(), /test crash after native read/);
     assert.equal(crashed,true);
-    const readRun=(await s.pool.query('select run_id from market_read_results')).rows[0].run_id;
+    const readRun=(await s.pool.query("select run_id from broker_results where kind='read' and response->>'disposition'='completed'")).rows[0].run_id;
     await s.runtimeStore.reassign(readRun);
     const resumed=await s.runtime().cycle();
     assert.equal(resumed.outcome,'completed',JSON.stringify(resumed));
     await s.runtimeStore.consumeExecutorOutbox();
-    const records=await s.pool.query('select document from market_read_results');
+    const records=await s.pool.query("select response as document from broker_results where kind='read' and response->>'disposition'='completed'");
     assert.equal(records.rowCount,1);
     assert.equal(records.rows[0].document.value.price.quoteUnit,'USDC');
     assert.equal((await s.pool.query('select * from paper_fills')).rowCount,1);
@@ -228,7 +225,7 @@ describe('paper stack end to end', { skip }, () => {
     assert.equal((await s.launch(agentId,request)).status,202);
     await s.runtimeStore.tickSchedules();
     const report=await s.runtime().cycle();assert.equal(report.outcome,'completed',JSON.stringify(report));
-    const reads=await s.pool.query('select document from market_read_results');assert.equal(reads.rowCount,2);
+    const reads=await s.pool.query("select response as document from broker_results where kind='read' and response->>'disposition'='completed'");assert.equal(reads.rowCount,2);
     assert.ok(reads.rows.some(r=>r.document.value.price?.quoteUnit==='USD'));
     assert.ok(reads.rows.some(r=>typeof r.document.value.supplyApr==='string'&&typeof r.document.value.variableBorrowApr==='string'));
     assert.equal((await s.pool.query('select * from paper_fills')).rowCount,0);
