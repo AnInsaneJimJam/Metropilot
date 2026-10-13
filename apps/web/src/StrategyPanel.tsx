@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { Experience } from "@monad-hack/strategy";
 import type { Validation } from "./validation.ts";
-import { Icon } from "./Icon.tsx";
 interface Props {
   experience: Experience;
   onExperience: (e: Experience) => void;
@@ -9,6 +8,10 @@ interface Props {
   onFocusBlock: (id: string, field: string | undefined) => void;
   outline: ReactNode;
 }
+const PROFILE_HINT = {
+  rookie: "One trade per run, at most 0.5% slippage",
+  advanced: "Expanded run limits, same hard safety checks",
+} as const;
 export function StrategyPanel({
   experience,
   onExperience,
@@ -19,15 +22,12 @@ export function StrategyPanel({
   const ready = validation && !validation.problems.length && validation.program;
   return (
     <aside className="editor-panel" aria-label="Strategy checks">
-      <div className="panel-heading">
-        <span className="eyebrow">CONFIGURATION</span>
-        <Icon name="settings" />
-      </div>
-      {outline}
       <section className="check-section" aria-labelledby="check-heading">
-        <h2 id="check-heading">Strategy checks</h2>
+        <h2 id="check-heading" className="visually-hidden">
+          Strategy checks
+        </h2>
         <div
-          className={`check-state ${ready ? "ready" : ""}`}
+          className={`check-state ${ready ? "ready" : validation ? "" : "pending"}`}
           role="status"
           aria-live="polite"
         >
@@ -55,30 +55,24 @@ export function StrategyPanel({
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="muted">
-            Connections and limits checked. Verified again on save.
-          </p>
-        )}
+        ) : null}
       </section>
+      {outline}
       <fieldset className="experience">
-        <legend>Safety profile</legend>
-        {(["rookie", "advanced"] as const).map((e) => (
-          <label key={e}>
-            <input
-              type="radio"
-              name="experience"
-              checked={experience === e}
-              onChange={() => onExperience(e)}
-            />
-            {e === "rookie" ? "Rookie" : "Advanced"}
-          </label>
-        ))}
-        <p className="muted">
-          {experience === "rookie"
-            ? "One trade per run · ≤ 0.5% slippage"
-            : "Expanded run limits · same hard safety checks"}
-        </p>
+        <legend>Profile</legend>
+        <div className="segmented-radio">
+          {(["rookie", "advanced"] as const).map((e) => (
+            <label key={e} title={PROFILE_HINT[e]}>
+              <input
+                type="radio"
+                name="experience"
+                checked={experience === e}
+                onChange={() => onExperience(e)}
+              />
+              {e === "rookie" ? "Rookie" : "Advanced"}
+            </label>
+          ))}
+        </div>
       </fieldset>
       <details className="technical">
         <summary>Compiler details</summary>

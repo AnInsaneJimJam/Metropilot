@@ -13,22 +13,22 @@ const fields = [
   [
     "tradingUsdMicros",
     "Trading",
-    "Virtual USDC units available to your strategy",
+    "Virtual USDC units for trades",
     6,
     "USDC",
   ],
-  ["hostingUsdMicros", "Hosting", "Separate operating limit", 6, "USD"],
+  ["hostingUsdMicros", "Hosting", "Operating limit", 6, "USD"],
   [
     "dataAndAiUsdMicros",
     "Data & AI",
-    "Only used by explicit AI blocks",
+    "Used only by AI blocks",
     6,
     "USD",
   ],
   [
     "monReserveAtomic",
     "Network reserve",
-    "Virtual MON kept for network costs",
+    "Virtual MON for network fees",
     18,
     "MON",
   ],
@@ -68,18 +68,11 @@ export function BudgetReview({
     .toString();
   return (
     <section className="review-page" aria-label="Budget review">
-      <div className="section-intro">
-        <span className="eyebrow">03 / REVIEW</span>
-        <h2>Set the boundaries.</h2>
-        <p>
-          Your rules decide what happens. These limits decide how far it can go.
-        </p>
-      </div>
       <div className="review-grid">
         <div className="budget-section">
           <div className="section-line">
-            <h3>Paper allocation</h3>
-            <span className="pill">Virtual funds</span>
+            <h3>Budget</h3>
+            <span className="muted">Virtual funds</span>
           </div>
           {fields.map(([key, label, hint, decimals, unit]) => (
             <div className="budget-row" key={key}>
@@ -116,7 +109,7 @@ export function BudgetReview({
             </div>
           ))}
           <div className="budget-total">
-            <span>Operating USD limit</span>
+            <span>Operating limit</span>
             <strong>
               {fromAtomic(total, 6)} <small>USD</small>
             </strong>
@@ -126,16 +119,19 @@ export function BudgetReview({
               {issue}
             </p>
           )}
-          <p className="note">
-            Trading funds become virtual USDC units at launch; this is not a USD conversion. Maximum 10,000 trading units. MON reserve is separate. These are saved
-            limits, not a deposit or a billed estimate. Trading USDC and operating USD are separate denominations.
+          <p
+            className="note"
+            title="Trading funds become virtual USDC units at launch; this is not a USD conversion. Maximum 10,000 trading units. MON reserve is separate. These are saved limits, not a deposit or a billed estimate."
+          >
+            Trading is in virtual USDC units, operating limits in USD. Limits
+            only, not a deposit.
           </p>
         </div>
         <aside className="review-aside">
-          <span className="eyebrow">MAXIMUM PER RUN</span>
+          <h3>Per run</h3>
           <dl className="review-limits">
             <div>
-              <dt>Trade intents</dt>
+              <dt>Trades</dt>
               <dd>{validation?.program?.bounds.intents ?? "—"}</dd>
             </div>
             <div>
@@ -143,29 +139,20 @@ export function BudgetReview({
               <dd>{validation?.program?.bounds.aiCalls ?? "—"}</dd>
             </div>
             <div>
-              <dt>Maximum slippage</dt>
+              <dt>Max slippage</dt>
               <dd>{bps.length ? `${Math.max(...bps) / 100}%` : "No trades"}</dd>
             </div>
           </dl>
-          <div className="boundary-note">
-            <h4>Paper stays paper.</h4>
-            <p>
-              No wallet is connected and no real funds move. Live mode requires
-              a verified execution route and explicit consent.
-            </p>
-          </div>
         </aside>
       </div>
       <div className="execution-gate">
-        <span className="status-dot amber" />
-        <div>
-          <h3>Paper launch runs on the local stack</h3>
-          <p>
-            Save this revision, then launch, pause and stop it in Operate. Cloud
-            hosting and live trading are not connected yet.
-          </p>
-        </div>
-        <button onClick={onOperate}>Go to Operate</button>
+        <span className="status-dot" aria-hidden="true" />
+        <p title="Paper launch runs on the local stack. Cloud hosting and live trading are not connected yet.">
+          Save this revision, then launch it on paper.
+        </p>
+        <button className="primary" onClick={onOperate}>
+          Go to Operate
+        </button>
       </div>
     </section>
   );

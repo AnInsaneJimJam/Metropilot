@@ -4,7 +4,8 @@ import type { ValueType } from '@monad-hack/strategy';
 import { asset, assetOptions, assetSymbol, connectorOptions, feedOptions, feedQuoteLabel, modelOptions, priceUnitOptions, readConnectorOptions, readOperationOptions, recordFieldOptions } from '../catalog.ts';
 import { bindName, currentMinute, humanAmount, humanDecimal, humanPrice, text, utcTimestamp } from './fields.ts';
 
-export const COLOUR = { root: '#343d40', trigger: '#535c36', action: '#354e5b', logic: '#534764', value: '#34564b', data: '#5c4657' } as const;
+/** Block style names; their colours live in the studio theme (studioTheme.ts) so the canvas and toolbox share one palette. */
+export const STYLE = { root: 'root_blocks', trigger: 'trigger_blocks', action: 'action_blocks', logic: 'logic_blocks', value: 'value_blocks', data: 'data_blocks' } as const;
 /** Warning ID for checks the block can make on its own fields. Live compiler errors use COMPILER_WARNING. */
 export const LOCAL_WARNING = 'local';
 export const COMPILER_WARNING = 'compiler';
@@ -19,18 +20,18 @@ function warnLocally(block: Block, warning: string | null): void {
   if (warning) localWarnings.set(block, warning); else localWarnings.delete(block);
   block.setWarningText(warning, LOCAL_WARNING);
 }
-const statement = (block: Block, colour: number | string, tooltip: string): void => {
+const statement = (block: Block, style: string, tooltip: string): void => {
   block.setPreviousStatement(true, CHECK.statement); block.setNextStatement(true, CHECK.statement);
-  block.setColour(colour); block.setTooltip(tooltip);
+  block.setStyle(style); block.setTooltip(tooltip);
 };
 const trigger = (block: Block, tooltip: string): void => {
   block.appendStatementInput(INPUT.body).setCheck(CHECK.statement).appendField('do');
   block.setPreviousStatement(true, CHECK.trigger); block.setNextStatement(true, CHECK.trigger);
-  block.setColour(COLOUR.trigger); block.setTooltip(tooltip);
+  block.setStyle(STYLE.trigger); block.setTooltip(tooltip);
 };
 const value = (block: Block, output: string | readonly string[], tooltip: string): void => {
   block.setOutput(true, typeof output === 'string' ? output : [...output]);
-  block.setColour(COLOUR.value); block.setTooltip(tooltip);
+  block.setStyle(STYLE.value); block.setTooltip(tooltip);
 };
 /** Named value inputs (notify/ai.decide `inputs`) kept in extraState so imported documents round-trip. */
 type Named = Block & { inputNames?: string[] };
@@ -91,10 +92,11 @@ const blocks: Record<string, object> = {
       this.appendDummyInput().appendField('per run: max steps').appendField(num(DEFAULTS.limits.maxStepsPerRun, 1, 1000), FIELD.maxSteps)
         .appendField('AI calls').appendField(num(DEFAULTS.limits.maxAiCallsPerRun, 0, 3), FIELD.maxAiCalls)
         .appendField('trades').appendField(num(DEFAULTS.limits.maxIntentsPerRun, 0, 3), FIELD.maxIntents)
-        .appendField('active seconds').appendField(num(DEFAULTS.limits.maxActiveSecondsPerRun, 1, 60), FIELD.maxActiveSeconds);
+        .appendField('active seconds').appendField(num(DEFAULTS.limits.maxActiveSecondsPerRun, 1, 60), FIELD.maxActiveSeconds)
+        .setVisible(false); // Run limits stay on the block but are edited in the inspector, keeping the canvas readable.
       this.appendStatementInput(INPUT.triggers).setCheck(CHECK.trigger).appendField('when');
-      this.setDeletable(false); this.setColour(COLOUR.root);
-      this.setTooltip('The strategy. Triggers are checked top to bottom; where blocks sit on the canvas never changes behaviour.');
+      this.setDeletable(false); this.setStyle(STYLE.root);
+      this.setTooltip('The strategy. Select it to edit run limits in the inspector. Triggers are checked top to bottom; where blocks sit on the canvas never changes behaviour.');
     },
   },
   [BLOCK.schedule]: {
@@ -124,14 +126,14 @@ const blocks: Record<string, object> = {
       this.appendValueInput(INPUT.condition).setCheck('Boolean').appendField('if');
       this.appendStatementInput(INPUT.then).setCheck(CHECK.statement).appendField('then');
       this.appendStatementInput(INPUT.else).setCheck(CHECK.statement).appendField('else');
-      statement(this, COLOUR.logic, 'Runs the first branch when the condition is true, otherwise the second.');
+      statement(this, STYLE.logic, 'Runs the first branch when the condition is true, otherwise the second.');
     },
   },
   [BLOCK.repeat]: {
     init(this: Block) {
       this.appendDummyInput().appendField('repeat').appendField(num(2, 1, 10), FIELD.count).appendField('times');
       this.appendStatementInput(INPUT.body).setCheck(CHECK.statement).appendField('do');
-      statement(this, COLOUR.logic, 'Repeats 1–10 times. At most two repeats can be nested.');
+      statement(this, STYLE.logic, 'Repeats 1–10 times. At most two repeats can be nested.');
     },
   },
   [BLOCK.swap]: {
@@ -142,7 +144,7 @@ const blocks: Record<string, object> = {
       this.appendDummyInput().appendField('for').appendField(new Blockly.FieldDropdown(assetOptions), FIELD.tokenOut)
         .appendField('on').appendField(new Blockly.FieldDropdown(() => connectorOptions('swap.exactInput')), FIELD.connector);
       this.appendDummyInput().appendField('max slippage').appendField(num(DEFAULTS.slippageBps, 0, 10_000), FIELD.slippage).appendField('bps');
-      statement(this, COLOUR.action, 'Proposes an exact-input swap. The executor checks budgets and policy before any fill.');
+      statement(this, STYLE.action, 'Proposes an exact-input swap. The executor checks budgets and policy before any fill.');
       const assets = assetOptions();
       if (assets.length > 1) { this.setFieldValue(assets[1]![1], FIELD.tokenIn); this.setFieldValue(assets[assets.length - 1]![1], FIELD.tokenOut); }
     },
@@ -151,14 +153,14 @@ const blocks: Record<string, object> = {
   [BLOCK.notify]: {
     init(this: Block) {
       this.appendDummyInput().appendField('notify').appendField(new Blockly.FieldTextInput('Strategy update', text(1000)), FIELD.message);
-      statement(this, COLOUR.action, 'Records a message in the run history.');
+      statement(this, STYLE.action, 'Records a message in the run history.');
     },
     ...namedInputs,
   },
   [BLOCK.stop]: {
     init(this: Block) {
       this.appendDummyInput().appendField('stop this run:').appendField(new Blockly.FieldTextInput('Done', text(500)), FIELD.reason);
-      this.setPreviousStatement(true, CHECK.statement); this.setColour(COLOUR.action);
+      this.setPreviousStatement(true, CHECK.statement); this.setStyle(STYLE.action);
       this.setTooltip('Ends this run only. Pausing or stopping the agent is an app control, not a block.');
     },
   },
@@ -167,7 +169,7 @@ const blocks: Record<string, object> = {
       this.appendDummyInput().appendField('read').appendField(new Blockly.FieldDropdown(readOperationOptions), FIELD.operation)
         .appendField('from').appendField(new Blockly.FieldDropdown(readConnectorOptions), FIELD.connector)
         .appendField('as').appendField(new Blockly.FieldTextInput('market', bindName), FIELD.bind);
-      statement(this, COLOUR.data, 'Reads a curated value (the venue\'s 30 s TWAP and when it was observed) and names it. Later blocks use its fields, e.g. market.price. Too-old data stops the run.');
+      statement(this, STYLE.data, 'Reads a curated value (the venue\'s 30 s TWAP and when it was observed) and names it. Later blocks use its fields, e.g. market.price. Too-old data stops the run.');
     },
   },
   [BLOCK.aiDecide]: {
@@ -177,7 +179,7 @@ const blocks: Record<string, object> = {
       this.appendDummyInput().appendField('answer as').appendField(new Blockly.FieldDropdown([['allow/skip decision', 'decision/1'], ['summary', 'summary/1']]), FIELD.outputSchema)
         .appendField('named').appendField(new Blockly.FieldTextInput('answer', bindName), FIELD.bind);
       this.appendDummyInput().appendField('timeout').appendField(num(DEFAULTS.ai.timeoutSeconds, 1, 60), FIELD.timeout).appendField('s, max tokens').appendField(num(DEFAULTS.ai.maxOutputTokens, 1, 8192), FIELD.maxOutputTokens);
-      statement(this, COLOUR.data, 'One bounded, metered AI call. Its answer is checked against the schema; a bad answer or timeout stops the run without trading. Use the decision in an if block. Right-click to add or remove inputs.');
+      statement(this, STYLE.data, 'One bounded, metered AI call. Its answer is checked against the schema; a bad answer or timeout stops the run without trading. Use the decision in an if block. Right-click to add or remove inputs.');
     },
     ...namedInputs,
   },
@@ -186,7 +188,7 @@ const blocks: Record<string, object> = {
       this.appendValueInput(INPUT.left);
       this.appendValueInput(INPUT.right).appendField(new Blockly.FieldDropdown([['=', 'eq'], ['≠', 'ne'], ['<', 'lt'], ['≤', 'lte'], ['>', 'gt'], ['≥', 'gte']]), FIELD.operator);
       this.setInputsInline(true); value(this, 'Boolean', 'Compares two values of the same type and unit.');
-      this.setColour(COLOUR.logic);
+      this.setStyle(STYLE.logic);
     },
   },
   [BLOCK.logical]: {
@@ -199,7 +201,7 @@ const blocks: Record<string, object> = {
         return undefined;
       }), FIELD.operator);
       this.setInputsInline(true); value(this, 'Boolean', 'True when all (and) or any (or) of the conditions are true.');
-      this.setColour(COLOUR.logic);
+      this.setStyle(STYLE.logic);
     },
     saveExtraState(this: Block & { operands?: number }) { return this.operands && this.operands > 2 ? { operands: this.operands } : null; },
     loadExtraState(this: Block & { operands?: number }, state: { operands?: unknown }) {
@@ -212,14 +214,14 @@ const blocks: Record<string, object> = {
   [BLOCK.not]: {
     init(this: Block) {
       this.appendValueInput(INPUT.operand(0)).setCheck('Boolean').appendField('not');
-      value(this, 'Boolean', 'True when the condition is false.'); this.setColour(COLOUR.logic);
+      value(this, 'Boolean', 'True when the condition is false.'); this.setStyle(STYLE.logic);
     },
   },
   [BLOCK.field]: {
     init(this: Block) {
       this.appendDummyInput().appendField(new Blockly.FieldTextInput('market', bindName), FIELD.binding).appendField('.')
         .appendField(new Blockly.FieldDropdown(recordFieldOptions), FIELD.recordField);
-      this.setOutput(true, null); this.setColour(COLOUR.data);
+      this.setOutput(true, null); this.setStyle(STYLE.data);
       this.setTooltip('A field of a value named by an earlier read or ask-AI block in the same or an enclosing stack.');
     },
   },
