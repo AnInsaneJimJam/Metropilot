@@ -15,6 +15,7 @@ if (!url && process.env["REQUIRE_DB"] === "1")
   throw new Error("DATABASE_URL required for broker persistence checks");
 describe("broker result persistence / PostgreSQL", { skip: !url }, () => {
   let admin: pg.Client, pool: pg.Pool, store: BrokerStore, scope: BrokerScope;
+  const disconnected: Promise<void>[] = [];
   const db = `broker_${randomBytes(6).toString("hex")}`;
   const provenance = {
     sourceRef: "paper.weth-usd",
@@ -32,6 +33,7 @@ describe("broker result persistence / PostgreSQL", { skip: !url }, () => {
     await seedPaper(c);
     await c.end();
     pool = new pg.Pool({ connectionString: u.toString() });
+    pool.on('connect', client => disconnected.push(new Promise(resolve => client.once('end', resolve))));
     store = new BrokerStore(pool);
     const seed = paperSeed();
     const deploymentId = newId();
@@ -68,6 +70,7 @@ describe("broker result persistence / PostgreSQL", { skip: !url }, () => {
   });
   after(async () => {
     await pool?.end();
+    await Promise.all(disconnected);
     await admin?.query(`drop database if exists ${db} with (force)`);
     await admin?.end();
   });
