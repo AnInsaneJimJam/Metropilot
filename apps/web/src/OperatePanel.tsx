@@ -5,6 +5,7 @@ import { api, ApiError } from "./api.ts";
 import type { SavedAgent } from "./api.ts";
 import type { Validation } from "./validation.ts";
 import { FundsPanel } from "./FundsPanel.tsx";
+import { LiveLaunch } from "./LiveLaunch.tsx";
 
 const ACTIVE_POLL_MILLIS = 30_000;
 const STOPPING_POLL_MILLIS = 5_000;
@@ -61,16 +62,28 @@ function describe(e: AuditEvent): string {
     case "timeline.entry":
       return String(p["message"]);
     case "transaction.stateChanged":
-      return `Paper trade ${String(p["state"])}${because(p["reason"] ?? p["conflict"])}`;
+      return `${p["mode"] === "live" ? "Live" : "Paper"} trade ${String(p["state"])}${because(p["reason"] ?? p["conflict"])}`;
     case "ledger.settled":
-      return "Virtual balances settled";
+      return p["mode"] === "live" ? "Wallet balances settled from the finalized receipt" : "Virtual balances settled";
     case "reservation.changed":
-      return `Virtual hold ${String(p["state"])}`;
+      return `${p["mode"] === "live" ? "Funds" : "Virtual"} hold ${String(p["state"])}`;
     case "policy.denied":
       return `Trade blocked${because(p["reason"])}`;
     default:
       return e.type;
   }
+}
+
+/** Explorer link for a live transaction hash carried by the event (Monad mainnet). */
+function txLink(e: AuditEvent) {
+  const p = e.payload as Record<string, unknown>;
+  const hash = p["mode"] === "live" ? p["transactionHash"] : undefined;
+  if (typeof hash !== "string" || !/^0x[0-9a-f]{64}$/.test(hash)) return null;
+  return (
+    <a className="tx-link" href={`https://monadvision.com/tx/${hash}`} target="_blank" rel="noreferrer noopener">
+      {hash.slice(0, 10)}…
+    </a>
+  );
 }
 
 export function OperatePanel({
@@ -91,6 +104,7 @@ export function OperatePanel({
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [versions, setVersions] = useState<Versions>();
   const [custody, setCustody] = useState<{ enabled: boolean; localFaucet: boolean }>({ enabled: false, localFaucet: false });
+  const [liveTarget, setLiveTarget] = useState<{ networkRef: string; connectorVersion: string | undefined }>();
   const [estimate, setEstimate] = useState<Estimate>();
   const [quota, setQuota] = useState<Quota>();
   const [busy, setBusy] = useState(false);
@@ -124,9 +138,10 @@ export function OperatePanel({
   }, [refresh]);
 
   useEffect(() => {
-    void api<{ paperVersions?: Versions; capabilities?: { custody?: boolean; localFaucet?: boolean } }>("/catalog")
+    void api<{ paperVersions?: Versions; liveVersions?: Versions; capabilities?: { custody?: boolean; localFaucet?: boolean; live?: boolean; liveNetworkRef?: string } }>("/catalog")
       .then((c) => {
         setVersions(c.paperVersions);
+        if (c.capabilities?.live && c.capabilities.liveNetworkRef) setLiveTarget({ networkRef: c.capabilities.liveNetworkRef, connectorVersion: c.liveVersions?.connectors["mainnet.uniswap-v3"] });
         setCustody({ enabled: Boolean(c.capabilities?.custody), localFaucet: Boolean(c.capabilities?.localFaucet) });
       })
       .catch(() => undefined);
@@ -262,6 +277,10 @@ export function OperatePanel({
           {deployment && (
             <dl className="review-limits operate-facts">
               <div>
+                <dt>Mode</dt>
+                <dd>{deployment.mode === "live" ? "Live — real funds" : "Paper"}</dd>
+              </div>
+              <div>
                 <dt>Generation</dt>
                 <dd>{deployment.generation}</dd>
               </div>
@@ -341,6 +360,10 @@ export function OperatePanel({
               </button>
             )}
           </div>
+          {!live && !stopping && liveTarget && agentId && (
+            <LiveLaunch agentId={agentId} revisionId={current.revisionId} networkRef={liveTarget.networkRef} connectorVersion={liveTarget.connectorVersion}
+              disabled={busy || dirty || !connected} onLaunched={() => void refresh()} />
+          )}
           {stopping && deployment && (
             <p className="note" role="status">
               Stopping — waiting for {deployment.openIntents ?? 0} open paper trade{deployment.openIntents === 1 ? "" : "s"} to settle or be
@@ -408,6 +431,7 @@ export function OperatePanel({
                 <li key={e.sequence}>
                   <span className="muted">{time(e.occurredAt)}</span>
                   <span>{describe(e)}</span>
+                  {txLink(e)}
                 </li>
               ))}
             </ol>

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "5.2.8",
+    "@privy-io/react-auth": "3.46.0",
     "@monad-hack/contracts": "workspace:*",
     "@monad-hack/strategy": "workspace:*",
     "blockly": "13.3.0",

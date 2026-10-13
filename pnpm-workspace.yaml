@@ -5,3 +5,11 @@ packages:
 # Exact versions only; ranges would let the lockfile and manifests drift.
 savePrefix: ''
 engineStrict: true
+
+# Native accelerators and a postinstall from the Privy login SDK's dependency tree; every one has a JavaScript
+# fallback, so their build scripts stay off.
+allowBuilds:
+  '@reown/appkit': false
+  bufferutil: false
+  keccak: false
+  utf-8-validate: false

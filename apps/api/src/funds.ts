@@ -131,6 +131,8 @@ export class FundsService {
     return {
       address: w.address, chainId: w.chainId, networkRef: w.networkRef, provider: w.provider,
       acceptedAssets: config.assets.filter((a) => a.funding).map((a) => ({ assetRef: a.assetRef, token: a.token, decimals: a.decimals })),
+      // Trade proceeds the wallet can hold and withdraw but never receive as deposits (for display decimals).
+      tradedAssets: (config.tradedAssets ?? []).map((a) => ({ assetRef: a.assetRef, token: a.token, decimals: a.decimals })),
       note: 'Deposits credit only after the block is finalized. Send only the listed assets; other tokens are quarantined, not credited.',
     };
   }

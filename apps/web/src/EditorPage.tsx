@@ -12,7 +12,7 @@ import { BudgetReview, DEFAULT_BUDGET } from "./BudgetReview.tsx";
 import { fieldOf } from "./validation.ts";
 import { useSaveRevision } from "./useSaveRevision.ts";
 import { useBlocklyStudio, fitWorkspace } from "./useBlocklyStudio.ts";
-import { api, ApiError } from "./api.ts";
+import { api, ApiError, HOSTED_PRIVY_APP_ID } from "./api.ts";
 import type { SaveRequest, SavedAgent } from "./api.ts";
 import { Icon } from "./Icon.tsx";
 import { editorCatalog } from "./catalog.ts";
@@ -22,7 +22,7 @@ import { WorkspaceSidebar } from "./WorkspaceSidebar.tsx";
 import { PresetPicker } from "./PresetPicker.tsx";
 import { StrategyScope } from "./StrategyScope.tsx";
 import { OperatePanel } from "./OperatePanel.tsx";
-export function EditorPage() {
+export function EditorPage({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [stage, setStage] = useState<Stage>("build");
   const [experience, setExperience] = useState<Experience>("rookie");
   const [name, setName] = useState(PRESETS[0]!.title);
@@ -60,7 +60,7 @@ export function EditorPage() {
   );
   const refresh = useCallback(async () => {
     try {
-      await api("/session");
+      if (!HOSTED_PRIVY_APP_ID) await api("/session");
       const list = await api<{ items: SavedAgent[] }>("/agents?limit=100");
       setAgents(list.items);
       setConnected(true);
@@ -219,8 +219,13 @@ export function EditorPage() {
             <span>{current ? "Saved draft" : "New draft"}</span>
           </div>
           <span className="local-label">
-            <span className="environment-mark" /> LOCAL · MAINNET DATA
+            <span className="environment-mark" /> {HOSTED_PRIVY_APP_ID ? "HOSTED" : "LOCAL"} · MAINNET DATA
           </span>
+          {onSignOut && (
+            <button className="link" onClick={onSignOut}>
+              Sign out
+            </button>
+          )}
         </header>
         <main id="workspace">
           <StrategyHeading

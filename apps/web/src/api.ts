@@ -1,6 +1,8 @@
 import type { GeneratedContractMap } from "@monad-hack/contracts";
 export type SavedAgent = GeneratedContractMap["controlAgent"];
 export type SaveRequest = GeneratedContractMap["controlSave"];
+/** Hosted builds sign in with Privy (D56); local development uses the built-in workspace session instead. */
+export const HOSTED_PRIVY_APP_ID: string | undefined = import.meta.env["VITE_PRIVY_APP_ID"] || undefined;
 export class ApiError extends Error {
   readonly status: number;
   readonly nodeId: string | undefined;
