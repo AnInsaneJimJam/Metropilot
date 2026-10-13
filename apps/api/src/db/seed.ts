@@ -98,7 +98,8 @@ function completePaperCatalog(): CatalogSeed[] {
       },
     })),
     ...Object.entries(c.feeds).map(([ref, f]) => ({
-      kind: 'feed', ref, version, modes: paper, definition: { networkRef: c.connectors[f.connectorRef]!.networkRef, ...f },
+      kind: 'feed', ref, version, modes: paper,
+      definition: { networkRef: c.connectors[f.connectorRef]!.networkRef, ...f, connectorVersion: connectorVersion[f.connectorRef] ?? version },
     })),
     ...Object.entries(c.modelProfiles).map(([ref, m]) => ({
       kind: 'modelProfile', ref, version, modes: paper,
@@ -113,7 +114,8 @@ function completePaperCatalog(): CatalogSeed[] {
  * catalog. The market-data rows from catalogSeeds carry the connector manifests but not the compiler's fields, and
  * rows are immutable, so the complete definitions are new versions: connectors and feeds one minor version up,
  * `paper-monad` 1.2.0 (after the synthetic 1.1.0). Each connector keeps its manifest and capabilities, which the
- * executor reads, and its adapter version is the marketCatalog version.
+ * executor reads, and its adapter version is the marketCatalog version. Feeds name the connector row version
+ * they serve, so a launch pinning the synthetic `paper.uniswap@1.0.1` does not also get the market pool's feed.
  */
 function completeMarketCatalog(): CatalogSeed[] {
   const c = JSON.parse(JSON.stringify(marketCatalog)) as typeof marketCatalog;
@@ -135,7 +137,7 @@ function completeMarketCatalog(): CatalogSeed[] {
       const source = SOURCES.find((m) => m.feedRef === ref)!;
       return {
         kind: 'feed', ref, version: '1.1.0', modes: paper,
-        definition: { networkRef: c.connectors[f.connectorRef]!.networkRef, ...f, method: source.method, sourceChainId: 143, poolAddress: source.pool },
+        definition: { networkRef: c.connectors[f.connectorRef]!.networkRef, ...f, connectorVersion: next(c.connectors[f.connectorRef]!.version), method: source.method, sourceChainId: 143, poolAddress: source.pool },
       };
     }),
   ];

@@ -6,6 +6,9 @@ import type { SavedAgent } from "./api.ts";
 import type { Validation } from "./validation.ts";
 import { FundsPanel } from "./FundsPanel.tsx";
 
+const ACTIVE_POLL_MILLIS = 30_000;
+const STOPPING_POLL_MILLIS = 5_000;
+
 type Deployment = GeneratedContractMap["agentDeployment"];
 type RunSummary = GeneratedContractMap["runSummary"];
 type RunDetail = GeneratedContractMap["runDetail"];
@@ -138,7 +141,8 @@ export function OperatePanel({
     source.addEventListener("audit", (message) => {
       const event = JSON.parse((message as MessageEvent<string>).data) as AuditEvent;
       setEvents((previous) => (previous.some((e) => e.sequence === event.sequence) ? previous : [event, ...previous].slice(0, 60)));
-      if (event.type === "run.stateChanged" || event.type === "deployment.stateChanged") void refresh();
+      // A paper trade settling changes the open-trade count while stopping, so it refreshes too.
+      if (event.type === "run.stateChanged" || event.type === "deployment.stateChanged" || event.type === "transaction.stateChanged") void refresh();
     });
     source.addEventListener("reset", () => {
       setTrimmed(true);
@@ -146,6 +150,16 @@ export function OperatePanel({
     });
     return () => source.close();
   }, [agentId, connected, refresh]);
+
+  // Time used keeps growing with no event while an agent runs idle, and a drain can wait on a quiet executor: poll
+  // the deployment and quota on a bounded interval while active or stopping (never while paused or stopped).
+  const polling = deployment?.desiredState === "active" || deployment?.desiredState === "stopping";
+  const pollMillis = deployment?.desiredState === "stopping" ? STOPPING_POLL_MILLIS : ACTIVE_POLL_MILLIS;
+  useEffect(() => {
+    if (!agentId || !connected || !polling) return;
+    const timer = setInterval(() => void refresh(), pollMillis);
+    return () => clearInterval(timer);
+  }, [agentId, connected, polling, pollMillis, refresh]);
 
   const plan = useMemo(() => {
     const strategy = validation?.strategy;

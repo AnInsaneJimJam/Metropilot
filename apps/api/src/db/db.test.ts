@@ -223,7 +223,7 @@ describe('database', { skip }, () => {
       await rejects(db.query(`insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, '019a0000-0000-7000-8000-0000000000af', $2, 1)`, [seedTenantId, otherAgent]), '23503');
     });
 
-    test('identities (0013): one tenant per provider subject; a session cannot name another tenant', async () => {
+    test('identities (0019): one tenant per provider subject; a session cannot name another tenant', async () => {
       await db.query(`insert into identities (provider, subject, tenant_id) values ('privy', 'did:privy:cm0dbcheck00001', $1)`, [otherTenant]);
       await rejects(db.query(`insert into identities (provider, subject, tenant_id) values ('privy', 'did:privy:cm0dbcheck00001', $1)`, [seedTenantId]), '23505');
       const session = (tenant: string, hash = randomBytes(32), expires = "now() + interval '1 hour'") =>
@@ -272,7 +272,7 @@ describe('database', { skip }, () => {
       );
     });
 
-    test('catalog pins (0012): a deployment-manifest/2 must carry its catalog pins; /1 stays valid', async () => {
+    test('catalog pins (0018): a deployment-manifest/2 must carry its catalog pins; /1 stays valid', async () => {
       const set = (manifest: unknown) => db.query('update deployments set manifest = $2 where id = $1', [deployment, manifest]);
       await rejects(set({}), '23514');
       await rejects(set({ schemaVersion: 'deployment-manifest/2' }), '23514');
@@ -468,7 +468,7 @@ describe('database', { skip }, () => {
       await rejects(intent('019a0000-0000-7000-8000-0000000000b6', 'paper', 'reserved', '0x' + 'b5'.repeat(32)), '23505');
     });
 
-    test('audit retention (0014): only prune_audit_events deletes, only an old prefix, never money rows', async () => {
+    test('audit retention (0020): only prune_audit_events deletes, only an old prefix, never money rows', async () => {
       const tenant = '019a0000-0000-7000-8000-0000000000e1';
       await db.query(`insert into tenants (id, auth_subject) values ($1, 'retention-check')`, [tenant]);
       const old = new Date(Date.now() - 40 * 86_400_000).toISOString();
@@ -510,7 +510,7 @@ describe('database', { skip }, () => {
       await rejects(db.query('update tenant_streams set retained_after = 7 where tenant_id = $1', [tenant]), '23514');
     });
 
-    test('paper usage (0015): one open interval per deployment, ordered times, one limits row', async () => {
+    test('paper usage (0021): one open interval per deployment, ordered times, one limits row', async () => {
       // The stopped deployment created by the executor records test above.
       const deployment = '019a0000-0000-7000-8000-0000000000b1';
       const interval = (generation: number, start: string, end: string | null) => db.query(

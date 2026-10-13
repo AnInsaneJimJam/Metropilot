@@ -4,7 +4,7 @@ import pg from "pg";
 import { ConfigError, databaseUrl, requireEnv, type Env } from "./config.ts";
 import { createApp } from "./app.ts";
 import { ControlStore } from "./store.ts";
-import { LifecycleService } from "./lifecycle.ts";
+import { LifecycleService, MARKET_PAPER_FUNDING_ASSET } from "./lifecycle.ts";
 import { CatalogResolver } from "./catalog.ts";
 import { RuntimeControlStore } from "./runtime-control/store.ts";
 import { SessionService } from "./auth/sessions.ts";
@@ -62,6 +62,8 @@ export function createHostedApp(pool: pg.Pool, config: HostedConfig) {
     runtime: new RuntimeControlStore({ pool }),
     runtimeImageDigest: config.runtimeImageDigest,
     catalog: new CatalogResolver(),
+    // Same funding as the local market stack: the market presets spend paper.USDC.
+    paperFundingAsset: MARKET_PAPER_FUNDING_ASSET,
   });
   return createApp({
     store: new ControlStore(pool),

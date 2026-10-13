@@ -19,6 +19,8 @@ const BUDGET_ERROR = `(select b.response->'reason' || jsonb_build_object('nodeId
   and b.response->>'disposition'='refused' and b.response#>>'{reason,code}'='BROKER_BUDGET_EXHAUSTED'
   order by b.received_at desc,b.id desc limit 1)`;
 
+/** Virtual denomination the market presets trade from (D42): the stack and the hosted entry point both fund it. */
+export const MARKET_PAPER_FUNDING_ASSET = 'paper.USDC';
 const ESTIMATE_MINUTES = 15;
 /** Paper policy defaults by experience (product.md modes); live authority is never granted here. */
 const PAPER_POLICY: Record<Experience, { maxSlippageBps: number; dailyActionCount: number }> = {

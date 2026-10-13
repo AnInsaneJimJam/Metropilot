@@ -80,3 +80,38 @@ test("Operate: stopping waits for open trades, shows quota usage and readable re
   await expect(activity).toContainText("Deployment active → stopping (generation 1) · Stopping: The agent is stopping");
   await expect(operate.getByText("Older activity was removed by retention")).toBeVisible();
 });
+
+test("Operate: quota time and the open-trade count refresh on their own while stopping", async ({ page }) => {
+  await page.clock.install();
+  const state = { openIntents: 2, usedSeconds: 1800 };
+  await page.route("**/v1/session", (route) => json(route, { tenant: "local" }));
+  await page.route("**/v1/agents?limit=100", (route) => json(route, { items: [agent], nextCursor: null }));
+  await page.route("**/v1/catalog", (route) => json(route, { paperVersions: { connectors: { "paper.uniswap": "1.1.0" }, modelProfiles: {} } }));
+  await page.route(`**/v1/agents/${agentId}/deployment`, (route) =>
+    json(route, {
+      schemaVersion: "agent-deployment/1", agentId, deploymentId, generation: "1", mode: "paper", desiredState: "stopping", openIntents: state.openIntents,
+      strategyRevisionId: agent.revisionId, manifestHash: `0x${"ef".repeat(32)}`, updatedAt: "2026-10-13T12:00:00.000Z",
+    }));
+  await page.route(`**/v1/agents/${agentId}/runs?limit=20`, (route) => json(route, { items: [], nextCursor: null }));
+  await page.route("**/v1/quota", (route) =>
+    json(route, {
+      schemaVersion: "paper-quota/1", concurrentAgents: { used: 0, limit: 1 }, dailySeconds: { used: state.usedSeconds, limit: 7200, resetsAt: "2026-10-14T00:00:00.000Z" },
+      sessionSecondsLimit: 3600, sessions: [], admissionOpen: true,
+    }));
+  // A quiet stream: no event arrives, so only the bounded poll can notice the changes.
+  await page.route(`**/v1/agents/${agentId}/stream`, (route) => route.fulfill({ status: 204 }));
+
+  await page.goto("/");
+  await expect(page.getByText("Control API connected")).toBeVisible();
+  await page.getByRole("button", { name: /^Threshold sale Draft/ }).click();
+  await page.getByRole("button", { name: /Operate$/ }).first().click();
+  const operate = page.getByRole("region", { name: "Operate" });
+  await expect(operate.getByRole("status")).toContainText("waiting for 2 open paper trades");
+  await expect(operate.getByLabel("Paper quota")).toContainText("Paper time today: 30 of 120 min");
+
+  state.openIntents = 1;
+  state.usedSeconds = 2400;
+  await page.clock.fastForward(6_000);
+  await expect(operate.getByRole("status")).toContainText("waiting for 1 open paper trade to settle");
+  await expect(operate.getByLabel("Paper quota")).toContainText("Paper time today: 40 of 120 min");
+});

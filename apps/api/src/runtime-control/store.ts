@@ -358,22 +358,25 @@ export class RuntimeControlStore {
    * with the quota as the reason. Pause, not stop: history stays and the agent can resume in a new day or session.
    */
   async enforcePaperQuotas(): Promise<{ deploymentId: string; reason: QuotaReason }[]> {
-    const now = new Date(this.#now());
     const limits = await paperLimits(this.#pool);
+    const exhausted = async (db: pg.Pool | pg.PoolClient, d: { id: string; tenant_id: string }, now: Date): Promise<QuotaReason | undefined> =>
+      (await sessionSeconds(db, d.id, now)) >= limits.sessionSeconds ? 'QUOTA_SESSION'
+        : (await dailySeconds(db, d.tenant_id, now)) >= limits.dailySeconds ? 'QUOTA_DAILY' : undefined;
+    const scannedAt = new Date(this.#now());
     const { rows } = await this.#pool.query<{ id: string; tenant_id: string }>(`select id, tenant_id from deployments where mode = 'paper' and desired_state = 'active' order by id`);
     const paused: { deploymentId: string; reason: QuotaReason }[] = [];
     for (const d of rows) {
-      const reason: QuotaReason | undefined = (await sessionSeconds(this.#pool, d.id, now)) >= limits.sessionSeconds ? 'QUOTA_SESSION'
-        : (await dailySeconds(this.#pool, d.tenant_id, now)) >= limits.dailySeconds ? 'QUOTA_DAILY' : undefined;
-      if (!reason) continue;
-      try {
-        await this.pause(d.id, { kind: 'system' }, reason);
-      } catch (error) {
-        // Stopped (or stopping) since the scan: nothing left to pause.
-        if (error instanceof RunControlError) continue;
-        throw error;
-      }
-      paused.push({ deploymentId: d.id, reason });
+      if (!(await exhausted(this.#pool, d, scannedAt))) continue;
+      // Decide again under the deployment lock with a fresh clock: a sweep (or a lock wait) that crosses UTC
+      // midnight must not pause an agent for yesterday's allowance, and a pause or stop since the scan wins.
+      const reason = await this.#tx(async (c) => {
+        const current = await this.#lockDeployment(c, d.id);
+        if (current.desired_state !== 'active') return undefined;
+        const confirmed = await exhausted(c, d, new Date(this.#now()));
+        if (confirmed) await this.pauseIn(c, d.id, { kind: 'system' }, confirmed);
+        return confirmed;
+      });
+      if (reason) paused.push({ deploymentId: d.id, reason });
     }
     return paused;
   }

@@ -462,6 +462,24 @@ describe('paper stack end to end', { skip }, () => {
     assert.equal(await sessionSeconds(s.pool, deploymentId, new Date('2026-01-02T12:00:00Z')), 85 * 60);
   });
 
+  test('quota (#17): a sweep that crosses UTC midnight rechecks under the lock and does not pause for yesterday', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    const deploymentId = (await s.pool.query<{ id: string }>('select id from deployments where agent_id = $1', [agentId])).rows[0]!.id;
+    // Three hours used on 2026-01-05 (over the 120-minute day); the session limit is lifted so only the day matters.
+    await s.pool.query('update platform_limits set paper_session_minutes = 100000');
+    await s.pool.query(`insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at, ended_at) values ($1, $2, 10, '2026-01-05T21:00:00Z', '2026-01-05T23:59:00Z')`, [s.tenant, deploymentId]);
+    // The scan reads the clock at 23:59:59; by the time the deployment is locked it is past midnight.
+    const clock = ['2026-01-05T23:59:59.000Z'];
+    const sweeper = new RuntimeControlStore({ pool: s.pool, now: () => clock.shift() ?? '2026-01-06T00:00:01.000Z' });
+    assert.deepEqual(await sweeper.enforcePaperQuotas(), [], "yesterday's allowance does not pause today's agent");
+    assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'active');
+    // Still exhausted under the lock (same day): the sweep pauses with the reason.
+    const sameDay = new RuntimeControlStore({ pool: s.pool, now: () => '2026-01-05T23:59:59.000Z' });
+    assert.deepEqual((await sameDay.enforcePaperQuotas()).map((p) => p.reason), ['QUOTA_DAILY']);
+  });
+
   test('drain-before-stop (#20): stop with an open paper intent stays stopping until the executor settles it', async () => {
     const s = await stack({ dispatchInline: false });
     await s.observe();
@@ -631,7 +649,7 @@ describe('paper stack end to end', { skip }, () => {
     assert.deepEqual(pins.map((p) => `${p.kind}:${p.ref}@${p.version}`), [
       'asset:paper.AUSD@1.0.0', 'asset:paper.MON@1.1.0', 'asset:paper.USD@1.1.0', 'asset:paper.USDC@1.0.0', 'asset:paper.WETH@1.1.0', 'asset:paper.WMON@1.0.0',
       'connector:paper.aave@1.1.0', 'connector:paper.curve@1.1.0', 'connector:paper.kuru@1.1.0', 'connector:paper.uniswap@1.0.1',
-      'feed:paper.aave-ausd-usd@1.1.0', 'feed:paper.aave-usdc-usd@1.1.0', 'feed:paper.ausd-usdc@1.1.0', 'feed:paper.weth-usd@1.1.0', 'feed:paper.weth-usd-kuru@1.1.0', 'feed:paper.wmon-usdc@1.1.0',
+      'feed:paper.aave-ausd-usd@1.1.0', 'feed:paper.aave-usdc-usd@1.1.0', 'feed:paper.ausd-usdc@1.1.0', 'feed:paper.weth-usd@1.1.0', 'feed:paper.weth-usd-kuru@1.1.0',
       'modelProfile:paper.kimi@1.1.0', 'network:paper-monad@1.2.0', 'resourceProfile:paper-small-v1@1.0.0',
     ]);
     // The catalog artifact the runtime fetches is the resolved catalog the manifest hashes.

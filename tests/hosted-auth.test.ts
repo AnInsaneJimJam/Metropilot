@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
 import pg from 'pg';
-import { PRESETS, syntheticCatalog, workspaceFromStrategy } from '../packages/strategy/src/index.ts';
+import { MARKET_PRESETS, PRESETS, syntheticCatalog, workspaceFromStrategy } from '../packages/strategy/src/index.ts';
+import { marketCatalog } from '../packages/connectors/src/registry.ts';
 import { migrate } from '../apps/api/src/db/migrate.ts';
 import { seedPaper } from '../apps/api/src/db/seed.ts';
 import { createHostedApp, hostedConfig } from '../apps/api/src/hosted.ts';
@@ -183,5 +184,29 @@ describe('hosted sign-in and tenant isolation', { skip }, () => {
     const bobQuota = (await bob('GET', '/quota')).json;
     assert.deepEqual([bobQuota.concurrentAgents.used, bobQuota.dailySeconds.used, bobQuota.sessions], [0, 0, []]);
     assert.equal((await alice('GET', '/quota')).json.sessions[0].agentId, agentId);
+  });
+
+  test('a hosted market purchase is funded in paper.USDC, the asset the market presets spend', async () => {
+    const carol = as(await login('did:privy:cm0carolmarket01'));
+    const preset = MARKET_PRESETS.find((p) => p.id === 'uniswap_threshold_purchase')!;
+    const saved = await carol('POST', '/agents', { schemaVersion: 'control-workspace/1', name: 'Carol', experience: 'rookie', workspace: workspaceFromStrategy(preset.strategy, marketCatalog), budget }, { 'idempotency-key': key() });
+    assert.equal(saved.status, 201, JSON.stringify(saved.json));
+    const agentId = saved.json.id as string;
+    const estimate = await carol('POST', `/agents/${agentId}/estimates`, {});
+    const versions = (await carol('GET', '/catalog')).json.paperVersions;
+    const op = await carol('POST', `/agents/${agentId}/deployments`, {
+      schemaVersion: 'deployment/1', agentId, strategyRevisionId: saved.json.revisionId, mode: 'paper', networkRef: 'paper-monad',
+      connectorSelections: [{ ref: 'paper.uniswap', version: versions.connectors['paper.uniswap'], capabilities: [...marketCatalog.connectors['paper.uniswap']!.actions] }],
+      modelProfiles: [], resourceProfileRef: 'paper-small-v1',
+      budgetVersion: estimate.json.budgetVersion, policyVersion: estimate.json.policyVersion, estimateId: estimate.json.id,
+    }, { 'idempotency-key': key() });
+    assert.equal(op.status, 202, JSON.stringify(op.json));
+    const { rows } = await pool.query<{ asset_ref: string; available: string }>(
+      `select b.asset_ref, b.available from simulation_balances b join deployments d on d.tenant_id = b.tenant_id and d.simulation_account_id = b.account_id
+       where d.agent_id = $1 and b.asset_ref in ('paper.USDC', 'paper.USD')`, [agentId],
+    );
+    const balance = Object.fromEntries(rows.map((r) => [r.asset_ref, r.available]));
+    assert.equal(balance['paper.USDC'], budget.tradingUsdMicros, 'the trading budget funds the token the purchase spends');
+    assert.equal(balance['paper.USD'], '0');
   });
 });

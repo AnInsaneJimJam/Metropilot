@@ -83,6 +83,10 @@ describe('catalog resolution / real PostgreSQL', { skip: !url }, () => {
     assert.deepEqual(plain(catalog.connectors['paper.uniswap']), plain(syntheticCatalog.connectors['paper.uniswap']));
     assert.deepEqual(plain(catalog.reads['paper.uniswap']), plain(syntheticCatalog.reads['paper.uniswap']));
     assert.deepEqual(plain(catalog.feeds['paper.weth-usd']), plain(syntheticCatalog.feeds['paper.weth-usd']));
+    // The market pool's feed serves paper.uniswap@1.2.0, so it is left out: the broker needs one feed per connector.
+    assert.deepEqual(Object.keys(catalog.feeds).filter((ref) => catalog.feeds[ref]!.connectorRef === 'paper.uniswap'), ['paper.weth-usd']);
+    const market = await resolver.resolve(pool, { mode: 'paper', networkRef: 'paper-monad', connectors: { 'paper.uniswap': '1.2.0' } });
+    assert.deepEqual(Object.keys(market.catalog.feeds).filter((ref) => market.catalog.feeds[ref]!.connectorRef === 'paper.uniswap'), ['paper.wmon-usdc']);
   });
 
   test('a launch resolve pins selections, the network and the resource profile', async () => {

@@ -1,5 +1,5 @@
 // Paper sandbox quotas and global admission (issue #17, D58; product.md sandbox contract). Usage comes from
-// paper_active_intervals (migration 0015): a session is one launch (one simulation account), so pause and resume
+// paper_active_intervals (migration 0021): a session is one launch (one simulation account), so pause and resume
 // never reset it; the day is the UTC day. Callers pass their own clock so tests can cross midnight.
 import type pg from 'pg';
 

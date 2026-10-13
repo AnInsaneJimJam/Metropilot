@@ -35,7 +35,7 @@ The runtime never reads your database, never subscribes to events and has no tim
 | `deployments` (0005 columns) | Network ref, policy and budget versions, resource profile, model pins, estimate, simulation account, `manifest` and `manifest_hash`; `desired_state` is `active`/`paused`/`stopping`/`stopped` ([D37](../decisions.md)) | Paper ⇔ simulation account; at most one non-stopped deployment per agent; FKs to `policies`, `estimates`, `simulation_accounts` |
 | `deployment_operations` | Asynchronous lifecycle operations (`deploy`, `pause`, `resume`, `stop`) | Idempotency rows live in `control_requests` |
 | `market_observations` | Finalized price observations from `ingestPrice`; the executor's recorded market | Primary key `(feed_ref, source_event_key)` |
-| `tenant_streams`, `audit_events` | Per-tenant audit stream (`audit-event/2`), written in the same transaction as each change; `retained_after` is the retention floor (0014) | Immutable except `prune_audit_events` (never money rows); `unique(source)` makes republishing a no-op |
+| `tenant_streams`, `audit_events` | Per-tenant audit stream (`audit-event/2`), written in the same transaction as each change; `retained_after` is the retention floor (0020) | Immutable except `prune_audit_events` (never money rows); `unique(source)` makes republishing a no-op |
 
 Normalized source events (`events`) are not part of this migration; ingestion owns them.
 
@@ -77,7 +77,7 @@ Build each [`runtime-assignment/1`](../../packages/contracts/schemas/runtime-ass
 | `lease.fencingToken` | Previous token for this run + 1, as a decimal string |
 | `lease.expiresAt` | Now + 30 s; heartbeats every 10 s extend it ([runtime.md](../specs/runtime.md)) |
 | `deployment.generation` | Current generation as a decimal string |
-| `deployment.manifestHash` | `contentHash` of the deployment's `deployment-manifest/2` record (`/1` for deployments launched before migration 0012; D55) (`deployments.manifest_hash`); a deployment without one is not offered work |
+| `deployment.manifestHash` | `contentHash` of the deployment's `deployment-manifest/2` record (`/1` for deployments launched before migration 0018; D55) (`deployments.manifest_hash`); a deployment without one is not offered work |
 | `deployment.runtimeImageDigest` | Digest of the pinned runtime image; the runtime refuses any other |
 | `deployment.connectorVersions` | Manifest pins `{connectorRef: "MAJOR.MINOR.PATCH"}` for every connector the strategy uses |
 | `run.triggerId` | The strategy's own trigger ID (for example `crossing`), never a UUID |

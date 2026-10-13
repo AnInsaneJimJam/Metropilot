@@ -44,6 +44,7 @@ const KIND_ORDER: readonly CatalogKind[] = ['network', 'asset', 'connector', 'fe
 const KIND_LABEL: Record<CatalogKind, string> = {
   network: 'network', connector: 'connector', asset: 'asset', feed: 'price feed', modelProfile: 'model profile', resourceProfile: 'resource profile',
 };
+const SEMVER = /^\d+\.\d+\.\d+$/;
 const VENUES = new Set(['uniswap-v3', 'kuru', 'curve', 'aave']);
 const SCALAR_TYPES = new Set(['Boolean', 'Integer', 'Decimal', 'Timestamp', 'Enum', 'Text']);
 const REF = /^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9][A-Za-z0-9_-]*)*$/;
@@ -97,8 +98,11 @@ const shapes = {
     const source = d['source'];
     if ((source !== 'poolTwap' && source !== 'poolEma' && source !== 'nativeOracle') || d['finality'] !== 'finalized') return undefined;
     if (!isInt(d['windowSeconds'], source === 'nativeOracle' ? 0 : 1, 86_400)) return undefined;
+    // Optional: the connector row version this feed serves (two versions of one connector can read different pools).
+    if (d['connectorVersion'] !== undefined && !SEMVER.test(String(d['connectorVersion']))) return undefined;
     return {
       networkRef: d['networkRef'],
+      connectorVersion: d['connectorVersion'] as string | undefined,
       entry: { baseAssetRef: d['baseAssetRef'], quoteUnit: d['quoteUnit'], source, connectorRef: d['connectorRef'], windowSeconds: d['windowSeconds'], finality: 'finalized' as const },
     };
   },
@@ -179,7 +183,7 @@ export class CatalogResolver {
     const capabilities: Record<string, readonly string[]> = {};
     const onNetwork = (networkRef: unknown) => input.networkRef === undefined || networkRef === input.networkRef;
     const ordered = [...chosen.values()].sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.ref < b.ref ? -1 : 1));
-    const pending: { row: Row; feed: { networkRef: unknown; entry: { baseAssetRef: string; connectorRef: string } } }[] = [];
+    const pending: { row: Row; feed: { networkRef: unknown; connectorVersion: string | undefined; entry: { baseAssetRef: string; connectorRef: string } } }[] = [];
     for (const row of ordered) {
       if (!isObj(row.definition)) continue;
       const d = row.definition;
@@ -232,6 +236,10 @@ export class CatalogResolver {
     }
     for (const { row, feed } of pending) {
       if (!catalog.connectors[feed.entry.connectorRef] || !catalog.assets[feed.entry.baseAssetRef]) continue;
+      // A launch that selects another version of the feed's connector does not get this feed: the broker needs the
+      // one feed the pinned connector reads. Drafts select nothing, so every enabled feed stays available to them.
+      const selected = input.connectors?.[feed.entry.connectorRef];
+      if (selected !== undefined && feed.connectorVersion !== undefined && feed.connectorVersion !== selected) continue;
       catalog.feeds[row.ref] = feed.entry;
       used.push(row);
     }
