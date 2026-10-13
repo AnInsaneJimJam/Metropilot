@@ -11,6 +11,7 @@ import { DepositScanner, NATIVE, WithdrawalGateway, reconcileWallets } from "@mo
 import { FundsService } from "./funds.ts";
 import { assertCustodyCatalog, custodyFromEnv, verifyCustodyChain } from "./funds-config.ts";
 
+if (process.env['KIMI_API_KEY'] || process.env['MOONSHOT_API_KEY']) throw new Error('Model credentials are restricted to the broker process.');
 // Explicitly local-only until the production identity adapter and HTTPS deployment are supplied.
 if (
   process.env["LOCAL_WORKSPACE"] !== "1" ||

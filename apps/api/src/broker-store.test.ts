@@ -33,6 +33,9 @@ describe("broker result persistence / PostgreSQL", { skip: !url }, () => {
     await seedPaper(c);
     await c.end();
     pool = new pg.Pool({ connectionString: u.toString() });
+    // Scratch database teardown may terminate sockets after pool.end() resolves.
+    pool.on("connect", client => client.on("error", () => {}));
+    pool.on("error", () => {});
     pool.on('connect', client => disconnected.push(new Promise(resolve => client.once('end', resolve))));
     store = new BrokerStore(pool);
     const seed = paperSeed();

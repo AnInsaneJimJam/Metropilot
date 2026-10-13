@@ -1,3 +1,4 @@
+import type { KimiBroker } from './kimi-broker.ts';
 import type pg from "pg";
 import { checkedObservation, rayToApr, SOURCES } from '@monad-hack/connectors';
 import { canonicalize, contentHash, parse } from "@monad-hack/contracts";
@@ -19,6 +20,7 @@ export interface PaperBrokerOptions {
   /** Explicitly synthetic; tests may inject delayed/ambiguous answers. No provider credentials. */
   decide?: (request: BrokerRequest) => Promise<BrokerResult>;
   now?: () => Date;
+  kimi?: KimiBroker;
 }
 
 export class PaperBrokerService {
@@ -221,34 +223,35 @@ export class PaperBrokerService {
         }
       } else {
         const profile = catalog.modelProfiles[request.modelProfileRef!];
-        if (
-          !row.model_profiles[request.modelProfileRef!] ||
-          profile?.provider !== "synthetic"
-        )
-          return refuse(
-            "BROKER_NOT_ALLOWED",
-            "Only pinned synthetic model profiles are enabled.",
-          );
-        result = this.options.decide
-          ? await this.options.decide(request)
-          : {
-              schemaVersion: "broker-result/1",
-              operationKey: request.operationKey,
-              disposition: "completed",
-              resultId: newId(),
-              receivedAt: now.toISOString(),
-              value:
-                request.outputSchemaRef === "decision/1"
-                  ? {
-                      decision: "allow",
-                      summary:
-                        "Synthetic decision; no model provider was called.",
-                    }
-                  : {
-                      summary:
-                        "Synthetic summary; no model provider was called.",
-                    },
-            };
+        if (!row.model_profiles[request.modelProfileRef!] || !profile || profile.mode !== 'paper')
+          return refuse('BROKER_NOT_ALLOWED', 'The model profile is not enabled for this paper deployment.');
+        if (profile.provider === 'kimi') {
+          const kimi = this.options.kimi;
+          if (!kimi || profile.modelId !== kimi.modelId || row.model_profiles[request.modelProfileRef!] !== kimi.profileVersion)
+            return refuse('BROKER_NOT_ALLOWED', 'The exact Kimi profile is not verified or pinned.');
+          result = await kimi.dispatch(scope, request);
+        } else if (profile.provider === 'synthetic') {
+          result = this.options.decide
+            ? await this.options.decide(request)
+            : {
+                schemaVersion: "broker-result/1",
+                operationKey: request.operationKey,
+                disposition: "completed",
+                resultId: newId(),
+                receivedAt: now.toISOString(),
+                value:
+                  request.outputSchemaRef === "decision/1"
+                    ? {
+                        decision: "allow",
+                        summary:
+                          "Synthetic decision; no model provider was called.",
+                      }
+                    : {
+                        summary:
+                          "Synthetic summary; no model provider was called.",
+                      },
+              };
+        } else return refuse('BROKER_NOT_ALLOWED', 'The model provider is not enabled.');
       }
       if (!parse("brokerResult", JSON.stringify(result)).ok)
         return refuse(

@@ -1,3 +1,5 @@
+import { KimiBroker } from '../apps/api/src/kimi-broker.ts';
+import { KIMI_MODEL } from '../apps/api/src/kimi-adapter.ts';
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after } from "node:test";
@@ -47,7 +49,7 @@ after(async () => {
 
 /** A fresh database per scenario; the public control-plane creates actual immutable artifacts and waits. */
 export async function brokerHarness(
-  options: { decide?: (r: BrokerRequest) => Promise<BrokerResult> } = {},
+  options: { decide?: (r: BrokerRequest) => Promise<BrokerResult>; kimiAdapter?: import('../apps/api/src/kimi-adapter.ts').KimiAdapter } = {},
 ) {
   if (!admin) {
     admin = new pg.Client({ connectionString: url! });
@@ -78,7 +80,8 @@ export async function brokerHarness(
     brokerCapabilitySecret: secret,
     executorCapabilitySecret: randomBytes(32),
   });
-  const service = new PaperBrokerService({ pool, secret, ...options });
+  const kimi = options.kimiAdapter ? new KimiBroker(pool, options.kimiAdapter) : undefined;
+  const service = new PaperBrokerService({ pool, secret, ...(options.decide ? { decide: options.decide } : {}), ...(kimi ? { kimi } : {}) });
   const app = createInternalApp({
     store: runtime,
     broker: service,
@@ -102,9 +105,10 @@ export async function brokerHarness(
       return response.json<BrokerResult>();
     },
   };
+  const catalog = options.kimiAdapter ? { ...syntheticCatalog, modelProfiles: { 'paper.kimi': { ...syntheticCatalog.modelProfiles['paper.kimi']!, provider: 'kimi', modelId: KIMI_MODEL } } } : syntheticCatalog;
   const program = await compileStrategy(
     JSON.stringify(PRESETS.find((p) => p.id === "ai_gated_purchase")!.strategy),
-    syntheticCatalog,
+    catalog,
   );
   async function waiting(
     assignment: RuntimeAssignment,
@@ -180,7 +184,7 @@ export async function brokerHarness(
       agentId,
       strategyRevisionId: revisionId,
       mode: "paper",
-      catalog: syntheticCatalog,
+      catalog,
       connectorVersions: { "paper.uniswap": "1.0.0" },
       runtimeImageDigest: "0x" + "aa".repeat(32),
       networkRef: "paper-monad",
@@ -258,6 +262,7 @@ export async function brokerHarness(
   };
   return {
     broker,
+    kimi,
     app,
     service,
     pool,

@@ -104,3 +104,5 @@ E10 local G4 source evidence, 2026-10-13: direct Monad finalized RPC plus WSS wa
 ## Changing a decision
 
 Add date, changed requirement/evidence, alternatives, chosen result, migration effect, owner and linked checks. Update the normative specification and consumers in the same reviewed change. Keep history for decisions that affect stored strategies, money records or signing authority; do not rewrite them as if the previous behavior never existed.
+
+E05 status 2026-10-13: **not closed**. The [Kimi broker guide](integration/kimi-broker.md) records current published K2.6 rates and parameter sources. Adapter bounds, durable metering, malformed output, replay and unknown-charge recovery are tested with synthetic transport and PostgreSQL. No API key is configured and no account/model/billing probe was performed. User direction: implement/test, leave real-provider verification gated. Paid dispatch requires dated operator evidence; seven-day verification expiry prevents silently using old rates. Public billing/tax/refund treatment is still gated.

@@ -13,14 +13,16 @@ if (existsSync('.env')) {
     if (match && env[match[1]] === undefined) env[match[1]] = match[2];
   }
 }
+// Provider credentials belong only to the control/broker process.
+const otherEnv = Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith('KIMI_') && name !== 'MOONSHOT_API_KEY'));
 const secret = env.EXECUTOR_CAPABILITY_SECRET || randomBytes(32).toString('hex');
 const brokerSecret = env.BROKER_CAPABILITY_SECRET || randomBytes(32).toString('hex');
 const image = env.RUNTIME_IMAGE_DIGEST || '0x' + '5a'.repeat(32);
 const node = process.execPath;
 const services = [
-  ['api', ['apps/api/src/server.ts'], { ...env, LOCAL_WORKSPACE: '1', RUNTIME_IMAGE_DIGEST: image, CUSTODY_PROVIDER: env.CUSTODY_PROVIDER ?? 'local' }],
+  ['api', ['apps/api/src/server.ts'], { ...otherEnv, LOCAL_WORKSPACE: '1', RUNTIME_IMAGE_DIGEST: image, CUSTODY_PROVIDER: env.CUSTODY_PROVIDER ?? 'local' }],
   ['control', ['apps/api/src/runtime-control/server.ts'], { ...env, LOCAL_RUNTIME_CONTROL: '1', EXECUTOR_CAPABILITY_SECRET: secret, BROKER_CAPABILITY_SECRET: brokerSecret }],
-  ['executor', ['apps/executor/src/main.ts'], { ...env, LOCAL_EXECUTOR: '1', EXECUTOR_CAPABILITY_SECRET: secret }],
+  ['executor', ['apps/executor/src/main.ts'], { ...otherEnv, LOCAL_EXECUTOR: '1', EXECUTOR_CAPABILITY_SECRET: secret }],
   // Clean environment: only what the runtime's closed configuration accepts.
   ['runtime', ['apps/runtime/src/main.ts'], {
     PATH: env.PATH ?? '', HOME: env.HOME ?? '', RUNTIME_ID: 'runtime-local-1', RUNTIME_MODE: 'paper', RUNTIME_IMAGE_DIGEST: image,
@@ -49,4 +51,4 @@ process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 console.log('Local paper stack: Monad mainnet native oracles, virtual inventory, simulated fills. Open http://127.0.0.1:5173');
 services.forEach(([name, args, childEnv], i) => start(name, node, args, childEnv, name === 'runtime' ? 1500 : i * 100));
-start('web', 'pnpm', ['--filter', '@monad-hack/web', 'dev'], env, 300);
+start('web', 'pnpm', ['--filter', '@monad-hack/web', 'dev'], otherEnv, 300);
