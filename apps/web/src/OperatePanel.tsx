@@ -197,8 +197,7 @@ export function OperatePanel({
         <span className="eyebrow">04 / OPERATE</span>
         <h2>Run it on paper.</h2>
         <p>
-          The saved revision runs on the local stack with virtual funds. Reads and AI answers come from a synthetic
-          broker; trades are paper fills. No wallet is connected.
+          The saved revision runs on the local stack with virtual funds. Prices come from finalized Monad mainnet native oracles. Trades use virtual USDC and simulated fills. AI profiles are not enabled. No wallet is connected.
         </p>
       </div>
       {error && (

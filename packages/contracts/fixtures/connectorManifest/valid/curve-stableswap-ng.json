@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "connector-manifest/1",
+  "ref": "paper.curve",
+  "version": "1.0.0",
+  "networkRef": "paper-monad",
+  "mode": "paper",
+  "sourceNetworkRef": "monad-mainnet",
+  "sourceChainId": 143,
+  "protocol": "curve-stableswap-ng",
+  "poolAddress": "0x942644106b073e30d72c2c5d7529d5c296ea91ab",
+  "capabilities": [
+    "price.read",
+    "swap.quote",
+    "swap.exactInput"
+  ],
+  "limitations": [
+    "Mainnet observations; virtual inventory and simulated fills only.",
+    "One reviewed pool; no live signing, routing or liquidity positions."
+  ],
+  "verifiedAt": "2026-10-12T17:21:04.000Z"
+}

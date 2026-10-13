@@ -1,3 +1,4 @@
+import { marketCatalog } from '@monad-hack/connectors/registry';
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { databaseUrl } from "./config.ts";
@@ -25,11 +26,12 @@ const store = new ControlStore(pool);
 // Deployments pin this runtime image; local runtimes run with the same RUNTIME_IMAGE_DIGEST (or this default).
 const runtimeImageDigest = process.env["RUNTIME_IMAGE_DIGEST"] ?? "0x" + "5a".repeat(32);
 if (!/^0x[0-9a-f]{64}$/.test(runtimeImageDigest)) throw new Error("RUNTIME_IMAGE_DIGEST must be a 0x SHA-256 digest.");
-const lifecycle = new LifecycleService({ pool, runtime: new RuntimeControlStore({ pool }), runtimeImageDigest });
+const lifecycle = new LifecycleService({ pool, runtime: new RuntimeControlStore({ pool }), runtimeImageDigest, catalog: marketCatalog, paperFundingAsset: "paper.USDC" });
 const tenant = await store.tenant("local-control-workspace");
 const sessions = new Map<string, number>();
 const app = createApp({
   store,
+  catalog: marketCatalog,
   lifecycle,
   origin: "http://127.0.0.1:5173",
   authenticate: async (cookie) => {

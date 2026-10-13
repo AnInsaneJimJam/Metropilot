@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/price-observation-1.schema.json",
+  "title": "PriceObservation",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": "price-observation/1"
+    },
+    "feedRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "connectorRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "connectorVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "networkRef": {
+      "const": "monad-mainnet"
+    },
+    "sourceEventKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "poolAddress": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{40}$"
+    },
+    "finality": {
+      "const": "finalized"
+    },
+    "method": {
+      "enum": [
+        "uniswap-v3-geometric-twap",
+        "curve-native-ema",
+        "aave-native-oracle"
+      ]
+    },
+    "windowSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400
+    },
+    "price": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseAssetRef",
+        "quoteUnit",
+        "decimal"
+      ],
+      "properties": {
+        "baseAssetRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "quoteUnit": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "decimal": {
+          "type": "string",
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,18})?$"
+        }
+      }
+    },
+    "observedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "receivedAt": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "chainId",
+        "number",
+        "hash"
+      ],
+      "properties": {
+        "chainId": {
+          "const": 143
+        },
+        "number": {
+          "$ref": "common.schema.json#/$defs/blockHeight"
+        },
+        "hash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        }
+      }
+    },
+    "provenanceHash": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "reserve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetAddress",
+        "oracleAddress",
+        "oracleSourceAddress",
+        "priceUpdateTimeAvailable",
+        "supplyRateRay",
+        "variableBorrowRateRay",
+        "lastUpdateAt"
+      ],
+      "properties": {
+        "assetAddress": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "oracleAddress": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "oracleSourceAddress": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "priceUpdateTimeAvailable": {
+          "const": false
+        },
+        "supplyRateRay": {
+          "type": "string",
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "variableBorrowRateRay": {
+          "type": "string",
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "lastUpdateAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "feedRef",
+    "connectorRef",
+    "connectorVersion",
+    "networkRef",
+    "sourceEventKey",
+    "poolAddress",
+    "finality",
+    "method",
+    "windowSeconds",
+    "price",
+    "observedAt",
+    "receivedAt",
+    "block",
+    "provenanceHash"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "aave-native-oracle"
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
+      "then": {
+        "required": [
+          "reserve"
+        ],
+        "properties": {
+          "windowSeconds": {
+            "const": 0
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "reserve"
+          ]
+        },
+        "properties": {
+          "windowSeconds": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      }
+    }
+  ]
+}

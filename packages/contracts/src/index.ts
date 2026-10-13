@@ -4,6 +4,8 @@ import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.
 import ajvFormats from 'ajv-formats';
 import schema from './strategy.schema.json' with { type: 'json' };
 import control from '../schemas/control-workspace-1.schema.json' with { type: 'json' };
+import connectorManifest from '../schemas/connector-manifest-1.schema.json' with { type: 'json' };
+import priceObservation from '../schemas/price-observation-1.schema.json' with { type: 'json' };
 import common from '../schemas/common.schema.json' with { type: 'json' };
 import deploymentRequest from '../schemas/deployment-request-1.schema.json' with { type: 'json' };
 import errorBody from '../schemas/error-1.schema.json' with { type: 'json' };
@@ -48,10 +50,12 @@ export type ContractDocumentMap = Omit<GeneratedContractMap, 'runWait' | 'runCom
 export type ContractKind = keyof ContractDocumentMap;
 
 export const schemaBaseUri = 'https://monad-hack.example/schemas/';
-export const schemaDocuments: readonly object[] = [schema, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, auditEvent2Schema, lifecycle];
+export const schemaDocuments: readonly object[] = [schema, connectorManifest, priceObservation, common, control, deploymentRequest, errorBody, event, auditEvent, actionIntentSchema, intentResultSchema, runtimeAssignmentSchema, assignmentPollSchema, assignmentOfferSchema, runWaitSchema, runResultSchema, runCompleteSchema, runStateSchema, timelineEntrySchema, brokerRequestSchema, brokerResultSchema, assignmentOffer2Schema, artifact1Schema, runtimeHeartbeat1Schema, runtimeLease1Schema, audienceCapabilitySchema, deploymentManifestSchema, auditEvent2Schema, lifecycle];
 
 /** Schema reference per kind; strategy is absolute because its schema lives beside the language core. */
 export const contractRefs = {
+  connectorManifest: schemaBaseUri + 'connector-manifest-1.schema.json',
+  priceObservation: schemaBaseUri + 'price-observation-1.schema.json',
   controlSave: control.$id + '#/$defs/SaveStrategy',
   controlAgent: control.$id + '#/$defs/SavedAgent',
   strategy: schema.$id,
@@ -88,6 +92,8 @@ export const contractRefs = {
 
 /** UTF-8 byte ceilings checked before JSON parsing (strategy-language.md section 7, runtime.md limits). */
 export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
+  connectorManifest: 16 * 1024,
+  priceObservation: 16 * 1024,
   controlSave: 512 * 1024,
   controlAgent: 512 * 1024,
   strategy: 256 * 1024,
