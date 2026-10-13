@@ -8,6 +8,7 @@ await writeFile(new URL('./generated.ts', import.meta.url), await compile(schema
 // Non-strategy contracts in ../schemas. One root keyed by kind gives every named definition one declaration.
 // Keep these refs in step with contractRefs in index.ts; strategy is typed from generated.ts above.
 const refs = {
+  persistedBrokerResult: 'persisted-broker-result-1.schema.json',
   connectorManifest: 'connector-manifest-1.schema.json',
   priceObservation: 'price-observation-1.schema.json',
   controlSave: 'control-workspace-1.schema.json#/$defs/SaveStrategy',

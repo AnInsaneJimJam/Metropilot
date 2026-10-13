@@ -288,6 +288,15 @@ describe('database', { skip }, () => {
       await rejects(db.query(`insert into audit_events (tenant_id, sequence, actor_kind, trace_id, type, payload, occurred_at, source) values ($1, 2, 'user', $2, 'run.step', '{}', now(), 'test:2')`, [seedTenantId, 'ab'.repeat(16)]), '23514');
     });
 
+    test('broker dispatch claims (0006) require a waiting operation owned by the same tenant', async () => {
+      const key = H('9b');
+      await rejects(db.query("insert into broker_operations(tenant_id,operation_key,run_id,request_hash,request) values($1,$2,$3,$4,'{}')", [seedTenantId, key, runId, H('aa')]), '23503');
+      await db.query("insert into run_operations(tenant_id,run_id,operation_key,kind,node_id,iteration_path) values($1,$2,$3,'read','price','[]')", [seedTenantId, runId, key]);
+      await rejects(db.query("insert into broker_operations(tenant_id,operation_key,run_id,request_hash,request) values($1,$2,$3,$4,'{}')", ['019a0000-0000-7000-8000-000000000099', key, runId, H('aa')]), '23503');
+      await db.query("insert into broker_operations(tenant_id,operation_key,run_id,request_hash,request) values($1,$2,$3,$4,'{}')", [seedTenantId, key, runId, H('aa')]);
+      await rejects(db.query('update broker_operations set latest_result_id=$3 where tenant_id=$1 and operation_key=$2', [seedTenantId, key, '019a0000-0000-7000-8000-000000000098']), '23503');
+    });
+
     test('artifacts and timeline entries are immutable', async () => {
       await db.query(`insert into artifacts (ref, tenant_id, deployment_id, kind, content_hash, body) values ('artifact:test', $1, $2, 'strategy', $3, '{}')`, [seedTenantId, deployment, H('bb')]);
       await rejects(db.query(`update artifacts set body = '[]'`), 'P0001');

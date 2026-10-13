@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/persisted-broker-result-1.schema.json",
+  "title": "PersistedBrokerResult",
+  "description": "Immutable broker answer read by result ID within a tenant, deployment generation and run. Pending/unknown reconciliation appends a new answer; prior records remain unchanged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "operationKey",
+    "runId",
+    "nodeId",
+    "kind",
+    "response",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "persisted-broker-result/1"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "operationKey": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "runId": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "nodeId": {
+      "$ref": "common.schema.json#/$defs/identifier"
+    },
+    "kind": {
+      "enum": [
+        "read",
+        "ai.decide"
+      ]
+    },
+    "response": {
+      "$ref": "broker-result-1.schema.json"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRef",
+        "contentHash"
+      ],
+      "properties": {
+        "sourceRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "contentHash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "sourceVersion": {
+          "type": "string",
+          "maxLength": 120,
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
