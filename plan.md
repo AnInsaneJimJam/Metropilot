@@ -125,7 +125,7 @@ Review fixes — Codex, 2026-10-08: owns API request/error handling, control con
 
 ## Broker-AI issue #4 — 2026-10-13
 
-Codex owns `apps/api/src/broker-store.ts`, migration `0006_broker_results.sql`, persisted-result schema/fixtures, their contract registrations and PostgreSQL tests. Prerequisite: upstream `9a4d0d7`. Scope is immutable result persistence/readback and operation-key replay; HTTP, providers and billing belong to dependent issues. External calls run after the durable dispatch claim commits; ambiguous dispatch is never repeated. Evidence: `REQUIRE_DB=1 pnpm check` → 525 passed, zero skipped; `broker-store.test.ts` covers concurrency, restart, unknown reconciliation, immutable records and scoped readback; `db.test.ts` verifies waiting-operation ownership and result-pointer constraints.
+Codex owns `apps/api/src/broker-store.ts`, migration `0012_broker_results.sql`, persisted-result schema/fixtures, their contract registrations and PostgreSQL tests. Prerequisite: upstream `9a4d0d7`. Scope is immutable result persistence/readback and operation-key replay; HTTP, providers and billing belong to dependent issues. External calls run after the durable dispatch claim commits; ambiguous dispatch is never repeated. Evidence: `REQUIRE_DB=1 pnpm check` → 525 passed, zero skipped; `broker-store.test.ts` covers concurrency, restart, unknown reconciliation, immutable records and scoped readback; `db.test.ts` verifies waiting-operation ownership and result-pointer constraints.
 
 ## Broker-AI issue #5 — 2026-10-13
 
