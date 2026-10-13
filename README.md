@@ -17,11 +17,15 @@
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#how-it-works">How it works</a> ·
-  <a href="#status">Status</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#documentation">Documentation</a>
 </p>
 
+## What is Metropilot
+
+Automated trading is still built for engineers. To run even a simple rule, like "buy a little WMON every day" or "sell some when the price passes a level", you have to write code, rent a server, connect to market data and exchanges, and keep a wallet safe while it all runs unattended.
+
+Metropilot removes that work. You describe the rule with drag-and-drop blocks or a ready-made template, set how much it may spend, and launch it. Metropilot runs it on Monad, watches the market for you, and checks every trade against your limits before it happens.
 
 <p align="center">
   <img src="docs/assets/studio-build.png" alt="The Metropilot studio: a scheduled WMON purchase built from blocks, with the inspector open" width="100%" />
@@ -29,14 +33,7 @@
 
 ## Why Metropilot
 
-Running a trading agent today means renting servers, wiring model APIs, writing protocol code and trusting a wallet setup you assembled yourself. Metropilot replaces all of that with one workspace.
-
-| Benefit | What it means for you |
-| --- | --- |
-| **No code, no servers, no keys** | Start from a template, edit it as blocks or plain forms, and launch. Isolation, market data and execution are provided. |
-| **Real market data** | Strategies react to finalized Monad mainnet prices from Uniswap, Curve and Aave — not a synthetic feed. |
-| **Guardrails you can see** | Budgets, per-run limits and slippage caps are checked as you type, again by the server on save, and again by the executor before any fill. |
-| **You stay in control** | Every save is an immutable revision. Pause, resume or stop at any time, and follow each step in a live activity stream. |
+No code, no servers and no keys to manage: you build with blocks and Metropilot runs the agent. Strategies react to real Monad market data, every trade is checked against the budgets and limits you set, and you can pause or stop an agent at any time.
 
 ## How it works
 
@@ -94,15 +91,7 @@ sequenceDiagram
 
 ## Supported markets
 
-All sources are Monad mainnet (chain 143), read from finalized blocks. Thresholds in templates are editable examples, not quotes or recommendations.
-
-| Venue | Market | Price method | Agent can |
-| --- | --- | --- | --- |
-| **Uniswap v3** | WMON / USDC | 30-second geometric TWAP | Read price · paper swap |
-| **Curve** StableSwap-NG | AUSD / USDC | Native EMA (866 s) | Read price · paper swap |
-| **Aave v3** | USDC, AUSD | Native USD oracle + supply / variable-borrow APR | Read only |
-
-Pool addresses, discovery and finality probes: [market data sources](docs/research/market-data-sources.md) · connector scope: [connectors](docs/specs/connectors.md#selected-connectors-2026-10-12).
+Agents read live, finalized Monad mainnet prices from **Uniswap v3** (WMON/USDC, 30-second TWAP) and **Curve** (AUSD/USDC, native EMA) and can paper-trade both; **Aave v3** USDC and AUSD prices and lending rates are available as read-only data. Details: [market data sources](docs/research/market-data-sources.md).
 
 ## Safety model
 
@@ -114,22 +103,6 @@ Pool addresses, discovery and finality probes: [market data sources](docs/resear
 - **Honest custody.** Agent wallets are platform-controlled, and described that way.
 
 Full rules: [security](docs/specs/security.md) · [funds and budgets](docs/specs/funds-and-budgets.md) · [executor](docs/specs/executor.md).
-
-## Status
-
-| Capability | Status | Evidence |
-| --- | --- | --- |
-| Strategy studio: templates, blocks, keyboard forms, live validation | Working | Playwright browser tests in [apps/web/e2e](apps/web/e2e/) |
-| Full local paper stack on live mainnet prices | Working | `pnpm stack:dev`; first run 8 s after launch (2026-10-14) |
-| Launch, pause, resume, stop, run history, live activity, paper quotas | Working (local) | [operate.spec.ts](apps/web/e2e/operate.spec.ts), [paper-stack.test.ts](tests/paper-stack.test.ts) |
-| Ledger, atomic reservations, allocations, withdrawals | Working (local chain) | [funds guide](docs/integration/funds.md) |
-| Privy server-wallet custody | Proven on Monad testnet, 9/9 checks (2026-10-13) | [decisions E03](docs/decisions.md) |
-| Alchemy as a second RPC witness | Proven, 6/6 checks (2026-10-13) | [decisions E06 / D60](docs/decisions.md) |
-| Hosted deployment and sign-in | In progress | [goals G3–G4](goals.md) |
-| Metered AI decisions (Kimi) | In progress | [goals G6](goals.md), [Kimi broker](docs/integration/kimi-broker.md) |
-| Capped live trading | Planned | [goals G8](goals.md) |
-
-Delivery gates and their exit criteria live in [goals.md](goals.md).
 
 ## Quick start
 
