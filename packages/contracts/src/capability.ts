@@ -10,7 +10,7 @@ export const MAX_CAPABILITY_SECONDS = 300;
 const CLOCK_SKEW_SECONDS = 30;
 
 export interface Capability {
-  readonly aud: typeof CAPABILITY_AUDIENCE;
+  readonly aud: 'executor' | 'broker';
   readonly tenantId: string;
   readonly agentId: string;
   readonly deploymentId: string;
@@ -48,7 +48,7 @@ export function signCapability(claims: Capability, secret: Uint8Array): string {
 }
 
 /** Verify signature, closed claims, audience and lifetime. Messages never include the token. */
-export function verifyCapability(token: string, secret: Uint8Array, nowSeconds: number): Capability {
+export function verifyCapability(token: string, secret: Uint8Array, nowSeconds: number, audience: Capability['aud'] = 'executor'): Capability {
   const parts = token.split('.');
   if (parts.length !== 3 || parts[0] !== HEADER) throw new CapabilityError('capability is not an HS256 compact token');
   const signature = Buffer.from(parts[2]!, 'base64url');
@@ -61,6 +61,7 @@ export function verifyCapability(token: string, secret: Uint8Array, nowSeconds: 
     throw new CapabilityError('capability claims are not JSON');
   }
   checkClaims(claims);
+  if (claims.aud !== audience) throw new CapabilityError('capability audience is invalid');
   if (claims.iat > nowSeconds + CLOCK_SKEW_SECONDS) throw new CapabilityError('capability is not yet valid');
   if (claims.exp <= nowSeconds) throw new CapabilityError('capability has expired');
   return claims;
@@ -73,7 +74,7 @@ function checkClaims(value: unknown): asserts value is Capability {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) fail('set');
   const c = value as Record<string, unknown>;
   for (const key of Object.keys(c)) if (!CLAIMS.has(key)) fail(key);
-  if (c['aud'] !== CAPABILITY_AUDIENCE) fail('aud');
+  if (c['aud'] !== 'executor' && c['aud'] !== 'broker') fail('aud');
   for (const key of ['tenantId', 'agentId', 'deploymentId', 'jti']) if (typeof c[key] !== 'string' || !UUID7.test(c[key] as string)) fail(key);
   if (typeof c['generation'] !== 'string' || !/^[1-9][0-9]{0,18}$/.test(c['generation'])) fail('generation');
   if (c['mode'] !== 'paper' && c['mode'] !== 'live') fail('mode');

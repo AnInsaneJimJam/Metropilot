@@ -1,12 +1,12 @@
 {
-  "description": "Only the executor audience is issued today",
+  "description": "Unrecognized audiences cannot be issued",
   "expect": {
     "fieldPath": "/audience",
     "keyword": "enum"
   },
   "document": {
     "schemaVersion": "audience-capability/1",
-    "audience": "broker",
+    "audience": "signer",
     "token": "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJleGVjdXRvciJ9.c2lnbmF0dXJl",
     "expiresAt": "2026-10-12T12:05:00.000Z"
   }

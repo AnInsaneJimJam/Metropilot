@@ -50,6 +50,7 @@ export interface StoreOptions {
   readonly capabilityMillis?: number;
   /** HS256 secret shared with the executor (D35); without it executor capabilities cannot be issued. */
   readonly executorCapabilitySecret?: Uint8Array;
+  readonly brokerCapabilitySecret?: Uint8Array;
 }
 
 export interface DeployInput {
@@ -131,6 +132,7 @@ export class RuntimeControlStore {
   readonly #leaseMillis: number;
   readonly #assignmentMillis: number;
   readonly #capabilityMillis: number;
+  readonly #brokerSecret: Uint8Array | undefined;
   readonly #executorSecret: Uint8Array | undefined;
   /** Compiled programs are immutable per deployment, so caching them is safe. */
   readonly #programs = new Map<string, Promise<CompiledStrategy>>();
@@ -142,6 +144,7 @@ export class RuntimeControlStore {
     this.#assignmentMillis = options.assignmentMillis ?? 60_000;
     this.#capabilityMillis = options.capabilityMillis ?? 300_000;
     this.#executorSecret = options.executorCapabilitySecret;
+    this.#brokerSecret = options.brokerCapabilitySecret;
   }
 
   // ---- Worker role: deployment ------------------------------------------------------------------------------
@@ -440,7 +443,11 @@ export class RuntimeControlStore {
    * current lease of an active generation, scoped to that run, never longer than the control capability.
    */
   async issueExecutorCapability(scope: CapabilityScope): Promise<AudienceCapability> {
-    const secret = this.#executorSecret;
+    return this.issueAudienceCapability(scope, 'executor');
+  }
+
+  async issueAudienceCapability(scope: CapabilityScope, audience: 'executor' | 'broker'): Promise<AudienceCapability> {
+    const secret = audience === 'executor' ? this.#executorSecret : this.#brokerSecret;
     if (!secret) throw new RunControlError('NOT_FOUND', 'Executor capabilities are not configured on this control plane.');
     return this.#tx(async (c) => {
       const lease = await c.query<{ fencing_token: string; capability_expires_at: Date }>('select fencing_token, capability_expires_at from run_assignments where assignment_id = $1', [scope.assignmentId]);
@@ -451,10 +458,10 @@ export class RuntimeControlStore {
       const exp = Math.min(iat + MAX_CAPABILITY_SECONDS, Math.floor(lease.rows[0].capability_expires_at.getTime() / 1000));
       if (exp <= iat) throw new RunControlError('UNAUTHENTICATED', 'The control capability has expired.');
       const token = signCapability({
-        aud: 'executor', tenantId: run.tenant_id, agentId: run.agent_id, deploymentId: run.deployment_id, generation: String(run.generation), mode: d.rows[0]!.mode,
-        actions: ['swap.exactInput'], connectors: d.rows[0]!.connector_versions, runId: run.run_id, iat, exp, jti: uuidv7(),
+        aud: audience, tenantId: run.tenant_id, agentId: run.agent_id, deploymentId: run.deployment_id, generation: String(run.generation), mode: d.rows[0]!.mode,
+        actions: audience === 'executor' ? ['swap.exactInput'] : ['read', 'ai.decide'], connectors: d.rows[0]!.connector_versions, runId: run.run_id, iat, exp, jti: audience === 'broker' ? scope.assignmentId : uuidv7(),
       }, secret);
-      return { schemaVersion: 'audience-capability/1', audience: 'executor', token, expiresAt: new Date(exp * 1000).toISOString() };
+      return { schemaVersion: 'audience-capability/1', audience, token, expiresAt: new Date(exp * 1000).toISOString() };
     });
   }
 
@@ -462,6 +469,21 @@ export class RuntimeControlStore {
    * The broker reconciled a pending or unknown read/AI operation. The operation stays pending; the resume makes
    * the runtime re-request under the same key, so the interpreter always receives the broker's typed record.
    */
+  /** Recover terminal broker answers even if the reconciler died before enqueueing a resume. */
+  async consumeBrokerResults(): Promise<void> {
+    const pending = await this.#pool.query<{ run_id: string }>(
+      `select distinct r.run_id from runs r join run_operations ro on ro.tenant_id=r.tenant_id and ro.run_id=r.run_id
+       join broker_operations bo on bo.tenant_id=ro.tenant_id and bo.operation_key=ro.operation_key
+       join broker_results b on b.tenant_id=bo.tenant_id and b.id=bo.latest_result_id
+       where r.status='waiting' and ro.outcome='pending' and b.response->>'disposition' in ('completed','refused')`);
+    for (const row of pending.rows) await this.#tx(async c => {
+      const run = await this.#lockRun(c, row.run_id);
+      if (run.status !== 'waiting' || run.desired_state !== 'active' || run.generation !== run.deployment_generation) return;
+      const live = await c.query(`select 1 from run_assignments where run_id=$1 and (state='queued' or lease_expires_at>$2)`, [row.run_id, this.#now()]);
+      if (!live.rows[0]) await this.#issueAssignment(c, run.tenant_id, row.run_id);
+    });
+  }
+
   async resumeBrokerOperation(runId: string): Promise<void> {
     await this.#tx(async (c) => {
       const run = await this.#lockRun(c, runId);

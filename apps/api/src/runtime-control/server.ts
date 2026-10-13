@@ -1,3 +1,4 @@
+import { PaperBrokerService } from '../broker-service.ts';
 import { MarketIngestion, RpcMarketSource } from '../market-ingestion.ts';
 import { WS_RPC, rpcClient, MainnetMarkets } from '@monad-hack/connectors';
 // Local entry point for the runtime-facing internal API plus its worker loop (schedule ticks, lease reclaim,
@@ -18,9 +19,13 @@ pool.on('error', (error) => console.error(`database pool error: ${error.name}`))
 // Shared with the executor only (D35); 32 bytes as 64 hex characters. Without it no executor capability is issued.
 const secretHex = process.env['EXECUTOR_CAPABILITY_SECRET'];
 if (secretHex !== undefined && !/^[0-9a-f]{64}$/.test(secretHex)) throw new Error('EXECUTOR_CAPABILITY_SECRET must be 64 lower-case hex characters.');
-const store = new RuntimeControlStore({ pool, ...(secretHex ? { executorCapabilitySecret: Buffer.from(secretHex, 'hex') } : {}) });
+const brokerSecretHex = process.env['BROKER_CAPABILITY_SECRET'];
+if (brokerSecretHex !== undefined && !/^[0-9a-f]{64}$/.test(brokerSecretHex)) throw new Error('BROKER_CAPABILITY_SECRET must be 64 lower-case hex characters.');
+const brokerSecret = brokerSecretHex ? Buffer.from(brokerSecretHex, 'hex') : undefined;
+const store = new RuntimeControlStore({ pool, ...(secretHex ? { executorCapabilitySecret: Buffer.from(secretHex, 'hex') } : {}), ...(brokerSecret ? { brokerCapabilitySecret: brokerSecret } : {}) });
 const app = createInternalApp({
   store,
+  ...(brokerSecret ? { broker: new PaperBrokerService({ pool, secret: brokerSecret }) } : {}),
   // Dev-only workload identity: the runtime names itself. Never acceptable outside loopback.
   authenticateWorkload: (headers) => {
     const id = headers['x-runtime-workload'];
@@ -75,7 +80,7 @@ const worker = setInterval(() => {
   if (busy) return;
   busy = true;
   // Schedules, lost leases and executor outbox → audit stream and resumed runs.
-  Promise.all([store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.meterHosting()])
+  Promise.all([store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.meterHosting(), store.consumeBrokerResults()])
     .catch((error: unknown) => console.error(`worker tick failed: ${(error as Error).name}`))
     .finally(() => { busy = false; });
 }, 1_000);
