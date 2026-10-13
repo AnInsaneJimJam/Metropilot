@@ -1,9 +1,13 @@
 # Hosting on Lightsail (one server)
 
+> **Status 2026-10-14:** blocked. The organization's SCP `p-cpy6ql88` also denies Lightsail writes (reads are
+> allowed), so `terraform apply` is refused. Use the laptop + Cloudflare Tunnel option ([TUNNEL.md](TUNNEL.md)) until it is lifted.
+
 The platform's backend runs on **one Amazon Lightsail server** with Docker Compose; the studio runs on Vercel
 (`https://metropilot.vercel.app`). Lightsail is used because the AWS organization's service control policy denies
 EC2, ECS, ECR, ELB and Secrets Manager for this account; the Fargate design in [README.md](README.md) remains in the
-repository for when that is lifted. Everything here is in [`infra/lightsail`](../../infra/lightsail).
+repository for when that is lifted. The server is [`infra/lightsail`](../../infra/lightsail); the compose stack it runs is
+[`infra/stack`](../../infra/stack) (shared with the laptop + Cloudflare Tunnel option, [TUNNEL.md](TUNNEL.md)).
 
 ```
 Browser ─https─▶ Vercel (apps/web) ── rewrite /v1/* ──▶ https://<ip-with-dashes>.sslip.io (Lightsail static IP)
@@ -29,7 +33,7 @@ Browser ─https─▶ Vercel (apps/web) ── rewrite /v1/* ──▶ https://
   - Lightsail daily automatic snapshots at 06:00 UTC, kept 7 days.
   - A nightly `pg_dump` to `/opt/metropilot/backups`, keeping 7.
 - **Secrets:**
-  - They live in `/opt/metropilot/.env` (mode 600), rendered by `render-env.mjs` from the repository `.env` plus generated values.
+  - They live in `/opt/metropilot/.env` (mode 600), rendered by `infra/stack/render-env.mjs` from the repository `.env` plus generated values.
   - Generated secrets persist in the git-ignored `infra/lightsail/.env.server`, so redeploys don't rotate them.
 - **Real-money switches** stay off: `LIVE_LAUNCH=0`, `EXECUTOR_LIVE=0`, `LIVE_OUTFLOWS=0`. Turn them on only for an approved capped trade.
 

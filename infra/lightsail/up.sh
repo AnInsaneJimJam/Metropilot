@@ -27,15 +27,15 @@ digest="0x$(docker image inspect "$image" --format '{{.Id}}' | sed 's/^sha256://
 if [ "${1:-}" != "--new-runtime" ] && [ -f "$tf/.env.server" ]; then
   digest="$(sed -n 's/^RUNTIME_IMAGE_DIGEST=//p' "$tf/.env.server")"
 fi
-node "$root/infra/lightsail/render-env.mjs" "$host" "$image" "$digest"
+ENV_OUT="$tf/.env.server" node "$root/infra/stack/render-env.mjs" "$host" "$image" "$digest"
 
 echo "shipping $image"
 docker save "$image" | gzip -1 | remote 'gunzip | docker load'
-scp "${ssh_opts[@]}" -q "$tf/docker-compose.yml" "$tf/Caddyfile" "ubuntu@$ip:/opt/metropilot/"
+scp "${ssh_opts[@]}" -q "$root/infra/stack/docker-compose.yml" "$root/infra/stack/Caddyfile" "ubuntu@$ip:/opt/metropilot/"
 scp "${ssh_opts[@]}" -q "$tf/.env.server" "ubuntu@$ip:/opt/metropilot/.env"
 remote 'chmod 600 /opt/metropilot/.env'
 
-remote 'cd /opt/metropilot && docker compose up -d postgres && docker compose run --rm migrate && docker compose up -d --remove-orphans'
+remote 'cd /opt/metropilot && export COMPOSE_PROFILES=caddy && docker compose up -d postgres && docker compose run --rm migrate && docker compose up -d --remove-orphans'
 
 # Nightly logical backup on the server (7 kept), next to Lightsail's daily automatic snapshots.
 remote 'mkdir -p /opt/metropilot/backups && ( crontab -l 2>/dev/null | grep -v metropilot-backup; echo "30 5 * * * cd /opt/metropilot && docker compose exec -T postgres pg_dump -U monad -Fc monad > backups/monad-\$(date +\%F).dump && ls -1t backups/*.dump | tail -n +8 | xargs -r rm # metropilot-backup" ) | crontab -'

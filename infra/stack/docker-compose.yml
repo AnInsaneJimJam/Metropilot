@@ -1,5 +1,6 @@
-# The whole backend on one Lightsail server (docs/hosting/LIGHTSAIL.md). Values come from .env.server, interpolated
-# per service so each container gets only what it needs. Networks:
+# The whole backend on one machine: a server with Caddy for HTTPS (docs/hosting/LIGHTSAIL.md, profile `caddy`) or a
+# laptop behind a Cloudflare Tunnel (docs/hosting/TUNNEL.md, infra/tunnel). Values come from the env file rendered by
+# render-env.mjs, interpolated per service so each container gets only what it needs. Networks:
 #   edge     Caddy ↔ API (public HTTPS terminates at Caddy)
 #   backend  internal only (no internet): Postgres, API, control, executor, runtime proxies
 #   egress   internet for the services that call RPC, Privy, Envio and the AI Gateway
@@ -49,7 +50,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: "3001"
-      TRUSTED_PROXY_HOPS: "2"
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-2}
       DATABASE_URL: ${DATABASE_URL}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}
       RUNTIME_IMAGE_DIGEST: ${RUNTIME_IMAGE_DIGEST}
@@ -141,6 +142,7 @@ services:
     depends_on: [proxy-live-1, control]
 
   caddy:
+    profiles: [caddy]
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     restart: unless-stopped
     ports: ["80:80", "443:443"]

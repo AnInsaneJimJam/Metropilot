@@ -45,3 +45,6 @@ playwright-report/
 infra/lightsail/terraform.tfvars
 infra/lightsail/*.tfstate*
 infra/lightsail/.env.server
+infra/stack/.env.server
+infra/tunnel/.env.server
+infra/tunnel/cloudflared/

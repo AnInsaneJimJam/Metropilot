@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Write infra/lightsail/.env.server (git-ignored, 0600) for docker compose on the Lightsail server.
+// Write the stack's env file (git-ignored, 0600; default infra/stack/.env.server, or ENV_OUT) for docker compose.
 // Values: the repository .env (Privy, Envio, AI Gateway), generated secrets kept across runs (a redeploy never rotates
 // the database password or capability secrets), Privy's published signing keys (PEM, from its JWKS) and, on the first
 // run, the Monad mainnet finalized height so deposit scanning starts now instead of block 0. Never prints values.
-//   node infra/lightsail/render-env.mjs <api-host> <image> <runtime-digest>
+//   node infra/stack/render-env.mjs <api-host> <image> <runtime-digest>
 import { createPublicKey, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
-const out = join(here, '.env.server');
+const out = process.env['ENV_OUT'] || join(here, '.env.server');
 const [apiHost, image, digest] = process.argv.slice(2);
 if (!apiHost || !image || !/^0x[0-9a-f]{64}$/.test(digest ?? '')) throw new Error('usage: render-env.mjs <api-host> <image> <0x runtime digest>');
 
