@@ -25,7 +25,7 @@ import { OperatePanel } from "./OperatePanel.tsx";
 export function EditorPage() {
   const [stage, setStage] = useState<Stage>("build");
   const [experience, setExperience] = useState<Experience>("rookie");
-  const [name, setName] = useState("Threshold partial sale");
+  const [name, setName] = useState(PRESETS[0]!.title);
   const [budget, setBudget] = useState(DEFAULT_BUDGET);
   const [selected, setSelected] = useState<string>();
   const [focusRequest, setFocusRequest] = useState<{
@@ -219,7 +219,7 @@ export function EditorPage() {
             <span>{current ? "Saved draft" : "New draft"}</span>
           </div>
           <span className="local-label">
-            <span className="environment-mark" /> LOCAL · SYNTHETIC
+            <span className="environment-mark" /> LOCAL · MAINNET DATA
           </span>
         </header>
         <main id="workspace">
@@ -294,7 +294,7 @@ export function EditorPage() {
         </main>
         <footer className="app-footer">
           <span>MONAD / STRATEGY STUDIO</span>
-          <span>Synthetic data · No real funds connected</span>
+          <span>Mainnet data · Paper execution · No real funds connected</span>
         </footer>
       </div>
     </div>

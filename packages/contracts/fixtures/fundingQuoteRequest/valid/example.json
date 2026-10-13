@@ -1,0 +1,12 @@
+{
+  "assetRef": "live.USD",
+  "depositAtomic": "100000000",
+  "minTradingAtomic": "70000000",
+  "gasAtomic": "1000000",
+  "resourceProfileRef": "runtime.small",
+  "modelProfileRef": "live.kimi",
+  "aiCallsPerDay": 24,
+  "maxInputTokens": 4000,
+  "maxOutputTokens": 1000,
+  "marginBps": 2000
+}

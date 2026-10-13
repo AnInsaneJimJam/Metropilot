@@ -63,6 +63,11 @@ export class HttpControlApi implements ControlApi {
     return { contentHash: artifact.contentHash, text: artifact.text };
   }
 
+  async marketRead(body: import('@monad-hack/contracts').BrokerRequest): Promise<import('@monad-hack/contracts').BrokerResult> {
+    if (!this.#current || this.#held.get(this.#current)?.runId !== body.runId) throw new RuntimeError('FENCED', 'No capability for this broker request.');
+    return this.#call('POST', '/internal/v1/market/read', { body, requestKind: 'brokerRequest', responseKind: 'brokerResult', headers: this.#bearer(this.#current) });
+  }
+
   async loadRun(runId: string, assignmentId: string, fencingToken: string): Promise<RunState> {
     const query = new URLSearchParams({ assignmentId, fencingToken });
     const state = await this.#call('GET', `/internal/v1/runs/${runId}?${query}`, { responseKind: 'runState', headers: this.#bearer(assignmentId) });

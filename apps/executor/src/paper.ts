@@ -24,7 +24,7 @@ export interface RecordedQuote {
  * wires a recorded source; an unavailable source throws, a missing pair returns undefined.
  */
 export interface MarketData {
-  quote(tokenInRef: string, tokenOutRef: string): Promise<RecordedQuote | undefined>;
+  quote(tokenInRef: string, tokenOutRef: string, connectorRef?: string): Promise<RecordedQuote | undefined>;
 }
 
 export type FillOutcome =

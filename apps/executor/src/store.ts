@@ -22,12 +22,19 @@ export interface FrozenAction {
 }
 
 export interface IntentRow {
+  mode: 'paper' | 'live';
   tenantId: string;
   id: string;
   agentId: string;
   deploymentId: string;
   generation: string;
+  /** Paper only. */
   simulationAccountId: string;
+  /** Live only: custodial wallet, accounting reservation key, chain transaction and settled gas. */
+  walletId: string | undefined;
+  reservationKey: string | undefined;
+  transactionHash: string | undefined;
+  settledGasAtomic: bigint | undefined;
   runId: string;
   logicalKey: string;
   requestHash: string;
@@ -42,13 +49,18 @@ export interface IntentRow {
   updatedAt: Date;
 }
 
-interface IntentRecord {
+export interface IntentRecord {
+  mode: 'paper' | 'live';
+  wallet_id: string | null;
+  reservation_key: string | null;
+  tx_hash: string | null;
+  settled_gas_atomic: string | null;
   tenant_id: string;
   id: string;
   agent_id: string;
   deployment_id: string;
   generation: string;
-  simulation_account_id: string;
+  simulation_account_id: string | null;
   run_id: string;
   logical_key: string;
   request_hash: string;
@@ -66,13 +78,18 @@ interface IntentRecord {
 
 const big = (value: string | null): bigint | undefined => (value === null ? undefined : BigInt(value));
 
-const toRow = (r: IntentRecord): IntentRow => ({
+export const toRow = (r: IntentRecord): IntentRow => ({
+  mode: r.mode,
+  walletId: r.wallet_id ?? undefined,
+  reservationKey: r.reservation_key ?? undefined,
+  transactionHash: r.tx_hash ?? undefined,
+  settledGasAtomic: big(r.settled_gas_atomic),
   tenantId: r.tenant_id,
   id: r.id,
   agentId: r.agent_id,
   deploymentId: r.deployment_id,
   generation: String(r.generation),
-  simulationAccountId: r.simulation_account_id,
+  simulationAccountId: r.simulation_account_id ?? '',
   runId: r.run_id,
   logicalKey: r.logical_key,
   requestHash: r.request_hash,
@@ -172,7 +189,7 @@ export class ExecutorStore {
   /** Paper intents admitted but not yet filled, oldest first (restart recovery). */
   async reservedIntents(limit = 100): Promise<IntentRow[]> {
     const { rows } = await this.#pool.query<IntentRecord>(
-      `select * from intents where state = 'reserved' order by updated_at, id limit $1`,
+      `select * from intents where state = 'reserved' and mode = 'paper' order by updated_at, id limit $1`,
       [limit],
     );
     return rows.map(toRow);
@@ -196,16 +213,18 @@ export class ExecutorStore {
   }
 
   /** Connector version is enabled for paper and offers the action; both assets exist for paper on the network. */
-  async catalogAllows(connectorRef: string, connectorVersion: string, action: string, networkRef: string, assetRefs: readonly string[]): Promise<{ connector: boolean; assets: boolean }> {
+  async catalogAllows(connectorRef: string, connectorVersion: string, action: string, networkRef: string, assetRefs: readonly string[], mode: 'paper' | 'live' = 'paper'): Promise<{ connector: boolean; assets: boolean }> {
     const connector = await this.#pool.query(
-      `select 1 from catalog_versions where kind = 'connector' and ref = $1 and version = $2 and 'paper' = any(modes)
+      `select 1 from catalog_versions where kind = 'connector' and ref = $1 and version = $2 and $5 = any(modes)
          and disabled_reason is null and definition ->> 'networkRef' = $3 and definition -> 'capabilities' ? $4`,
-      [connectorRef, connectorVersion, networkRef, action],
+      [connectorRef, connectorVersion, networkRef, action, mode],
     );
+    // Paper assets carry a paper identity; live assets an on-chain (erc20 or native) identity on the same network.
+    const kinds = mode === 'paper' ? ['paper'] : ['erc20', 'native'];
     const assets = await this.#pool.query<{ ref: string }>(
-      `select distinct ref from catalog_versions where kind = 'asset' and ref = any($1) and 'paper' = any(modes)
-         and disabled_reason is null and definition -> 'identity' ->> 'kind' = 'paper' and definition -> 'identity' ->> 'networkRef' = $2`,
-      [assetRefs, networkRef],
+      `select distinct ref from catalog_versions where kind = 'asset' and ref = any($1) and $3 = any(modes)
+         and disabled_reason is null and definition -> 'identity' ->> 'kind' = any($4) and definition -> 'identity' ->> 'networkRef' = $2`,
+      [assetRefs, networkRef, mode, kinds],
     );
     return { connector: connector.rowCount === 1, assets: assets.rowCount === new Set(assetRefs).size };
   }
@@ -234,7 +253,7 @@ export class ExecutorStore {
       );
       const dayStart = new Date(Date.UTC(input.now.getUTCFullYear(), input.now.getUTCMonth(), input.now.getUTCDate()));
       const window = await db.query<{ n: string }>(
-        'select count(*) as n from intents where tenant_id = $1 and agent_id = $2 and created_at >= $3 and state = any($4)',
+        `select count(*) as n from intents where tenant_id = $1 and agent_id = $2 and mode = 'paper' and created_at >= $3 and state = any($4)`,
         [input.tenantId, input.agentId, dayStart, COUNTED_STATES],
       );
       const decision = await decide({

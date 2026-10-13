@@ -1,0 +1,13 @@
+{
+  "description": "A withdrawal step-up names its destination",
+  "expect": {
+    "fieldPath": "",
+    "keyword": "oneOf"
+  },
+  "document": {
+    "purpose": "withdrawal",
+    "agentId": "019a0000-0000-7000-8000-000000000001",
+    "assetRef": "live.USD",
+    "amount": "5000000"
+  }
+}

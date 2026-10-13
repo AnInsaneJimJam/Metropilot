@@ -4,6 +4,7 @@ import { LanguageError, syntheticCatalog } from "@monad-hack/strategy";
 import { ControlError, newId, validateDraft } from "./control.ts";
 import type { ControlStore } from "./store.ts";
 import type { LifecycleService } from "./lifecycle.ts";
+import type { FundsService } from "./funds.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -47,12 +48,15 @@ function requestTenant(request: FastifyRequest): string {
 
 export interface ApiOptions {
   store: ControlStore;
+  catalog?: import("@monad-hack/strategy").Catalog;
   /** Production callers must supply a verified session resolver. Never accept a tenant from the body. */
   authenticate: (cookie: string | undefined) => Promise<string | undefined>;
   origin: string;
   localSession?: () => Promise<{ cookie: string; tenant: string }>;
   /** Deployment lifecycle and history (API-2, API-6); absent means launch is unavailable. */
   lifecycle?: LifecycleService;
+  /** Live funds: wallet, balances, allocation, quotes, step-up and withdrawals (G5). */
+  funds?: FundsService;
   /** How often an open event stream checks for new audit events. */
   streamPollMillis?: number;
 }
@@ -185,9 +189,9 @@ export function createApp(options: ApiOptions) {
     });
     routes.get("/v1/catalog", async () => ({
       mode: "paper",
-      synthetic: true,
-      catalog: syntheticCatalog,
-      capabilities: { save: true, deploy: Boolean(options.lifecycle), cloudExecution: false, live: false },
+      synthetic: options.catalog === undefined,
+      catalog: options.catalog ?? syntheticCatalog,
+      capabilities: { save: true, deploy: Boolean(options.lifecycle), cloudExecution: false, live: false, custody: Boolean(options.funds?.liveCustody), localFaucet: Boolean(options.funds?.hasLocalFaucet) },
       ...(options.lifecycle ? { paperVersions: await options.lifecycle.paperVersions() } : {}),
     }));
     routes.get(
@@ -231,7 +235,7 @@ export function createApp(options: ApiOptions) {
           checked.issues[0]!.message,
           { fieldPath: checked.issues[0]!.fieldPath },
         );
-      const p = await validateDraft(checked.value);
+      const p = await validateDraft(checked.value, options.catalog);
       return {
         valid: true,
         hash: p.hash,
@@ -274,7 +278,7 @@ export function createApp(options: ApiOptions) {
           "MALFORMED_REQUEST",
           "If-Match must contain the saved version.",
         );
-      const program = await validateDraft(checked.value);
+      const program = await validateDraft(checked.value, options.catalog);
       return options.store.save(
         requestTenant(request),
         key,
@@ -394,6 +398,40 @@ export function createApp(options: ApiOptions) {
       }
       out.end();
     });
+
+    // ---- funds (G5) -------------------------------------------------------------------------------------------
+    const funds = () => {
+      if (!options.funds) throw new ControlError(503, "CAPABILITY_DISABLED", "Funds are not available on this server.");
+      return options.funds;
+    };
+    const uuidParam = (request: FastifyRequest, name: string) => {
+      const id = (request.params as Record<string, string>)[name] ?? "";
+      if (!UUIDV7.test(id)) throw new ControlError(404, "NOT_FOUND", "Not found.");
+      return id;
+    };
+    routes.post("/v1/agents/:id/wallet", async (request) => funds().wallet(requestTenant(request), agentId(request)));
+    routes.get("/v1/agents/:id/balances", async (request) => funds().balances(requestTenant(request), agentId(request)));
+    routes.post("/v1/agents/:id/allocations", async (request) =>
+      funds().allocate(requestTenant(request), agentId(request), request.body, idempotencyKey(request)));
+    routes.post("/v1/agents/:id/funding-quotes", async (request) => funds().fundingQuote(requestTenant(request), agentId(request), request.body));
+    routes.post("/v1/step-up/challenges", async (request, reply) => {
+      reply.code(201);
+      return funds().startStepUp(requestTenant(request), request.body);
+    });
+    routes.post("/v1/step-up/challenges/:challengeId/verify", async (request) =>
+      funds().verifyStepUp(requestTenant(request), uuidParam(request, "challengeId"), request.body));
+    routes.post("/v1/agents/:id/withdrawal-destinations", async (request, reply) => {
+      reply.code(201);
+      return funds().addDestination(requestTenant(request), agentId(request), request.body, idempotencyKey(request));
+    });
+    routes.post("/v1/agents/:id/withdrawals", async (request, reply) => {
+      const withdrawal = await funds().withdraw(requestTenant(request), agentId(request), request.body, idempotencyKey(request));
+      reply.code(202).header("Location", `/v1/withdrawals/${withdrawal.id}`);
+      return withdrawal;
+    });
+    if (options.funds?.hasLocalFaucet)
+      routes.post("/v1/agents/:id/local-faucet", async (request) => funds().localFaucet(requestTenant(request), agentId(request), request.body));
+    routes.get("/v1/withdrawals/:withdrawalId", async (request) => funds().withdrawal(requestTenant(request), uuidParam(request, "withdrawalId")));
   });
   return app;
 }

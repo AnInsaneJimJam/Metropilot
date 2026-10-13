@@ -24,6 +24,8 @@ export interface LifecycleOptions {
   /** Digest of the runtime image deployments pin; runtimes refuse assignments for any other image. */
   readonly runtimeImageDigest: string;
   readonly catalog?: Catalog;
+  /** Explicit virtual denomination; this is not a USDC/USD market conversion. */
+  readonly paperFundingAsset?: string;
   readonly now?: () => Date;
 }
 
@@ -47,6 +49,7 @@ export class LifecycleService {
   readonly #runtime: RuntimeControlStore;
   readonly #image: string;
   readonly #catalog: Catalog;
+  readonly #fundingAsset: string;
   readonly #now: () => Date;
 
   constructor(options: LifecycleOptions) {
@@ -54,6 +57,8 @@ export class LifecycleService {
     this.#runtime = options.runtime;
     this.#image = options.runtimeImageDigest;
     this.#catalog = options.catalog ?? syntheticCatalog;
+    this.#fundingAsset = options.paperFundingAsset ?? "paper.USD";
+    if (this.#catalog.assets[this.#fundingAsset]?.decimals !== 6) throw new Error("Paper funding denomination must have six decimals.");
     this.#now = options.now ?? (() => new Date());
   }
 
@@ -129,7 +134,7 @@ export class LifecycleService {
       const simulationAccountId = newId();
       await c.query('insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, $2, $3, $4)', [tenantId, simulationAccountId, agentId, session.rows[0]!.next]);
       const budget = agent.paper_budget as { tradingUsdMicros: string; monReserveAtomic: string };
-      for (const [asset, amount] of [['paper.USD', budget.tradingUsdMicros], ['paper.MON', budget.monReserveAtomic], ['paper.WETH', '0']] as const) {
+      for (const [asset, amount] of Object.keys(this.#catalog.assets).map((asset) => [asset, asset === this.#fundingAsset ? budget.tradingUsdMicros : asset === 'paper.MON' ? budget.monReserveAtomic : '0'] as const)) {
         await c.query('insert into simulation_balances (tenant_id, account_id, asset_ref, available) values ($1, $2, $3, $4)', [tenantId, simulationAccountId, asset, amount]);
       }
       let deployed;
@@ -280,6 +285,10 @@ export class LifecycleService {
   async #connectors(c: pg.PoolClient, request: DeploymentRequest, program: CompiledStrategy): Promise<Record<string, string>> {
     const pins: Record<string, string> = {};
     for (const [i, selection] of request.connectorSelections.entries()) {
+      // Legacy deterministic fixtures retain their historical non-semver catalog tags.
+      if (this.#catalog !== syntheticCatalog && this.#catalog.connectors[selection.ref]?.version !== selection.version) {
+        throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', 'Select the connector version in the current reviewed catalog.', { fieldPath: `/connectorSelections/${i}/version` });
+      }
       const definition = await this.#catalogEntry(c, 'connector', selection.ref, selection.version, `/connectorSelections/${i}`);
       const offered = new Set((definition['capabilities'] as string[] | undefined) ?? []);
       const missing = selection.capabilities.find((capability) => !offered.has(capability));

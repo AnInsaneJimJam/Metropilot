@@ -2,15 +2,15 @@
 
 A managed platform for retail traders to configure, test, and run trading agents on Monad without setting up servers, model accounts, protocol integrations, or a programming environment.
 
-**Status: G1/G2 baseline complete; local strategy studio, control API and agent runtime stand-ins implemented.** Versioned contracts, immutable saved drafts, synthetic rehearsal and runtime conformance kits exist. The hosted application, deployed infrastructure and production wallet remain pending. Project name is a working title. Research was checked on **1 October 2026**; sponsor eligibility, addresses, pricing, and model availability must be checked again before integration.
+**Status: local paper stack with real Monad mainnet observations.** The selected connectors are **Aave, Uniswap, and Curve**. Uniswap and Curve provide native prices for reviewed markets and simulated swaps; Aave provides native USD prices and reserve supply/variable-borrow rates. No live signing or lending action is enabled. Hosted infrastructure, identity, model providers and production wallets remain separate work. Run `pnpm market:probe` for a read-only finalized source check. See [domain context](CONTEXT.md), [connector scope](docs/specs/connectors.md#selected-connectors-2026-10-12) and [source evidence](docs/research/market-data-sources.md).
 
 ## Local strategy studio
 
-The React/Blockly workspace and Fastify control API support authoritative validation, virtual budget limits and immutable saved revisions. See [setup, contracts and integration boundaries](docs/specs/control-workspace.md). The runtime runs separately against in-memory stand-ins; hosted execution and identity remain separate integrations.
+The React/Blockly workspace and Fastify control API support authoritative validation, virtual budget limits and immutable saved revisions. See [setup, contracts and integration boundaries](docs/specs/control-workspace.md). The runtime reads finalized observations through the control API and sends permitted paper swaps to the separate executor. Hosted execution and identity remain separate integrations.
 
 ## The product
 
-Users choose connectors, assemble a strategy, review operating costs, and launch an agent. Rookie mode offers four editable presets; advanced mode exposes the same underlying strategy language and additional settings. A connector-only distribution supports people operating their own runtime. The block editor includes conditions, market observations, actions, and bounded AI decisions.
+Users choose connectors, assemble a strategy, review operating costs, and launch an agent. Rookie mode offers editable market presets; advanced mode exposes the same underlying strategy language and additional settings. A connector-only distribution supports people operating their own runtime. The block editor includes conditions, market observations, actions, and bounded AI decisions.
 
 The platform supplies hosted isolation and a free, quota-limited paper-trading sandbox. One custodial agent wallet is presented with separate hosting, model/API, and trading budgets. The platform estimates operating runway and enforces limits; it does not promise profitable trading or an optimal allocation. Users retain control of allocation, pause, withdrawal, and permission changes through the application.
 
@@ -58,7 +58,7 @@ Every directory contains a scoped `AGENTS.md` with implementation tasks. Those f
 
 Deliver a vertical slice: one user → a preset or editable strategy → hosted paper run → bounded AI decision → proposed swap → spend-policy check → visible result and costs. Then prove a capped Monad transaction using a verified connector and team-controlled funds. Public custodial deposits are a separate release gate, not a condition for demonstrating the product.
 
-The initial stack is a TypeScript pnpm workspace, React/Vite, Blockly, Fastify on Node 24 LTS, PostgreSQL, and separate runtime/executor processes. Start with Kimi, a verified Uniswap route, and Privy wallet infrastructure subject to capability checks. Qwen and sponsor hosting are additional integrations, not prerequisites for the first slice. See the architecture and sponsor research for exact limitations.
+The initial stack is a TypeScript pnpm workspace, React/Vite, Blockly, Fastify on Node 24 LTS, PostgreSQL, and separate runtime/executor processes. The current connector scope is Aave, Uniswap, and Curve. Kimi and Privy remain subject to their separate integration and capability checks. Qwen and sponsor hosting are additional integrations, not prerequisites for the first slice. See the architecture and sponsor research for exact limitations.
 
 ## Working together
 
@@ -85,10 +85,20 @@ pnpm web:dev               # Blockly strategy editor
 | `pnpm db:preflight` | Checks the Node version, `.env`, and the local-only `DATABASE_URL` |
 | `pnpm db:up` / `pnpm db:down` | Starts or stops local Postgres 17 on 127.0.0.1 |
 | `pnpm db:migrate` | Applies new files from `apps/api/migrations/`; already-applied files are skipped |
-| `pnpm db:seed` | Loads the synthetic paper rows used by the spec examples; refuses non-local databases |
+| `pnpm db:seed` | Loads deterministic spec fixtures plus the reviewed mainnet-data/paper-effect registry; refuses non-local databases |
 | `pnpm check` | Regenerates schema types, strict typecheck and every node:test suite. Database tests skip without a reachable database unless `REQUIRE_DB=1` |
 | `pnpm db:reset` | Deletes the local database volume; run `pnpm bootstrap` again afterwards |
 
 Secrets: only `.env` (git-ignored) holds local credentials. `pnpm check` scans tracked and new files for credential-shaped content; committed files only ever hold documented placeholders.
 
 Language entry points and implemented semantics: [strategy specification](docs/specs/strategy-language.md#9-first-local-implementation-2026-10-02).
+
+## Market data in the local stack
+
+`pnpm stack:dev` starts the studio on 5173, user API on 3001, control/ingestion on 3002, paper executor on 3003 and a warm runtime. PostgreSQL uses 5432. RPC access belongs to the API worker; the runtime receives no RPC endpoint or database credential.
+
+The worker uses `https://rpc.monad.xyz` and `wss://rpc.monad.xyz`; optional `MARKET_RPC_URL`/`MARKET_WS_URL` overrides belong only in your ignored local environment. HTTPS/WSS are required. New-head notifications are hints; finalized heads, canonical hashes and bounded 100-block recovery determine acceptance. A 5-second watchdog handles disconnects and quiet markets. No Envio account is required and no synthetic market fallback is enabled.
+
+Trading budget values become virtual USDC units on launch, with six decimals; this is an explicit simulation denomination, not a USD/USDC conversion. Operating budget limits remain USD-denominated. Example thresholds are editable examples, not current quotes. Scenario playback for native oracle methods is unavailable; legacy synthetic rehearsal remains a test fixture.
+
+Live transaction builders and signing belong to issues #38–42, the complete broker service to #5, and connector-selection onboarding to #44. The market-read route here implements only authenticated, replayable observation reads.
