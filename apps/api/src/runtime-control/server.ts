@@ -26,7 +26,7 @@ const brokerSecretHex = process.env['BROKER_CAPABILITY_SECRET'];
 if (brokerSecretHex !== undefined && !/^[0-9a-f]{64}$/.test(brokerSecretHex)) throw new Error('BROKER_CAPABILITY_SECRET must be 64 lower-case hex characters.');
 const brokerSecret = brokerSecretHex ? Buffer.from(brokerSecretHex, 'hex') : undefined;
 const store = new RuntimeControlStore({ pool, ...(secretHex ? { executorCapabilitySecret: Buffer.from(secretHex, 'hex') } : {}), ...(brokerSecret ? { brokerCapabilitySecret: brokerSecret } : {}) });
-const kimi = new KimiBroker(pool, new KimiAdapter({ apiKey: process.env['KIMI_API_KEY'] ?? '', verified: kimiVerified(process.env) }));
+const kimi = new KimiBroker(pool, new KimiAdapter({ apiKey: process.env['AI_GATEWAY_API_KEY'] ?? '', verified: kimiVerified(process.env) }));
 const broker = brokerSecret ? new PaperBrokerService({ pool, secret: brokerSecret, kimi }) : undefined;
 const app = createInternalApp({
   store,

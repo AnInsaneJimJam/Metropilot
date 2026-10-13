@@ -1,4 +1,4 @@
-import { marketCatalog } from '@monad-hack/connectors/registry';
+import { registerKimiDemo } from './kimi-demo.ts';
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { databaseUrl } from "./config.ts";
@@ -12,7 +12,7 @@ import { DepositScanner, NATIVE, WithdrawalGateway, reconcileWallets } from "@mo
 import { FundsService } from "./funds.ts";
 import { assertCustodyCatalog, custodyFromEnv, verifyCustodyChain } from "./funds-config.ts";
 
-if (process.env['KIMI_API_KEY'] || process.env['MOONSHOT_API_KEY']) throw new Error('Model credentials are restricted to the broker process.');
+if (process.env['AI_GATEWAY_API_KEY'] || process.env['KIMI_API_KEY'] || process.env['MOONSHOT_API_KEY']) throw new Error('Model credentials are restricted to the broker process.');
 // Explicitly local-only until the production identity adapter and HTTPS deployment are supplied.
 if (
   process.env["LOCAL_WORKSPACE"] !== "1" ||
@@ -28,6 +28,9 @@ const pool = new pg.Pool({
 });
 // An idle client losing its connection must not crash the process; the next query reconnects.
 pool.on("error", (error) => console.error(`database pool error: ${error.name}`));
+const demoKimi = process.env['DEMO_KIMI'] === '1';
+// The opt-in Kimi profile is an immutable catalog row; the catalog resolver serves it like any other version.
+if (demoKimi) await registerKimiDemo(pool);
 const store = new ControlStore(pool);
 // Deployments pin this runtime image; local runtimes run with the same RUNTIME_IMAGE_DIGEST (or this default).
 const runtimeImageDigest = process.env["RUNTIME_IMAGE_DIGEST"] ?? "0x" + "5a".repeat(32);

@@ -4,14 +4,16 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import errorSchema from '../schemas/error-1.schema.json' with { type: 'json' };
 import intentResultSchema from '../schemas/intent-result-1.schema.json' with { type: 'json' };
+import brokerResultSchema from '../schemas/broker-result-1.schema.json' with { type: 'json' };
 import { describeReason, reasons } from './index.ts';
 
 const errorCodes: string[] = errorSchema.$defs.errorCode.enum;
 const intentReasonCodes: string[] = intentResultSchema.properties.reason.properties.code.enum;
+const brokerReasonCodes: string[] = brokerResultSchema.properties.reason.properties.code.enum;
 const controlReasonCodes = ['TRIGGER_COOLDOWN', 'STOP_DRAINING', 'QUOTA_CONCURRENCY', 'QUOTA_SESSION', 'QUOTA_DAILY', 'ADMISSION_FULL', 'HOSTING_BUDGET_EXHAUSTED', 'UNEXPECTED_TRADE_EFFECTS'];
 
-test('the vocabulary covers every error-1 and intent-result-1 reason code and nothing else', () => {
-  assert.deepEqual(Object.keys(reasons).sort(), [...errorCodes, ...intentReasonCodes, ...controlReasonCodes].sort());
+test('the vocabulary covers every error-1, intent-result-1 and broker-result-1 reason code and nothing else', () => {
+  assert.deepEqual(Object.keys(reasons).sort(), [...errorCodes, ...intentReasonCodes, ...brokerReasonCodes, ...controlReasonCodes].sort());
 });
 
 test('every reason has a short title and full sentences without the raw code', () => {

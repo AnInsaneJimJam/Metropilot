@@ -412,6 +412,12 @@ describe('paper stack end to end', { skip }, () => {
     assert.equal(daily.json.details.reason, 'QUOTA_DAILY');
     assert.match(daily.json.message, /midnight UTC/);
     assert.equal((await s.pool.query('select 1 from deployments')).rowCount, 0, 'a refused launch leaves nothing behind');
+    // A session limit of zero refuses the launch itself instead of starting a session that can never run.
+    await s.pool.query('update platform_limits set paper_daily_minutes = 120, paper_session_minutes = 0');
+    const session = await s.launch(agentId, request);
+    assert.equal(session.status, 429);
+    assert.equal(session.json.details.reason, 'QUOTA_SESSION');
+    assert.equal((await s.pool.query('select 1 from deployments')).rowCount, 0);
   });
 
   test('quota (#17): a used-up session refuses new runs, the sweep pauses it with the reason, resume is refused', async () => {

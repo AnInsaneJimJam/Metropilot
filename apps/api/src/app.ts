@@ -439,7 +439,14 @@ export function createApp(options: ApiOptions) {
         open = false;
       });
       let idle = 0;
+      const cookie = request.headers.cookie;
       while (open) {
+        // Access is rechecked before every page: logout, session expiry or a suspended tenant ends the stream.
+        const still = await options.authenticate(cookie).catch(() => undefined);
+        if (still !== tenant || !(await options.store.active(tenant).catch(() => false))) {
+          out.write("event: unauthenticated\ndata: {}\n\n");
+          break;
+        }
         try {
           for (const event of await service.events(tenant, id, cursor, 100)) {
             out.write(`id: ${String(event.sequence)}\nevent: audit\ndata: ${JSON.stringify(event)}\n\n`);

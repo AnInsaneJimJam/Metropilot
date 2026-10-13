@@ -3,11 +3,11 @@
 // the error-1 codes plus the intent-result-1 reason codes plus control-plane codes that are not errors, so a
 // new schema code without an entry fails typechecking. Wording is product copy, reviewed with the PR; it never
 // includes amounts, prompts or provider text, which stay in the event's own redacted fields.
-import type { ErrorCode, IntentReason } from './generated-contracts.ts';
+import type { BrokerReason, ErrorCode, IntentReason } from './generated-contracts.ts';
 
 /** Codes emitted only as reasons, never as error-1 codes. */
 export type ControlReasonCode = 'TRIGGER_COOLDOWN' | 'STOP_DRAINING' | 'QUOTA_CONCURRENCY' | 'QUOTA_SESSION' | 'QUOTA_DAILY' | 'ADMISSION_FULL' | 'HOSTING_BUDGET_EXHAUSTED' | 'UNEXPECTED_TRADE_EFFECTS';
-export type UserReasonCode = ErrorCode | IntentReason['code'] | ControlReasonCode;
+export type UserReasonCode = ErrorCode | IntentReason['code'] | BrokerReason['code'] | ControlReasonCode;
 
 export interface ReasonText {
   /** A short label, a few words. */
@@ -75,6 +75,14 @@ export const reasons: Readonly<Record<UserReasonCode, ReasonText>> = {
   EXECUTOR_INSUFFICIENT_BUDGET: { title: 'Budget too small', explanation: 'The trading budget does not cover this trade.', userAction: 'Add budget or lower the trade amount.' },
   EXECUTOR_RECONCILIATION_REQUIRED: { title: 'Checking the outcome', explanation: 'The trade result is still being confirmed.', userAction: 'Wait; no new trade starts until it is known.' },
   EXECUTOR_PROVIDER_UNAVAILABLE: { title: 'Trading unavailable', explanation: 'The trading service did not respond.', userAction: NONE },
+  // broker-result/1 reasons: a read or AI step was refused; run history shows them (AI allowance, provider, data)
+  BROKER_CAPABILITY_INVALID: { title: 'Step not authorized', explanation: 'The agent asked for data or a decision it was not authorized for.', userAction: 'Launch the agent again.' },
+  BROKER_NOT_ALLOWED: { title: 'Source not allowed', explanation: 'The strategy asked a data source or model that this agent is not approved to use.', userAction: 'Pick an approved source or model and launch again.' },
+  BROKER_BUDGET_EXHAUSTED: { title: 'AI allowance used', explanation: 'The agent has used its AI allowance, so the decision step could not run.', userAction: 'Add API budget for this agent, then resume.' },
+  BROKER_PROVIDER_UNAVAILABLE: { title: 'AI service unavailable', explanation: 'The model provider did not answer, so no decision was made and nothing traded.', userAction: 'Wait; the next trigger tries again.' },
+  BROKER_TIMEOUT: { title: 'Step timed out', explanation: 'The data or decision step took longer than its limit, so the run stopped.', userAction: 'Wait for the next trigger, or allow a longer timeout.' },
+  BROKER_OUTPUT_INVALID: { title: 'Unusable AI answer', explanation: 'The model answered in a form the strategy cannot use, so nothing traded.', userAction: 'Wait for the next trigger; simplify the question if it keeps happening.' },
+  BROKER_STALE_DATA: { title: 'Data too old', explanation: 'The latest market data was older than the strategy allows, so the step stopped.', userAction: 'Wait for fresh data, or allow older data in the strategy.' },
   // control-plane reasons
   TRIGGER_COOLDOWN: { title: 'Cooling down', explanation: 'The price crossed again during the trigger cooldown, so no run started.', userAction: 'Shorten the cooldown if you want more frequent runs.' },
   STOP_DRAINING: { title: 'Stopping', explanation: 'The agent is stopping and waits for its open paper trades to settle or be cancelled.', userAction: 'Wait; it stops by itself once they finish.' },

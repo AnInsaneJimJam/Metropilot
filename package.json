@@ -29,6 +29,7 @@
     "stack:dev": "pnpm generate && node scripts/stack-dev.mjs",
     "custody:proof": "node --env-file-if-exists=.env scripts/custody-proof.ts",
     "custody:hypersync": "node --env-file-if-exists=.env scripts/hypersync-check.ts",
+    "kimi:probe": "node --env-file-if-exists=.env scripts/kimi-probe.ts --allow-credit-use",
     "market:probe": "node --env-file-if-exists=.env scripts/market-probe.mjs"
   },
   "devDependencies": {

@@ -69,7 +69,8 @@ export async function admitPaper(c: pg.PoolClient, tenantId: string, deploymentI
   if (Number(active.rows[0]!.mine) >= limits.concurrentPerUser) {
     return { reason: 'QUOTA_CONCURRENCY', message: `Only ${limits.concurrentPerUser} paper agent${limits.concurrentPerUser === 1 ? '' : 's'} can run at a time; pause or stop the running one first.` };
   }
-  if (deploymentId && (await sessionSeconds(c, deploymentId, now)) >= limits.sessionSeconds) {
+  // A new session starts at zero seconds: launch is refused here too when the session limit allows none.
+  if ((deploymentId ? await sessionSeconds(c, deploymentId, now) : 0) >= limits.sessionSeconds) {
     return { reason: 'QUOTA_SESSION', message: `This paper session used its ${minutes(limits.sessionSeconds)}; stop it and launch a new session.` };
   }
   if ((await dailySeconds(c, tenantId, now)) >= limits.dailySeconds) {
