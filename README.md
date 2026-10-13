@@ -22,8 +22,6 @@
   <a href="#documentation">Documentation</a>
 </p>
 
-> [!NOTE]
-> Metropilot runs today as a **local paper stack**: prices are real, finalized Monad mainnet observations; balances are virtual and fills are simulated. No real funds move. Hosting and capped live trading are in progress — see [Status](#status).
 
 <p align="center">
   <img src="docs/assets/studio-build.png" alt="The Metropilot studio: a scheduled WMON purchase built from blocks, with the inspector open" width="100%" />
