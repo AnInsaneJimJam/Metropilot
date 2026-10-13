@@ -1,6 +1,6 @@
 # Runtime HTTP clients
 
-**Status 2026-10-13: all three HTTP clients and the process entry are implemented.** The broker kit runs through [`dispatch/broker.ts`](../../apps/runtime/src/dispatch/broker.ts) against the real Fastify service and PostgreSQL ([broker-service.test.ts](../../tests/broker-service.test.ts)). [paper-stack.test.ts](../../tests/paper-stack.test.ts) runs launch → HTTP recorded read/synthetic decision → executor → history. `main.ts` defaults to the HTTP broker; `RUNTIME_BROKER=synthetic` explicitly selects the local stand-in. Broker and executor tokens have separate audiences and secrets; the runtime exchanges its current assignment bearer and never receives either secret.
+**Status 2026-10-13: all three HTTP clients and the process entry are implemented.** The broker kit runs through [`dispatch/broker.ts`](../../apps/runtime/src/dispatch/broker.ts) against the real Fastify service and PostgreSQL ([broker-service.test.ts](../../tests/broker-service.test.ts)). [paper-stack.test.ts](../../tests/paper-stack.test.ts) runs launch → HTTP recorded read/synthetic decision → executor → history. `main.ts` uses the HTTP broker for finalized native market reads and bounded AI. Scripted brokers remain isolated demo/test utilities. Broker and executor tokens have separate audiences and secrets; the runtime exchanges its current assignment bearer and never receives either secret.
 
 Client locations ([agent runtime §16](../specs/agent-runtime.md#16-suggested-source-layout)):
 

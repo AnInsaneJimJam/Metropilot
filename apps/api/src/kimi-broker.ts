@@ -4,6 +4,7 @@ import { BrokerStore } from './broker-store.ts';
 import type { BrokerScope, BrokerProvenance } from './broker-store.ts';
 import { KimiAdapter, KIMI_MODEL, KIMI_RATES, usageCost } from './kimi-adapter.ts';
 import type { TokenUsage } from './kimi-adapter.ts';
+import type { AiAllowance } from './ai-allowance.ts';
 
 /** Durable dispatch/metering around a single bounded model request. Never retries provider I/O. */
 export class KimiBroker {
@@ -12,7 +13,7 @@ export class KimiBroker {
   readonly modelId = KIMI_MODEL;
   readonly profileVersion = '1.0.0';
   constructor(pool: pg.Pool, adapter: KimiAdapter) { this.pool = pool; this.adapter = adapter; }
-  async dispatch(scope: BrokerScope, request: BrokerRequest): Promise<BrokerResult> {
+  async dispatch(scope: BrokerScope, request: BrokerRequest, allowance?: AiAllowance): Promise<BrokerResult> {
     const refuse = (code: NonNullable<BrokerResult['reason']>['code'], message: string): BrokerResult => ({ schemaVersion: 'broker-result/1', operationKey: request.operationKey, disposition: 'refused', reason: { code, message } });
     if (!this.adapter.enabled) return refuse('BROKER_NOT_ALLOWED', 'Kimi is disabled until provider verification is recorded.');
     let plan;
@@ -20,13 +21,28 @@ export class KimiBroker {
     catch { return refuse('BROKER_BUDGET_EXHAUSTED', 'This AI request exceeds the bounded profile.'); }
     const overdue = await this.pool.query(`select 1 from ai_metering where model_id=$1 and state in ('dispatched','reconciling') and authorized_at < now()-interval '24 hours' limit 1`, [KIMI_MODEL]);
     if (overdue.rowCount) return refuse('BROKER_PROVIDER_UNAVAILABLE', 'This model profile is paused pending billing reconciliation.');
-    const claimed = await this.pool.query(`insert into ai_metering(tenant_id,operation_key,agent_id,model_id,rate_version,input_rate,cached_input_rate,output_rate,max_input_tokens,max_output_tokens,reserved_usd_micros,state)
+    const client = await this.pool.connect();
+    let claimed: pg.QueryResult;
+    try {
+      await client.query('begin');
+      // Both claims commit together; a crash cannot strand an unused positive hold.
+      if (allowance) {
+        const reservation = await allowance.reserve(scope, request.operationKey, plan.reservedUsdMicros, client);
+        if (!reservation.allowed) {
+          await client.query('rollback');
+          return refuse('BROKER_BUDGET_EXHAUSTED', reservation.message);
+        }
+      }
+      claimed = await client.query(`insert into ai_metering(tenant_id,operation_key,agent_id,model_id,rate_version,input_rate,cached_input_rate,output_rate,max_input_tokens,max_output_tokens,reserved_usd_micros,state)
       select b.tenant_id,b.operation_key,d.agent_id,$5,$6,$7,$8,$9,$10,$11,$12,'dispatched'
       from broker_operations b join runs r on r.tenant_id=b.tenant_id and r.run_id=b.run_id
       join deployments d on d.tenant_id=r.tenant_id and d.id=r.deployment_id
       where b.tenant_id=$1 and r.deployment_id=$2 and r.generation=$3 and r.run_id=$4 and b.operation_key=$13 and d.mode='paper'
       on conflict do nothing returning operation_key`,
       [scope.tenantId,scope.deploymentId,scope.generation,scope.runId,KIMI_MODEL,KIMI_RATES.version,KIMI_RATES.input.toString(),KIMI_RATES.cachedInput.toString(),KIMI_RATES.output.toString(),plan.maxInputTokens,plan.maxOutputTokens,plan.reservedUsdMicros.toString(),request.operationKey]);
+      await client.query('commit');
+    } catch (error) { await client.query('rollback'); throw error; }
+    finally { client.release(); }
     if (!claimed.rowCount) {
       const row = (await this.pool.query<{ result: BrokerResult | null }>('select result from ai_metering where tenant_id=$1 and operation_key=$2', [scope.tenantId,request.operationKey])).rows[0];
       return row?.result ?? { schemaVersion: 'broker-result/1', operationKey: request.operationKey, disposition: 'unknown', reason: { code: 'BROKER_PROVIDER_UNAVAILABLE', message: 'The original dispatch requires reconciliation.' } };

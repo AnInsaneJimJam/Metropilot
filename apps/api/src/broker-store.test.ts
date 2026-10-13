@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after, before, describe, test } from "node:test";
 import pg from "pg";
-import { contentHash, operationKey, validate } from "@monad-hack/contracts";
+import { contentHash, operationKey, parse, validate } from "@monad-hack/contracts";
 import type { BrokerRequest, BrokerResult } from "@monad-hack/contracts";
 import { BrokerStore } from "./broker-store.ts";
 import type { BrokerScope } from "./broker-store.ts";
@@ -198,6 +198,21 @@ describe("broker result persistence / PostgreSQL", { skip: !url }, () => {
       ),
       /different input/,
     );
+  });
+
+  test('compact wire-limit answers persist despite JSONB formatting overhead', async () => {
+    const r = await request('wire_boundary');
+    const response = answer(r);
+    response.value = { padding: '', ...Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`field${i}`, 0])) };
+    response.value['padding'] = 'x'.repeat(65536 - Buffer.byteLength(JSON.stringify(response)));
+    assert.equal(Buffer.byteLength(JSON.stringify(response)), 65536);
+    assert.ok(parse('brokerResult', JSON.stringify(response)).ok);
+    assert.ok(!parse('brokerResult', JSON.stringify({ ...response, value: { ...response.value, extra: true } })).ok);
+    const saved = await store.execute(scope, r, provenance, async () => response);
+    assert.deepEqual(saved.value, response.value);
+    const stored = await pool.query('select octet_length(response::text) as bytes from broker_results where id=$1', [saved.resultId]);
+    assert.ok(stored.rows[0].bytes > 65536);
+    assert.deepEqual((await store.read(scope, saved.resultId!)).response, saved);
   });
 
   test('finished runs and terminal waiting operations cannot start a delayed first dispatch', async () => {

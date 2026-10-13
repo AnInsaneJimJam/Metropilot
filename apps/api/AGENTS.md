@@ -27,8 +27,10 @@ Progress 2026-10-08 (`codex/user-app-control-api`): local Fastify routes, server
 
 ## Broker-AI issue evidence
 
-- [x] BROKER-1 / #4: immutable persisted answers, scoped result-ID read contract, durable dispatch claims and identical-operation replay. Migration 0006; [persistence tests](src/broker-store.test.ts) and [migration checks](src/db/db.test.ts). Evidence 2026-10-13: `REQUIRE_DB=1 pnpm check` 525 passed, zero skipped. HTTP/provider integration remains #5.
+- [x] BROKER-1 / #4: immutable persisted answers, scoped result-ID read contract, durable dispatch claims and identical-operation replay. Migration 0012; [persistence tests](src/broker-store.test.ts) and [migration checks](src/db/db.test.ts). Evidence 2026-10-13: `REQUIRE_DB=1 pnpm check` 525 passed, zero skipped. HTTP/provider integration remains #5.
 
 - [x] BROKER-2 / #5: paper broker HTTP route, broker-audience exchange with current-assignment checks, immutable replay, recorded read freshness, declared AI output validation and durable reconciliation resume. [Service conformance/safety tests](../../tests/broker-service.test.ts) and [kit](../runtime/src/conformance/broker.ts). Evidence 2026-10-13: `REQUIRE_DB=1 pnpm check` 534 passed, zero skipped. Synthetic model only; provider integration remains #8.
 
 - [x] BROKER-5 implementation / #8: bounded Kimi adapter, broker-only credentials, durable token/rate holds and unknown-charge reconciliation implemented. [Integration/evidence guide](../../docs/integration/kimi-broker.md), [adapter tests](src/kimi-adapter.test.ts), [PostgreSQL tests](../../tests/kimi-broker.test.ts). E05 and API-5 remain open until an authorized real account/billing probe; paid dispatch defaults disabled. `REQUIRE_DB=1 pnpm check`: 558 passed, zero skipped (2026-10-13).
+
+- [x] BROKER-6 / #9: atomic per-agent paper AI allowance (20 calls/100,000 micro-USD per UTC day plus API allocation), migration 0014 and legacy backfill 0015, visible `BROKER_BUDGET_EXHAUSTED`, original-window holds and one-charge runtime replay. [PostgreSQL scenarios](../../tests/ai-allowance.test.ts), [migration checks](src/db/db.test.ts). `REQUIRE_DB=1 pnpm check`: 566 passed, zero skipped (2026-10-13). E05 remains gated; no custodial ledger or live enablement.

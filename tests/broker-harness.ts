@@ -10,6 +10,7 @@ import type {
   BrokerResult,
   RunCheckpoint,
   RuntimeAssignment,
+  Strategy,
 } from "../packages/contracts/src/index.ts";
 import {
   verifyCapability,
@@ -17,6 +18,7 @@ import {
 import {
   advanceRun,
   startRun,
+  runIdentity,
   compileStrategy,
   PRESETS,
   syntheticCatalog,
@@ -49,7 +51,7 @@ after(async () => {
 
 /** A fresh database per scenario; the public control-plane creates actual immutable artifacts and waits. */
 export async function brokerHarness(
-  options: { decide?: (r: BrokerRequest) => Promise<BrokerResult>; kimiAdapter?: import('../apps/api/src/kimi-adapter.ts').KimiAdapter } = {},
+  options: { strategy?: Strategy; decide?: (r: BrokerRequest) => Promise<BrokerResult>; kimiAdapter?: import('../apps/api/src/kimi-adapter.ts').KimiAdapter } = {},
 ) {
   if (!admin) {
     admin = new pg.Client({ connectionString: url! });
@@ -107,7 +109,7 @@ export async function brokerHarness(
   };
   const catalog = options.kimiAdapter ? { ...syntheticCatalog, modelProfiles: { 'paper.kimi': { ...syntheticCatalog.modelProfiles['paper.kimi']!, provider: 'kimi', modelId: KIMI_MODEL } } } : syntheticCatalog;
   const program = await compileStrategy(
-    JSON.stringify(PRESETS.find((p) => p.id === "ai_gated_purchase")!.strategy),
+    JSON.stringify(options.strategy ?? PRESETS.find((p) => p.id === "ai_gated_purchase")!.strategy),
     catalog,
   );
   async function waiting(
@@ -160,8 +162,8 @@ export async function brokerHarness(
       tenantId,
     ]);
     await pool.query(
-      "insert into agents(tenant_id,id,name) values($1,$2,'Broker test')",
-      [tenantId, agentId],
+      "insert into agents(tenant_id,id,name,paper_budget) values($1,$2,'Broker test',$3)",
+      [tenantId, agentId, { dataAndAiUsdMicros: '1000000', tradingUsdMicros: '1000000000', hostingUsdMicros: '10000000', monReserveAtomic: '1000000000000000000' }],
     );
     await pool.query(
       "insert into strategy_revisions(tenant_id,id,agent_id,language_version,content_hash,ast,validation) values($1,$2,$3,'strategy/1',$4,$5,'{}')",
@@ -179,7 +181,7 @@ export async function brokerHarness(
       "insert into simulation_accounts(tenant_id,id,agent_id,session) values($1,$2,$3,1)",
       [tenantId, accountId, agentId],
     );
-    const d = await runtime.deploy({
+    await runtime.deploy({
       tenantId,
       agentId,
       strategyRevisionId: revisionId,
@@ -196,6 +198,9 @@ export async function brokerHarness(
       simulationAccountId: accountId,
     });
     await runtime.tickSchedules();
+    return prepareRun(kind);
+  };
+  const prepareRun = async (kind: 'read' | 'ai.decide'): Promise<BrokerRequest> => {
     const offer = await runtime.poll({
       schemaVersion: "assignment-poll/1",
       runtimeId: "broker-test",
@@ -218,7 +223,7 @@ export async function brokerHarness(
     const now = new Date().toISOString();
     await runtime.ingestPrice({
       feedRef: "paper.weth-usd",
-      sourceEventKey: `test:${d.deploymentId}`,
+      sourceEventKey: `test:${assignment.run.runId}`,
       price: {
         baseAssetRef: "paper.WETH",
         quoteUnit: "USD",
@@ -260,8 +265,18 @@ export async function brokerHarness(
     });
     return waiting(assignment, next.checkpoint);
   };
+  const runAgain = async (originalRunId: string): Promise<BrokerRequest> => {
+    const original = (await pool.query<{ deployment_revision: string; trigger_id: string }>('select deployment_revision,trigger_id from runs where run_id=$1', [originalRunId])).rows[0]!;
+    const sourceEventKey = `synthetic-next:${randomBytes(8).toString('hex')}`;
+    const runId = await runIdentity(original.deployment_revision, original.trigger_id, sourceEventKey);
+    await pool.query(`insert into runs(tenant_id,run_id,deployment_id,generation,deployment_revision,trigger_id,source_event_key,trigger) select tenant_id,$2,deployment_id,generation,deployment_revision,trigger_id,$3,trigger from runs where run_id=$1`, [originalRunId, runId, sourceEventKey]);
+    await runtime.reassign(runId);
+    return prepareRun('ai.decide');
+  };
   return {
     broker,
+    program,
+    runAgain,
     kimi,
     app,
     service,

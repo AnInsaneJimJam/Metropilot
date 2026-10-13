@@ -11,6 +11,12 @@ import { ControlError, newId } from './control.ts';
 import type { AuditActor, RuntimeControlStore } from './runtime-control/store.ts';
 import { RunControlError } from './runtime-control/store.ts';
 
+// Preserve the stable broker budget reason in the existing run-error view.
+const BUDGET_ERROR = `(select b.response->'reason' || jsonb_build_object('nodeId',b.node_id) from broker_results b
+  where b.tenant_id=r.tenant_id and b.run_id=r.run_id and b.node_id=r.checkpoint#>>'{error,nodeId}'
+  and b.response->>'disposition'='refused' and b.response#>>'{reason,code}'='BROKER_BUDGET_EXHAUSTED'
+  order by b.received_at desc,b.id desc limit 1)`;
+
 const ESTIMATE_MINUTES = 15;
 /** Paper policy defaults by experience (product.md modes); live authority is never granted here. */
 const PAPER_POLICY: Record<Experience, { maxSlippageBps: number; dailyActionCount: number }> = {
@@ -197,7 +203,7 @@ export class LifecycleService {
     await this.#agent(this.#pool, tenantId, agentId);
     if (cursor !== undefined && !RUN.test(cursor)) throw new ControlError(400, 'MALFORMED_REQUEST', 'Invalid cursor.');
     const { rows } = await this.#pool.query(
-      `select r.* from runs r join deployments d on d.tenant_id = r.tenant_id and d.id = r.deployment_id
+      `select r.*,${BUDGET_ERROR} as broker_error from runs r join deployments d on d.tenant_id = r.tenant_id and d.id = r.deployment_id
        where r.tenant_id = $1 and d.agent_id = $2
          and ($3::text is null or (r.created_at, r.run_id) < (select created_at, run_id from runs where run_id = $3 and tenant_id = $1))
        order by r.created_at desc, r.run_id desc limit $4`,
@@ -209,7 +215,7 @@ export class LifecycleService {
 
   async run(tenantId: string, runId: string): Promise<Record<string, unknown>> {
     if (!RUN.test(runId)) throw new ControlError(404, 'NOT_FOUND', 'Run not found.');
-    const { rows } = await this.#pool.query('select * from runs where tenant_id = $1 and run_id = $2', [tenantId, runId]);
+    const { rows } = await this.#pool.query(`select r.*,${BUDGET_ERROR} as broker_error from runs r where r.tenant_id = $1 and r.run_id = $2`, [tenantId, runId]);
     if (!rows[0]) throw new ControlError(404, 'NOT_FOUND', 'Run not found.');
     const ops = await this.#pool.query('select * from run_operations where run_id = $1 order by created_at, operation_key limit 64', [runId]);
     const notes = await this.#pool.query('select node_id, message, created_at from timeline_entries where run_id = $1 order by created_at limit 64', [runId]);
@@ -368,7 +374,7 @@ function operationDoc(row: Record<string, unknown>): Operation {
 
 function runSummary(row: Record<string, unknown>): Record<string, unknown> {
   const checkpoint = row['checkpoint'] as { error?: { code: string; message: string; nodeId?: string } } | null;
-  const error = checkpoint?.error;
+  const error = (row['broker_error'] as { code: string; message: string; nodeId?: string } | null) ?? checkpoint?.error;
   return {
     schemaVersion: 'run-summary/1', runId: row['run_id'], deploymentId: row['deployment_id'], generation: String(row['generation']), triggerId: row['trigger_id'], status: row['status'],
     ...(error ? { error: { code: error.code, message: error.message, ...(error.nodeId ? { nodeId: error.nodeId } : {}) } } : {}),
