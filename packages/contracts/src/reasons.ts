@@ -6,7 +6,7 @@
 import type { ErrorCode, IntentReason } from './generated-contracts.ts';
 
 /** Codes emitted only as reasons, never as error-1 codes. */
-export type ControlReasonCode = 'TRIGGER_COOLDOWN';
+export type ControlReasonCode = 'TRIGGER_COOLDOWN' | 'STOP_DRAINING' | 'QUOTA_CONCURRENCY' | 'QUOTA_SESSION' | 'QUOTA_DAILY' | 'ADMISSION_FULL' | 'HOSTING_BUDGET_EXHAUSTED';
 export type UserReasonCode = ErrorCode | IntentReason['code'] | ControlReasonCode;
 
 export interface ReasonText {
@@ -77,6 +77,13 @@ export const reasons: Readonly<Record<UserReasonCode, ReasonText>> = {
   EXECUTOR_PROVIDER_UNAVAILABLE: { title: 'Trading unavailable', explanation: 'The trading service did not respond.', userAction: NONE },
   // control-plane reasons
   TRIGGER_COOLDOWN: { title: 'Cooling down', explanation: 'The price crossed again during the trigger cooldown, so no run started.', userAction: 'Shorten the cooldown if you want more frequent runs.' },
+  STOP_DRAINING: { title: 'Stopping', explanation: 'The agent is stopping and waits for its open paper trades to settle or be cancelled.', userAction: 'Wait; it stops by itself once they finish.' },
+  // paper sandbox quotas and admission (issue #17); the numbers are in the error message and GET /v1/quota
+  QUOTA_CONCURRENCY: { title: 'Another agent is running', explanation: 'The free sandbox runs one paper agent at a time.', userAction: 'Pause or stop the running agent, then try again.' },
+  QUOTA_SESSION: { title: 'Session time used', explanation: 'This paper session reached its time limit, so the agent was paused.', userAction: 'Stop the agent and launch it again to start a new session.' },
+  QUOTA_DAILY: { title: 'Daily time used', explanation: 'Your paper time for today (UTC) is used up, so agents are paused.', userAction: 'Resume after midnight UTC.' },
+  ADMISSION_FULL: { title: 'Sandbox is full', explanation: 'The paper sandbox is at capacity right now.', userAction: 'Try again in a few minutes.' },
+  HOSTING_BUDGET_EXHAUSTED: { title: 'Hosting budget used', explanation: 'The agent\'s hosting budget could not pay for the next minutes of running, so it was paused.', userAction: 'Add hosting funds, then resume.' },
 };
 
 export interface DescribedReason extends ReasonText {

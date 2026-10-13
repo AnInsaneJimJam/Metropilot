@@ -13,11 +13,12 @@ import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { after, describe, test } from 'node:test';
 import pg from 'pg';
-import { verifyCapability } from '../packages/contracts/src/capability.ts';
-import { contentHash, validate } from '../packages/contracts/src/index.ts';
+import { signCapability, verifyCapability } from '../packages/contracts/src/capability.ts';
+import { contentHash, intentKey, validate } from '../packages/contracts/src/index.ts';
 import { PRESETS, syntheticCatalog, workspaceFromStrategy } from '../packages/strategy/src/index.ts';
 import { createApp } from '../apps/api/src/app.ts';
 import { pruneAudit } from '../apps/api/src/db/cli.ts';
+import { dailySeconds, sessionSeconds } from '../apps/api/src/quota.ts';
 import { migrate } from '../apps/api/src/db/migrate.ts';
 import { seedPaper } from '../apps/api/src/db/seed.ts';
 import { LifecycleService } from '../apps/api/src/lifecycle.ts';
@@ -359,6 +360,176 @@ describe('paper stack end to end', { skip }, () => {
     assert.doesNotMatch(reset, /event: audit/);
     const resumed = await stream('3', (text) => [...text.matchAll(/^id: (\d+)$/gm)].length >= kept.length);
     assert.deepEqual([...resumed.matchAll(/^id: (\d+)$/gm)].map((m) => m[1]), kept, 'every kept event exactly once');
+  });
+
+  test('quota (#17): one running paper agent per user; launch and resume over it are refused with the reason', async () => {
+    const s = await stack();
+    const a = await s.draft();
+    const b = await s.draft('scheduled_purchase');
+    assert.equal((await s.launch(a.agentId, a.request)).status, 202);
+    const refused = await s.launch(b.agentId, b.request);
+    assert.equal(refused.status, 429, JSON.stringify(refused.json));
+    assert.ok(validate('error', refused.json).ok, JSON.stringify(refused.json));
+    assert.equal(refused.json.code, 'LIMIT_EXCEEDED');
+    assert.equal(refused.json.details.reason, 'QUOTA_CONCURRENCY');
+    assert.match(refused.json.message, /one paper agent|pause or stop/i);
+    const quota = await s.call('GET', '/quota');
+    assert.ok(validate('paperQuota', quota.json).ok, JSON.stringify(quota.json));
+    assert.deepEqual(quota.json.concurrentAgents, { used: 1, limit: 1 });
+    assert.equal(quota.json.sessions[0].agentId, a.agentId);
+    assert.equal(quota.json.sessionSecondsLimit, 3600);
+    // Pausing A frees the slot; then A cannot resume while B runs.
+    await s.call('POST', `/agents/${a.agentId}/pause`, undefined, { 'idempotency-key': 'pause-quota-a' });
+    const fresh = await s.call('POST', `/agents/${b.agentId}/estimates`, {});
+    assert.equal((await s.launch(b.agentId, { ...b.request, estimateId: fresh.json.id })).status, 202);
+    const resume = await s.call('POST', `/agents/${a.agentId}/resume`, undefined, { 'idempotency-key': 'resume-quota-a' });
+    assert.equal(resume.status, 429);
+    assert.equal(resume.json.details.reason, 'QUOTA_CONCURRENCY');
+    assert.equal((await s.call('GET', `/agents/${a.agentId}/deployment`)).json.desiredState, 'paused');
+  });
+
+  test('quota (#17): two concurrent launches of different agents → exactly one is admitted', async () => {
+    const s = await stack();
+    const [a, b] = [await s.draft(), await s.draft('scheduled_purchase')];
+    const results = await Promise.all([s.launch(a.agentId, a.request), s.launch(b.agentId, b.request)]);
+    assert.deepEqual(results.map((r) => r.status).sort(), [202, 429], JSON.stringify(results.map((r) => r.json)));
+    const active = await s.pool.query(`select 1 from deployments where desired_state = 'active'`);
+    assert.equal(active.rowCount, 1);
+  });
+
+  test('quota (#17): the global admission cap and the daily limit refuse launches with their reasons', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    await s.pool.query('update platform_limits set paper_active_global = 0');
+    const full = await s.launch(agentId, request);
+    assert.equal(full.status, 429);
+    assert.equal(full.json.details.reason, 'ADMISSION_FULL');
+    assert.equal((await s.call('GET', '/quota')).json.admissionOpen, false);
+    await s.pool.query('update platform_limits set paper_active_global = 10, paper_daily_minutes = 0');
+    const daily = await s.launch(agentId, request);
+    assert.equal(daily.status, 429);
+    assert.equal(daily.json.details.reason, 'QUOTA_DAILY');
+    assert.match(daily.json.message, /midnight UTC/);
+    assert.equal((await s.pool.query('select 1 from deployments')).rowCount, 0, 'a refused launch leaves nothing behind');
+  });
+
+  test('quota (#17): a used-up session refuses new runs, the sweep pauses it with the reason, resume is refused', async () => {
+    const s = await stack();
+    await s.observe();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    const intervals = async () => (await s.pool.query<{ generation: number; open: boolean }>('select generation, ended_at is null as open from paper_active_intervals order by generation')).rows.map((r) => [r.generation, r.open]);
+    assert.deepEqual(await intervals(), [[1, true]]);
+    // 61 minutes of this session have passed.
+    await s.pool.query(`update paper_active_intervals set started_at = now() - interval '61 minutes'`);
+    assert.deepEqual((await s.runtimeStore.tickSchedules()).map((f) => f.reason), ['QUOTA_SESSION']);
+    assert.equal((await s.pool.query('select 1 from runs')).rowCount, 0, 'no run beyond the session');
+    const skipped = await s.pool.query<{ reason: string }>(`select payload ->> 'reasonCode' as reason from audit_events where type = 'observation.skipped'`);
+    assert.deepEqual(skipped.rows.map((r) => r.reason), ['QUOTA_SESSION']);
+    const paused = await s.runtimeStore.enforcePaperQuotas();
+    assert.deepEqual(paused.map((p) => p.reason), ['QUOTA_SESSION']);
+    assert.deepEqual(await s.runtimeStore.enforcePaperQuotas(), [], 'a paused deployment is left alone');
+    assert.deepEqual(await intervals(), [[1, false]]);
+    const event = await s.pool.query<{ payload: { to: string; reasonCode: string }; actor_kind: string }>(`select payload, actor_kind from audit_events where type = 'deployment.stateChanged' order by sequence desc limit 1`);
+    assert.deepEqual([event.rows[0]!.payload.to, event.rows[0]!.payload.reasonCode, event.rows[0]!.actor_kind], ['paused', 'QUOTA_SESSION', 'system']);
+    const resume = await s.call('POST', `/agents/${agentId}/resume`, undefined, { 'idempotency-key': 'resume-session' });
+    assert.equal(resume.status, 429);
+    assert.equal(resume.json.details.reason, 'QUOTA_SESSION');
+    // Stop and launch again: a new session (the daily allowance still has time left).
+    await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-session' });
+    const again = await s.call('POST', `/agents/${agentId}/estimates`, {});
+    const relaunch = await s.launch(agentId, { ...request, estimateId: again.json.id, policyVersion: again.json.policyVersion });
+    assert.equal(relaunch.status, 202, JSON.stringify(relaunch.json));
+  });
+
+  test('quota (#17): pause/resume open and close intervals; minutes split at UTC midnight', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    await s.call('POST', `/agents/${agentId}/pause`, undefined, { 'idempotency-key': 'pause-interval' });
+    await s.call('POST', `/agents/${agentId}/resume`, undefined, { 'idempotency-key': 'resume-interval' });
+    const rows = await s.pool.query<{ generation: number; open: boolean; deployment_id: string }>('select generation, ended_at is null as open, deployment_id from paper_active_intervals order by generation');
+    assert.deepEqual(rows.rows.map((r) => [r.generation, r.open]), [[1, false], [2, true]]);
+    const deploymentId = rows.rows[0]!.deployment_id;
+    // A fixed past day: 23:30 → 00:45 across midnight, then 01:00 → 01:10.
+    await s.pool.query(
+      `insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at, ended_at) values
+       ($1, $2, 10, '2026-01-01T23:30:00Z', '2026-01-02T00:45:00Z'), ($1, $2, 11, '2026-01-02T01:00:00Z', '2026-01-02T01:10:00Z')`, [s.tenant, deploymentId]);
+    assert.equal(await dailySeconds(s.pool, s.tenant, new Date('2026-01-01T23:59:00Z')), 29 * 60);
+    assert.equal(await dailySeconds(s.pool, s.tenant, new Date('2026-01-02T12:00:00Z')), 55 * 60);
+    assert.equal(await dailySeconds(s.pool, s.tenant, new Date('2026-01-02T01:05:00Z')), 50 * 60, 'an interval is counted only up to now');
+    assert.equal(await sessionSeconds(s.pool, deploymentId, new Date('2026-01-02T12:00:00Z')), 85 * 60);
+  });
+
+  test('drain-before-stop (#20): stop with an open paper intent stays stopping until the executor settles it', async () => {
+    const s = await stack({ dispatchInline: false });
+    await s.observe();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    await s.runtimeStore.tickSchedules();
+    assert.equal((await s.runtime().cycle()).outcome, 'waiting', 'the swap is admitted and reserved, not yet filled');
+    const intent = (await s.pool.query<{ id: string; state: string; request: Record<string, unknown>; deployment_id: string; generation: number; run_id: string }>('select id, state, request, deployment_id, generation, run_id from intents')).rows[0]!;
+    assert.equal(intent.state, 'reserved');
+
+    const stop = await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-drain-1' });
+    assert.equal(stop.status, 202);
+    assert.equal(stop.json.state, 'succeeded');
+    const stopping = await s.call('GET', `/agents/${agentId}/deployment`);
+    assert.ok(validate('agentDeployment', stopping.json).ok, JSON.stringify(stopping.json));
+    assert.deepEqual([stopping.json.desiredState, stopping.json.openIntents], ['stopping', 1]);
+    // Stop is idempotent while stopping; pause, resume and a new launch are refused with readable reasons.
+    assert.equal((await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-drain-2' })).status, 202);
+    for (const kind of ['pause', 'resume']) {
+      const refused = await s.call('POST', `/agents/${agentId}/${kind}`, undefined, { 'idempotency-key': `${kind}-while-stopping` });
+      assert.equal(refused.status, 409, kind);
+      assert.match(refused.json.message, /stopping/, kind);
+    }
+    const fresh = await s.call('POST', `/agents/${agentId}/estimates`, {});
+    const early = await s.launch(agentId, { ...request, estimateId: fresh.json.id, policyVersion: fresh.json.policyVersion });
+    assert.equal(early.status, 409);
+    assert.match(early.json.message, /still stopping/);
+
+    // The executor refuses a new intent for the stopping deployment, even with an unexpired capability.
+    const iat = Math.floor(Date.now() / 1000);
+    const token = signCapability({ aud: 'executor', tenantId: s.tenant, agentId, deploymentId: intent.deployment_id, generation: String(intent.generation), mode: 'paper', actions: ['swap.exactInput'], connectors: { 'paper.uniswap': '1.1.0' }, runId: intent.run_id, iat, exp: iat + 60, jti: '019a0000-0000-7000-8000-00000000d001' }, s.secret);
+    const other = { ...intent.request, iterationPath: [7] } as Record<string, unknown>;
+    other['logicalKey'] = await intentKey({ deploymentId: intent.deployment_id, generation: String(intent.generation), runId: intent.run_id, nodeId: String(other['nodeId']), iterationPath: [7] });
+    const refused = await s.executor.service.submit({ authorization: `Bearer ${token}`, idempotencyKey: String(other['logicalKey']), body: JSON.stringify(other) });
+    assert.ok('failure' in refused && refused.failure.reason === 'EXECUTOR_STALE_GENERATION', JSON.stringify(refused));
+
+    // Not stopped while the intent is open; the executor cancels the reserved intent, then the finaliser stops it.
+    assert.deepEqual(await s.runtimeStore.finaliseStopping(), []);
+    await s.executor.service.reconcile();
+    const ended = await s.pool.query<{ state: string }>('select state from intents');
+    assert.deepEqual(ended.rows.map((r) => r.state), ['cancelled']);
+    const holds = await s.pool.query<{ state: string }>('select state from simulation_reservations');
+    assert.deepEqual(holds.rows.map((r) => r.state), ['released'], 'the virtual hold is released');
+    await s.runtimeStore.consumeExecutorOutbox();
+    assert.deepEqual(await s.runtimeStore.finaliseStopping(), [intent.deployment_id]);
+    assert.deepEqual(await s.runtimeStore.finaliseStopping(), [], 'finishing is done once');
+    assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'stopped');
+    const changes = await s.pool.query<{ payload: Record<string, unknown> }>(`select payload from audit_events where type = 'deployment.stateChanged' order by sequence`);
+    assert.deepEqual(changes.rows.map((r) => r.payload['to']), ['active', 'stopping', 'stopped']);
+    assert.deepEqual([changes.rows[1]!.payload['reasonCode'], changes.rows[1]!.payload['openIntents']], ['STOP_DRAINING', 1]);
+    const again = await s.call('POST', `/agents/${agentId}/estimates`, {});
+    assert.equal((await s.launch(agentId, { ...request, estimateId: again.json.id, policyVersion: again.json.policyVersion })).status, 202);
+  });
+
+  test('drain-before-stop (#20): with nothing open a stop reaches stopped at once; a crash between the two resumes', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-direct-1' });
+    assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'stopped');
+    const changes = await s.pool.query<{ to: string }>(`select payload ->> 'to' as to from audit_events where type = 'deployment.stateChanged' order by sequence`);
+    assert.deepEqual(changes.rows.map((r) => r.to), ['active', 'stopping', 'stopped']);
+    // A process that died after writing stopping (simulated): the next finaliser tick completes the stop once.
+    const second = await s.draft('scheduled_purchase');
+    await s.launch(second.agentId, second.request);
+    const id = (await s.call('GET', `/agents/${second.agentId}/deployment`)).json.deploymentId as string;
+    await s.pool.query(`update deployments set desired_state = 'stopping' where id = $1`, [id]);
+    assert.deepEqual(await s.runtimeStore.finaliseStopping(), [id]);
+    assert.equal((await s.call('GET', `/agents/${second.agentId}/deployment`)).json.desiredState, 'stopped');
   });
 
   test('a pending fill releases the runtime; reconcile → outbox → resume completes the run', async () => {

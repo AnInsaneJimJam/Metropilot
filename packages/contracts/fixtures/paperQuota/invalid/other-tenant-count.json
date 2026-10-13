@@ -1,0 +1,16 @@
+{
+  "description": "Global usage counts are never disclosed; only whether admission is open",
+  "expect": {
+    "fieldPath": "/activeGlobal",
+    "keyword": "additionalProperties"
+  },
+  "document": {
+    "schemaVersion": "paper-quota/1",
+    "concurrentAgents": { "used": 0, "limit": 1 },
+    "dailySeconds": { "used": 0, "limit": 7200, "resetsAt": "2026-10-14T00:00:00.000Z" },
+    "sessionSecondsLimit": 3600,
+    "sessions": [],
+    "admissionOpen": true,
+    "activeGlobal": 7
+  }
+}

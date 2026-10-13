@@ -14,6 +14,8 @@ import { MAX_CAPABILITY_SECONDS, signCapability } from '@monad-hack/contracts/ca
 import { compileStrategy, LanguageError, runIdentity, scheduleSlot, transitionPrice } from '@monad-hack/strategy';
 import type { Catalog, CompiledStrategy, CrossingState, PriceObservation } from '@monad-hack/strategy';
 import type { CatalogPin } from '../catalog.ts';
+import { runAllowed, sessionSeconds, dailySeconds, paperLimits } from '../quota.ts';
+import type { QuotaReason } from '../quota.ts';
 
 /** error-1 codes this store raises, with their HTTP status. */
 export const CONTROL_STATUS = {
@@ -199,23 +201,27 @@ export class RuntimeControlStore {
         [input.tenantId, deploymentId, trigger.id, trigger.type, 'feedRef' in trigger ? trigger.feedRef : null],
       );
     }
+    if (input.mode === 'paper') await this.#openInterval(c, input.tenantId, deploymentId, 1);
     await this.#audit(c, { tenantId: input.tenantId, agentId: input.agentId, deploymentId, actor: input.actor ?? { kind: 'controlPlane' }, type: 'deployment.stateChanged', payload: { from: 'none', to: 'active', generation: 1, manifestHash }, source: `deployment:${deploymentId}:1:active` });
     return { deploymentId, generation: 1, manifestHash };
   }
 
   /** Pause revokes authority for new operations at once; dispatched effects stay with their owners. */
-  async pause(deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }): Promise<void> {
-    await this.#tx((c) => this.pauseIn(c, deploymentId, actor));
+  async pause(deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }, reasonCode?: QuotaReason): Promise<void> {
+    await this.#tx((c) => this.pauseIn(c, deploymentId, actor, reasonCode));
   }
 
-  async pauseIn(c: pg.PoolClient, deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }, reason?: string): Promise<void> {
+  /** reasonCode explains a pause the platform made (a quota, an unpaid hosting slice), so the user sees why the agent stopped running. */
+  async pauseIn(c: pg.PoolClient, deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }, reasonCode?: QuotaReason | 'HOSTING_BUDGET_EXHAUSTED'): Promise<void> {
     {
       const d = await this.#lockDeployment(c, deploymentId);
       if (d.desired_state === 'paused') return;
+      if (d.desired_state === 'stopping') throw new RunControlError('IDEMPOTENCY_CONFLICT', 'The agent is stopping; it cannot be paused.');
       if (d.desired_state !== 'active') throw new RunControlError('IDEMPOTENCY_CONFLICT', `A ${d.desired_state} deployment cannot be paused.`);
       await c.query("update deployments set desired_state = 'paused', updated_at = now() where id = $1", [deploymentId]);
       await c.query('update trigger_state set active = false where deployment_id = $1', [deploymentId]);
-      await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId, actor, type: 'deployment.stateChanged', payload: { from: 'active', to: 'paused', generation: d.generation, ...(reason ? { reason } : {}) }, source: `deployment:${deploymentId}:${d.generation}:paused` });
+      await this.#closeInterval(c, deploymentId);
+      await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId, actor, type: 'deployment.stateChanged', payload: { from: 'active', to: 'paused', generation: d.generation, ...(reasonCode ? { reasonCode } : {}) }, source: `deployment:${deploymentId}:${d.generation}:paused` });
     }
   }
 
@@ -260,7 +266,7 @@ export class RuntimeControlStore {
             await c.query('rollback to savepoint hosting_slice');
             const reason = 'The hosting budget is exhausted. Add hosting funds, then resume.';
             await c.query('update deployments set pause_reason = $2 where id = $1', [d.id, reason]);
-            await this.pauseIn(c, d.id, { kind: 'system' }, reason);
+            await this.pauseIn(c, d.id, { kind: 'system' }, 'HOSTING_BUDGET_EXHAUSTED');
             paused.push(d.id);
             return;
           }
@@ -278,19 +284,26 @@ export class RuntimeControlStore {
   async resumeIn(c: pg.PoolClient, deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }): Promise<number> {
     {
       const d = await this.#lockDeployment(c, deploymentId);
-      if (d.desired_state === 'stopping' || d.desired_state === 'stopped') throw new RunControlError('IDEMPOTENCY_CONFLICT', 'A stopped deployment cannot be resumed; launch a new deployment.');
+      if (d.desired_state === 'stopping') throw new RunControlError('IDEMPOTENCY_CONFLICT', 'The agent is stopping; once it has stopped, launch it again.');
+      if (d.desired_state === 'stopped') throw new RunControlError('IDEMPOTENCY_CONFLICT', 'A stopped deployment cannot be resumed; launch a new deployment.');
       await this.#revokeOpenRuns(c, d, actor);
       const next = d.generation + 1;
       await c.query("update deployments set generation = $2, desired_state = 'active', pause_reason = null, updated_at = now() where id = $1", [deploymentId, next]);
       // A new generation needs a fresh crossing baseline (strategy-language.md section 4), but keeps the last
       // accepted schedule slot: a resume must not re-run a slot the previous generation already ran.
       await c.query("update trigger_state set generation = $2, active = true, crossing = '{}' where deployment_id = $1", [deploymentId, next]);
+      await this.#closeInterval(c, deploymentId);
+      if (d.mode === 'paper') await this.#openInterval(c, d.tenant_id, deploymentId, next);
       await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId, actor, type: 'deployment.stateChanged', payload: { from: d.desired_state, to: 'active', generation: next }, source: `deployment:${deploymentId}:${next}:active` });
       return next;
     }
   }
 
-  /** Stop ends the deployment for good: no new runs or operations; effects already dispatched keep reconciling. */
+  /**
+   * Stop ends the deployment for good (D37, issue #20): it moves to `stopping` at once (no new runs; the executor
+   * refuses new intents and cancels reserved ones), and to `stopped` only when no intent is open. Effects already
+   * dispatched keep reconciling; a timeout is not proof of no effect, so `stopped` is never forced over an open intent.
+   */
   async stop(deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }): Promise<void> {
     await this.#tx((c) => this.stopIn(c, deploymentId, actor));
   }
@@ -298,12 +311,71 @@ export class RuntimeControlStore {
   async stopIn(c: pg.PoolClient, deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }): Promise<void> {
     {
       const d = await this.#lockDeployment(c, deploymentId);
-      if (d.desired_state === 'stopped') return;
+      if (d.desired_state === 'stopped' || d.desired_state === 'stopping') return;
       await this.#revokeOpenRuns(c, d, actor);
-      await c.query("update deployments set desired_state = 'stopped', updated_at = now() where id = $1", [deploymentId]);
+      await c.query("update deployments set desired_state = 'stopping', updated_at = now() where id = $1", [deploymentId]);
       await c.query('update trigger_state set active = false where deployment_id = $1', [deploymentId]);
-      await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId, actor, type: 'deployment.stateChanged', payload: { from: d.desired_state, to: 'stopped', generation: d.generation }, source: `deployment:${deploymentId}:${d.generation}:stopped` });
+      await this.#closeInterval(c, deploymentId);
+      const open = await this.#openIntents(c, deploymentId);
+      await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId, actor, type: 'deployment.stateChanged', payload: { from: d.desired_state, to: 'stopping', generation: d.generation, openIntents: open, ...(open > 0 ? { reasonCode: 'STOP_DRAINING' } : {}) }, source: `deployment:${deploymentId}:${d.generation}:stopping` });
+      await this.#finaliseIn(c, d);
     }
+  }
+
+  /** Worker role: finish every `stopping` deployment whose intents have all settled, cancelled or failed. */
+  async finaliseStopping(): Promise<string[]> {
+    const { rows } = await this.#pool.query<{ id: string }>(`select id from deployments where desired_state = 'stopping' order by id`);
+    const stopped: string[] = [];
+    for (const { id } of rows) {
+      const done = await this.#tx(async (c) => {
+        const d = await this.#lockDeployment(c, id);
+        return d.desired_state === 'stopping' && (await this.#finaliseIn(c, d));
+      });
+      if (done) stopped.push(id);
+    }
+    return stopped;
+  }
+
+  /**
+   * `stopping` → `stopped` when no intent of the deployment is open. Takes the simulation account lock the executor's
+   * admission transaction holds, so an admission already inside that transaction is either visible here or waits.
+   */
+  async #finaliseIn(c: pg.PoolClient, d: { id: string; tenant_id: string; agent_id: string; generation: number }): Promise<boolean> {
+    await c.query('select 1 from simulation_accounts s join deployments d on d.tenant_id = s.tenant_id and d.simulation_account_id = s.id where d.id = $1 for update of s', [d.id]);
+    if ((await this.#openIntents(c, d.id)) > 0) return false;
+    await c.query("update deployments set desired_state = 'stopped', updated_at = now() where id = $1", [d.id]);
+    await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId: d.id, actor: { kind: 'controlPlane' }, type: 'deployment.stateChanged', payload: { from: 'stopping', to: 'stopped', generation: d.generation }, source: `deployment:${d.id}:${d.generation}:stopped` });
+    return true;
+  }
+
+  async #openIntents(c: pg.PoolClient, deploymentId: string): Promise<number> {
+    const { rows } = await c.query<{ n: string }>(`select count(*) as n from intents where deployment_id = $1 and state not in ('rejected', 'settled', 'failed', 'cancelled')`, [deploymentId]);
+    return Number(rows[0]!.n);
+  }
+
+  /**
+   * Worker role (issue #17): pause every active paper deployment whose session or tenant's UTC-day time is used up,
+   * with the quota as the reason. Pause, not stop: history stays and the agent can resume in a new day or session.
+   */
+  async enforcePaperQuotas(): Promise<{ deploymentId: string; reason: QuotaReason }[]> {
+    const now = new Date(this.#now());
+    const limits = await paperLimits(this.#pool);
+    const { rows } = await this.#pool.query<{ id: string; tenant_id: string }>(`select id, tenant_id from deployments where mode = 'paper' and desired_state = 'active' order by id`);
+    const paused: { deploymentId: string; reason: QuotaReason }[] = [];
+    for (const d of rows) {
+      const reason: QuotaReason | undefined = (await sessionSeconds(this.#pool, d.id, now)) >= limits.sessionSeconds ? 'QUOTA_SESSION'
+        : (await dailySeconds(this.#pool, d.tenant_id, now)) >= limits.dailySeconds ? 'QUOTA_DAILY' : undefined;
+      if (!reason) continue;
+      try {
+        await this.pause(d.id, { kind: 'system' }, reason);
+      } catch (error) {
+        // Stopped (or stopping) since the scan: nothing left to pause.
+        if (error instanceof RunControlError) continue;
+        throw error;
+      }
+      paused.push({ deploymentId: d.id, reason });
+    }
+    return paused;
   }
 
   async drainRuntime(runtimeId: string): Promise<void> {
@@ -350,6 +422,8 @@ export class RuntimeControlStore {
           await this.#skipped(c, state, row.trigger_id, observation.sourceEventKey, decision.reason === 'cooldown' ? 'TRIGGER_COOLDOWN' : 'STALE_DATA');
         }
         if (!decision.fire) return { deploymentId: row.deployment_id, triggerId: row.trigger_id, reason: decision.reason };
+        const over = await this.#overQuota(c, state, row.trigger_id, observation.sourceEventKey);
+        if (over) return { deploymentId: row.deployment_id, triggerId: row.trigger_id, reason: over };
         const runId = await this.#createRun(c, state, row.trigger_id, observation.sourceEventKey, {
           ...(observation.observationRef ? { observationRef: observation.observationRef } : {}), observedAt: observation.observedAt, acceptedAt: now, runCreatedAt: now,
         });
@@ -377,6 +451,9 @@ export class RuntimeControlStore {
         const slot = scheduleSlot(trigger, now, state.last_slot ? new Date(state.last_slot).toISOString() : undefined);
         if (!slot) return undefined;
         await c.query('update trigger_state set last_slot = $3 where deployment_id = $1 and trigger_id = $2', [row.deployment_id, row.trigger_id, slot]);
+        // A slot refused by the quota is consumed, like a coalesced one; it is not run later.
+        const over = await this.#overQuota(c, state, row.trigger_id, `schedule:${slot}`);
+        if (over) return { deploymentId: row.deployment_id, triggerId: row.trigger_id, reason: over };
         const runId = await this.#createRun(c, state, row.trigger_id, `schedule:${slot}`, { acceptedAt: now, runCreatedAt: now });
         return { deploymentId: row.deployment_id, triggerId: row.trigger_id, reason: runId ? 'slot' : 'duplicate-run', ...(runId ? { runId } : {}) };
       });
@@ -843,8 +920,10 @@ export class RuntimeControlStore {
   }
 
   async #lockDeployment(c: pg.PoolClient, deploymentId: string) {
-    const { rows } = await c.query<{ id: string; tenant_id: string; agent_id: string; generation: number; desired_state: string }>(
-      'select id, tenant_id, agent_id, generation, desired_state from deployments where id = $1 for update', [deploymentId],
+    const { rows } = await c.query<{ id: string; tenant_id: string; agent_id: string; generation: number; desired_state: string; mode: 'paper' | 'live' }>(
+      // No-key lock: enough to serialize state changes, and it does not block the executor's intent inserts (their
+      // foreign key takes a key-share lock here while holding the account lock that #finaliseIn then waits for).
+      'select id, tenant_id, agent_id, generation, desired_state, mode from deployments where id = $1 for no key update', [deploymentId],
     );
     if (!rows[0]) throw new RunControlError('NOT_FOUND', 'Deployment not found.');
     return rows[0];
@@ -862,6 +941,23 @@ export class RuntimeControlStore {
     for (const run of open.rows) {
       await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId: d.id, runId: run.run_id, actor, type: 'run.stateChanged', payload: { from: run.status, to: 'revoked', reasonCode: 'GENERATION_REVOKED' }, source: `run:${run.run_id}:revoked` });
     }
+  }
+
+  /** Paper session or daily time used up: record the skipped run and return the reason; the sweep pauses the deployment. */
+  async #overQuota(c: pg.PoolClient, state: { tenant_id: string; deployment_id: string; generation: number }, triggerId: string, sourceEventKey: string): Promise<QuotaReason | undefined> {
+    const mode = await c.query<{ mode: string }>('select mode from deployments where id = $1', [state.deployment_id]);
+    if (mode.rows[0]?.mode !== 'paper') return undefined;
+    const reason = await runAllowed(c, state.tenant_id, state.deployment_id, new Date(this.#now()));
+    if (reason) await this.#skipped(c, state, triggerId, sourceEventKey, reason);
+    return reason;
+  }
+
+  async #openInterval(c: pg.PoolClient, tenantId: string, deploymentId: string, generation: number): Promise<void> {
+    await c.query('insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at) values ($1, $2, $3, $4) on conflict do nothing', [tenantId, deploymentId, generation, this.#now()]);
+  }
+
+  async #closeInterval(c: pg.PoolClient, deploymentId: string): Promise<void> {
+    await c.query('update paper_active_intervals set ended_at = greatest(started_at, $2::timestamptz) where deployment_id = $1 and ended_at is null', [deploymentId, this.#now()]);
   }
 
   /** An observation.skipped event for a trigger observation that did not start a run, with a vocabulary reason (#19). */

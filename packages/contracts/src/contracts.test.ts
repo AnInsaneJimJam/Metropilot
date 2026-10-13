@@ -252,6 +252,7 @@ describe('schema hygiene', () => {
         'paper-estimate/1',
         'persisted-broker-result/1',
         'price-observation/1',
+        'paper-quota/1',
         'run-complete/1',
         'run-detail/1',
         'run-result/1',

@@ -179,6 +179,12 @@
         },
         "updatedAt": {
           "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "openIntents": {
+          "description": "While stopping (D37, issue #20): intents that have not yet settled, been cancelled or failed; the deployment becomes stopped when this reaches 0.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
         }
       },
       "description": "Current deployment of an agent (GET /v1/agents/{id}/deployment)."
@@ -412,6 +418,103 @@
               }
             }
           }
+        }
+      }
+    },
+    "PaperQuota": {
+      "title": "PaperQuota",
+      "description": "GET /v1/quota (issue #17, D45): the signed-in user's paper sandbox usage and limits. Seconds of active paper time; a session is one launch. Other users' usage is never included; admissionOpen only says whether the global cap has room.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "concurrentAgents",
+        "dailySeconds",
+        "sessionSecondsLimit",
+        "sessions",
+        "admissionOpen"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "paper-quota/1"
+        },
+        "concurrentAgents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "used",
+            "limit"
+          ],
+          "properties": {
+            "used": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        },
+        "dailySeconds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "used",
+            "limit",
+            "resetsAt"
+          ],
+          "properties": {
+            "used": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 31536000
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 31536000
+            },
+            "resetsAt": {
+              "$ref": "common.schema.json#/$defs/timestamp"
+            }
+          }
+        },
+        "sessionSecondsLimit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31536000
+        },
+        "sessions": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agentId",
+              "deploymentId",
+              "usedSeconds"
+            ],
+            "properties": {
+              "agentId": {
+                "$ref": "common.schema.json#/$defs/uuidv7"
+              },
+              "deploymentId": {
+                "$ref": "common.schema.json#/$defs/uuidv7"
+              },
+              "usedSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 31536000
+              }
+            }
+          }
+        },
+        "admissionOpen": {
+          "type": "boolean"
         }
       }
     }

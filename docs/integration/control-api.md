@@ -57,8 +57,9 @@ Then, for each row, in its own transaction:
 2. Call `transitionPrice(trigger, crossingState, observation, now)` from `@monad-hack/strategy`. Do not reimplement crossing, staleness or cooldown in SQL.
 3. `UPDATE trigger_state` with the returned state.
 4. If `fire`: insert the run (with `ON CONFLICT (run_id) DO NOTHING`) and its first assignment.
-5. If the reason is `cooldown` or `stale`, or `transitionPrice` refused the observation, append an `observation.skipped` audit event with a vocabulary `reasonCode` (`TRIGGER_COOLDOWN`, `STALE_DATA`, or the language error code) so the user sees the blocked run (D44). Routine `baseline`, `no-crossing` and `out-of-order` results are not recorded.
-6. Commit.
+5. If the deployment is paper and its session or the tenant's UTC-day time is used up, refuse the run (`observation.skipped` with `QUOTA_SESSION`/`QUOTA_DAILY`); the worker's `enforcePaperQuotas()` then pauses the deployment (D45).
+6. If the reason is `cooldown` or `stale`, or `transitionPrice` refused the observation, append an `observation.skipped` audit event with a vocabulary `reasonCode` (`TRIGGER_COOLDOWN`, `STALE_DATA`, or the language error code) so the user sees the blocked run (D44). Routine `baseline`, `no-crossing` and `out-of-order` results are not recorded.
+7. Commit.
 
 Schedules are the same with `scheduleSlot(trigger, now, lastSlot)`; the source event key is `schedule:<slot>`.
 
@@ -120,7 +121,7 @@ Settlement and reconciliation waits never hold a runtime process.
 
 ## 8. Pause, resume and stop
 
-Pause sets `desired_state = 'paused'`: from that moment `wait`, `results`, `complete`, `timeline`, `heartbeat` and the capability exchange answer `GENERATION_REVOKED` for its runs, the executor refuses new intents and cancels reserved ones before filling, and `trigger_state` rows stop matching. External effects already dispatched keep reconciling. Resume mints a new generation (`active`), revokes the unfinished runs of the old generation, resets crossing state (a fresh baseline is required) and never revives an old generation's assignments. Stop sets `stopped` for good after revoking unfinished runs; a new launch creates a new deployment. Each change writes a `deployment.stateChanged` audit event.
+Pause sets `desired_state = 'paused'`: from that moment `wait`, `results`, `complete`, `timeline`, `heartbeat` and the capability exchange answer `GENERATION_REVOKED` for its runs, the executor refuses new intents and cancels reserved ones before filling, and `trigger_state` rows stop matching. External effects already dispatched keep reconciling. Resume mints a new generation (`active`), revokes the unfinished runs of the old generation, resets crossing state (a fresh baseline is required) and never revives an old generation's assignments. Stop sets `stopping` after revoking unfinished runs (the executor refuses new intents and cancels reserved ones) and `stopped` once no intent of the deployment is open, at once when nothing is open, otherwise from the worker's `finaliseStopping()`; stop is idempotent while stopping and pause/resume are refused (D46). A new launch, after `stopped`, creates a new deployment. Each change writes a `deployment.stateChanged` audit event.
 
 ## 9. Proving compatibility
 
@@ -158,6 +159,7 @@ Implemented in [`apps/api/src/lifecycle.ts`](../../apps/api/src/lifecycle.ts) an
 | `POST /v1/agents/{id}/deployments` | `deployment/1` → `202` `deployment-operation/1`. Paper only (`422 CAPABILITY_DISABLED` for live). Checks the estimate (agent, revision, expiry → `409 ESTIMATE_EXPIRED`), budget and policy versions, the network and resource profile, every selected connector and capability, and that every connector, capability and model profile the strategy uses is selected (`422 UNSUPPORTED_CAPABILITY`). One open deployment per agent (`409`). Creates the simulation account, manifest, deployment, artifacts and trigger rows in one transaction |
 | `POST /v1/agents/{id}/pause`, `/resume`, `/stop` | `202` `deployment-operation/1` (section 8) |
 | `GET /v1/operations/{id}` | `deployment-operation/1` |
+| `GET /v1/quota` | `paper-quota/1`: the user's running agents, UTC-day and session paper time; launch/resume over a limit → `429 LIMIT_EXCEEDED` with `details.reason` (D45) |
 | `GET /v1/agents/{id}/deployment` | `agent-deployment/1`: the open deployment, else the latest |
 | `GET /v1/agents/{id}/runs?limit&cursor` | `run-summary/1` items, newest first |
 | `GET /v1/runs/{runId}` | `run-detail/1`: trigger stage times, operations with outcomes, timeline entries |

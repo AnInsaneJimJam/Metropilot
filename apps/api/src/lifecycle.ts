@@ -9,6 +9,7 @@ import { compileStrategy, profileIssues } from '@monad-hack/strategy';
 import type { Catalog, CompiledStrategy, Experience } from '@monad-hack/strategy';
 import { CatalogResolver, type CatalogKind, type ResolvedCatalog } from './catalog.ts';
 import { ControlError, newId } from './control.ts';
+import { admitPaper, quotaDocument } from './quota.ts';
 import type { AuditActor, RuntimeControlStore } from './runtime-control/store.ts';
 import { RunControlError } from './runtime-control/store.ts';
 
@@ -118,7 +119,8 @@ export class LifecycleService {
     return this.#idempotent(tenantId, `POST /v1/agents/${agentId}/deployments`, key, request, async (c) => {
       if (request.mode !== 'paper') throw new ControlError(422, 'CAPABILITY_DISABLED', 'Live deployments are not enabled; launch in paper mode.');
       const agent = await this.#agent(c, tenantId, agentId, true);
-      const open = await c.query('select id from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3', [tenantId, agentId, 'stopped']);
+      const open = await c.query<{ desired_state: string }>('select desired_state from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3', [tenantId, agentId, 'stopped']);
+      if (open.rows[0]?.desired_state === 'stopping') throw new ControlError(409, 'REVISION_CONFLICT', 'This agent is still stopping while its open trades settle; launch it again once it has stopped.');
       if (open.rows[0]) throw new ControlError(409, 'REVISION_CONFLICT', 'This agent already has a deployment; pause, resume or stop it instead.');
       const estimate = await c.query<{ strategy_revision_id: string; expires_at: Date }>('select strategy_revision_id, expires_at from estimates where tenant_id = $1 and id = $2 and agent_id = $3', [tenantId, request.estimateId, agentId]);
       if (!estimate.rows[0]) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Estimate not found for this agent.', { fieldPath: '/estimateId' });
@@ -143,6 +145,7 @@ export class LifecycleService {
       if (resolved.catalog.assets[this.#fundingAsset]?.decimals !== 6) {
         throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `The paper funding asset ${this.#fundingAsset} is not an enabled six-decimal asset on ${request.networkRef}.`, { fieldPath: '/networkRef' });
       }
+      await this.#admit(c, tenantId, undefined);
 
       // The simulation account: virtual trading USD and the MON reserve from the saved paper budget.
       const session = await c.query<{ next: number }>('select coalesce(max(session), 0) + 1 as next from simulation_accounts where tenant_id = $1 and agent_id = $2', [tenantId, agentId]);
@@ -170,11 +173,14 @@ export class LifecycleService {
   async control(tenantId: string, agentId: string, kind: 'pause' | 'resume' | 'stop', key: string): Promise<Operation> {
     return this.#idempotent(tenantId, `POST /v1/agents/${agentId}/${kind}`, key, { kind }, async (c) => {
       await this.#agent(c, tenantId, agentId);
-      const open = await c.query<{ id: string }>('select id from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3 for update', [tenantId, agentId, 'stopped']);
+      const open = await c.query<{ id: string }>('select id from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3 for no key update', [tenantId, agentId, 'stopped']);
       const deploymentId = open.rows[0]?.id;
       if (!deploymentId) throw new ControlError(409, 'REVISION_CONFLICT', 'This agent has no open deployment.');
       const actor: AuditActor = { kind: 'user', id: tenantId };
-      if (kind === 'resume') await this.#checkPins(c, tenantId, deploymentId);
+      if (kind === 'resume') {
+        await this.#checkPins(c, tenantId, deploymentId);
+        await this.#admit(c, tenantId, deploymentId);
+      }
       try {
         if (kind === 'pause') await this.#runtime.pauseIn(c, deploymentId, actor);
         else if (kind === 'resume') await this.#runtime.resumeIn(c, deploymentId, actor);
@@ -184,6 +190,11 @@ export class LifecycleService {
       }
       return this.#operation(c, tenantId, agentId, deploymentId, kind);
     });
+  }
+
+  /** GET /v1/quota: the tenant's paper sandbox usage and limits (issue #17). */
+  async quota(tenantId: string): Promise<Record<string, unknown>> {
+    return quotaDocument(this.#pool, tenantId, this.#now());
   }
 
   async operation(tenantId: string, id: string): Promise<Operation> {
@@ -204,6 +215,7 @@ export class LifecycleService {
     return {
       schemaVersion: 'agent-deployment/1', agentId, deploymentId: d.id, generation: String(d.generation), mode: d.mode, desiredState: d.desired_state,
       strategyRevisionId: d.strategy_revision_id, manifestHash: d.manifest_hash, ...(d.simulation_account_id ? { simulationAccountId: d.simulation_account_id } : {}), updatedAt: iso(d.updated_at),
+      ...(d.desired_state === 'stopping' ? { openIntents: await this.#openIntents(d.id) } : {}),
     };
   }
 
@@ -299,6 +311,17 @@ export class LifecycleService {
     const { rows } = await c.query<{ ast: unknown }>('select ast from strategy_revisions where tenant_id = $1 and agent_id = $2 and id = $3', [tenantId, agentId, revisionId]);
     if (!rows[0]) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Strategy revision not found for this agent.', { fieldPath: '/strategyRevisionId' });
     return compileStrategy(JSON.stringify(rows[0].ast), catalog);
+  }
+
+  async #openIntents(deploymentId: string): Promise<number> {
+    const { rows } = await this.#pool.query<{ n: string }>(`select count(*) as n from intents where deployment_id = $1 and state not in ('rejected', 'settled', 'failed', 'cancelled')`, [deploymentId]);
+    return Number(rows[0]!.n);
+  }
+
+  /** Paper sandbox admission (D45): per-user concurrency, session and daily time, global capacity; 429 with the reason. */
+  async #admit(c: pg.PoolClient, tenantId: string, deploymentId: string | undefined): Promise<void> {
+    const refused = await admitPaper(c, tenantId, deploymentId, this.#now());
+    if (refused) throw new ControlError(429, 'LIMIT_EXCEEDED', refused.message, { details: { reason: refused.reason } });
   }
 
   /** A resume refuses when a pinned catalog row was disabled (or removed) since launch. */

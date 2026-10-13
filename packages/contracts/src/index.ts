@@ -104,6 +104,7 @@ export const contractRefs = {
   agentFunds: funds.$id + '#/$defs/AgentFunds',
   withdrawal: funds.$id + '#/$defs/Withdrawal',
   fundingQuote: funds.$id + '#/$defs/FundingQuote',
+  paperQuota: lifecycle.$id + '#/$defs/PaperQuota',
 } as const satisfies Record<ContractKind, string>;
 
 /** UTF-8 byte ceilings checked before JSON parsing (strategy-language.md section 7, runtime.md limits). */
@@ -153,6 +154,7 @@ export const maxDocumentBytes: Readonly<Record<ContractKind, number>> = {
   agentFunds: 64 * 1024,
   withdrawal: 4 * 1024,
   fundingQuote: 8 * 1024,
+  paperQuota: 16 * 1024,
 };
 
 export type ContractIssueCode = Extract<ErrorCode, 'SCHEMA_INVALID' | 'LIMIT_EXCEEDED' | 'MALFORMED_REQUEST'>;

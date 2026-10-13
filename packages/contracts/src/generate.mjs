@@ -52,6 +52,7 @@ const refs = {
   agentFunds: 'funds-1.schema.json#/$defs/AgentFunds',
   withdrawal: 'funds-1.schema.json#/$defs/Withdrawal',
   fundingQuote: 'funds-1.schema.json#/$defs/FundingQuote',
+  paperQuota: 'control-lifecycle-1.schema.json#/$defs/PaperQuota',
 };
 const root = {
   title: 'GeneratedContractMap',

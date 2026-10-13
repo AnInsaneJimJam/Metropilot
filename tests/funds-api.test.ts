@@ -188,7 +188,7 @@ describe('funds API', { skip }, () => {
     const balances = await agentBalances(db.pool, scope);
     assert.equal(balances.find((b) => b.bucket === 'trading')!.balance, 1000n);
     assert.equal(balances.find((b) => b.bucket === 'hosting')!.balance, 0n);
-    const audit = await db.pool.query(`select 1 from audit_events where deployment_id = $1 and type = 'deployment.stateChanged' and payload ->> 'to' = 'paused' and payload ->> 'reason' like '%hosting budget%'`, [deploymentId]);
+    const audit = await db.pool.query(`select 1 from audit_events where deployment_id = $1 and type = 'deployment.stateChanged' and payload ->> 'to' = 'paused' and payload ->> 'reasonCode' = 'HOSTING_BUDGET_EXHAUSTED'`, [deploymentId]);
     assert.equal(audit.rowCount, 1);
   });
 });

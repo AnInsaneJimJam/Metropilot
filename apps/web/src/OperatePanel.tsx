@@ -11,6 +11,7 @@ type RunSummary = GeneratedContractMap["runSummary"];
 type RunDetail = GeneratedContractMap["runDetail"];
 type AuditEvent = GeneratedContractMap["auditEvent2"];
 type Estimate = GeneratedContractMap["paperEstimate"];
+type Quota = GeneratedContractMap["paperQuota"];
 type Versions = { connectors: Record<string, string>; modelProfiles: Record<string, string> };
 
 /** What the strategy needs: connector capabilities and model profiles, shown before launch. */
@@ -31,6 +32,8 @@ function needs(body: readonly Statement[], out = { connectors: new Map<string, S
   return out;
 }
 
+const minutes = (seconds: number) => Math.floor(seconds / 60);
+
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 /** " · Title: explanation" for a reason code from the shared vocabulary (#19); unknown codes keep their code. */
@@ -45,7 +48,7 @@ function describe(e: AuditEvent): string {
   const p = e.payload as Record<string, unknown>;
   switch (e.type) {
     case "deployment.stateChanged":
-      return `Deployment ${String(p["from"])} → ${String(p["to"])} (generation ${String(p["generation"])})${p["reason"] ? ` · ${String(p["reason"])}` : ""}`;
+      return `Deployment ${String(p["from"])} → ${String(p["to"])} (generation ${String(p["generation"])})${because(p["reasonCode"])}`;
     case "run.stateChanged":
       return `Run ${String(p["to"])}${because(p["reasonCode"] ?? p["errorCode"])}`;
     case "observation.skipped":
@@ -86,6 +89,7 @@ export function OperatePanel({
   const [versions, setVersions] = useState<Versions>();
   const [custody, setCustody] = useState<{ enabled: boolean; localFaucet: boolean }>({ enabled: false, localFaucet: false });
   const [estimate, setEstimate] = useState<Estimate>();
+  const [quota, setQuota] = useState<Quota>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [trimmed, setTrimmed] = useState(false);
@@ -100,6 +104,7 @@ export function OperatePanel({
     }
     try {
       setRuns((await api<{ items: RunSummary[] }>(`/agents/${agentId}/runs?limit=20`)).items);
+      setQuota(await api<Quota>("/quota"));
     } catch {
       /* the deployment call already reported the problem */
     }
@@ -216,6 +221,7 @@ export function OperatePanel({
 
   const state = deployment?.desiredState;
   const live = state === "active" || state === "paused";
+  const stopping = state === "stopping";
   return (
     <section className="operate-page review-page" aria-label="Operate">
       <div className="section-intro">
@@ -251,6 +257,28 @@ export function OperatePanel({
               </div>
             </dl>
           )}
+          {quota && (
+            <div className="operate-quota" aria-label="Paper quota">
+              <label>
+                Paper time today: {minutes(quota.dailySeconds.used)} of {minutes(quota.dailySeconds.limit)} min (resets{" "}
+                {time(quota.dailySeconds.resetsAt)})
+                <progress max={quota.dailySeconds.limit || 1} value={Math.min(quota.dailySeconds.used, quota.dailySeconds.limit)} />
+              </label>
+              {(() => {
+                const session = quota.sessions.find((s) => s.agentId === agentId);
+                return session ? (
+                  <label>
+                    This session: {minutes(session.usedSeconds)} of {minutes(quota.sessionSecondsLimit)} min
+                    <progress max={quota.sessionSecondsLimit || 1} value={Math.min(session.usedSeconds, quota.sessionSecondsLimit)} />
+                  </label>
+                ) : null;
+              })()}
+              <p className="note">
+                {quota.concurrentAgents.used} of {quota.concurrentAgents.limit} paper agent{quota.concurrentAgents.limit === 1 ? "" : "s"} running.
+                {quota.admissionOpen ? "" : " The sandbox is at capacity right now; new launches may be refused."}
+              </p>
+            </div>
+          )}
           {!live && plan && (
             <div className="operate-plan">
               <h4>This agent may</h4>
@@ -278,7 +306,7 @@ export function OperatePanel({
             </p>
           )}
           <div className="operate-actions">
-            {!live && (
+            {!live && !stopping && (
               <button className="primary" disabled={busy || dirty || !connected || !validation?.program} onClick={() => void launch()}>
                 {busy ? "Working…" : "Launch on paper"}
               </button>
@@ -299,6 +327,12 @@ export function OperatePanel({
               </button>
             )}
           </div>
+          {stopping && deployment && (
+            <p className="note" role="status">
+              Stopping — waiting for {deployment.openIntents ?? 0} open paper trade{deployment.openIntents === 1 ? "" : "s"} to settle or be
+              cancelled. It stops by itself; you can launch again afterwards.
+            </p>
+          )}
           {dirty && !live && <p className="note">Save your changes before launching; the saved revision is what runs.</p>}
 
           <div className="section-line operate-runs-heading">

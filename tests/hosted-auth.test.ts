@@ -179,5 +179,9 @@ describe('hosted sign-in and tenant isolation', { skip }, () => {
     assert.equal(claimed.status, 400);
     assert.equal((await alice('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'active');
     assert.equal((await alice('GET', '/agents')).json.items[0].version, 1);
+    // Quotas are per user (#17): Bob's quota shows none of Alice's running agent or time.
+    const bobQuota = (await bob('GET', '/quota')).json;
+    assert.deepEqual([bobQuota.concurrentAgents.used, bobQuota.dailySeconds.used, bobQuota.sessions], [0, 0, []]);
+    assert.equal((await alice('GET', '/quota')).json.sessions[0].agentId, agentId);
   });
 });

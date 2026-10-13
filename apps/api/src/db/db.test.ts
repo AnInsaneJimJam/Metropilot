@@ -510,6 +510,23 @@ describe('database', { skip }, () => {
       await rejects(db.query('update tenant_streams set retained_after = 7 where tenant_id = $1', [tenant]), '23514');
     });
 
+    test('paper usage (0009): one open interval per deployment, ordered times, one limits row', async () => {
+      // The stopped deployment created by the executor records test above.
+      const deployment = '019a0000-0000-7000-8000-0000000000b1';
+      const interval = (generation: number, start: string, end: string | null) => db.query(
+        'insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at, ended_at) values ($1, $2, $3, $4, $5)', [seedTenantId, deployment, generation, start, end]);
+      await interval(1, '2026-01-01T00:00:00Z', '2026-01-01T00:10:00Z');
+      await interval(2, '2026-01-01T00:20:00Z', null);
+      await rejects(interval(3, '2026-01-01T00:30:00Z', null), '23505');
+      await rejects(interval(4, '2026-01-01T00:30:00Z', '2026-01-01T00:29:00Z'), '23514');
+      // An interval cannot name another tenant's deployment.
+      await rejects(db.query(`insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at, ended_at) values ($1, $2, 5, now(), now())`, ['019a0000-0000-7000-8000-0000000000e1', deployment]), '23503');
+      const limits = await db.query('select paper_concurrent_per_user, paper_session_minutes, paper_daily_minutes, paper_active_global from platform_limits');
+      assert.deepEqual(limits.rows, [{ paper_concurrent_per_user: 1, paper_session_minutes: 60, paper_daily_minutes: 120, paper_active_global: 10 }]);
+      await rejects(db.query('insert into platform_limits (singleton, paper_concurrent_per_user, paper_session_minutes, paper_daily_minutes, paper_active_global) values (true, 1, 1, 1, 1)'), '23505');
+      await rejects(db.query('update platform_limits set paper_daily_minutes = -1'), '23514');
+    });
+
     test('catalog modes are limited to paper and live', async () => {
       await rejects(
         db.query(`insert into catalog_versions (kind, ref, version, modes, content_hash, definition) values ('network', 'x', '1.0.0', '{mainnet}', $1, '{}')`, ['0x' + 'ab'.repeat(32)]),

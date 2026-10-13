@@ -394,6 +394,7 @@ export function createApp(options: ApiOptions) {
         return operation;
       });
     }
+    routes.get("/v1/quota", async (request) => lifecycle().quota(requestTenant(request)));
     routes.get("/v1/operations/:id", async (request) =>
       lifecycle().operation(requestTenant(request), (request.params as { id: string }).id));
     routes.get("/v1/agents/:id/deployment", async (request) =>
