@@ -1,0 +1,10 @@
+{
+  "description": "Codes are six digits",
+  "expect": {
+    "fieldPath": "/code",
+    "keyword": "pattern"
+  },
+  "document": {
+    "code": "12345"
+  }
+}

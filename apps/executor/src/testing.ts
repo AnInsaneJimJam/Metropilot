@@ -89,7 +89,7 @@ export interface HarnessSetup {
   readonly migrate: (client: pg.Client) => Promise<unknown>;
   /** Load the synthetic paper seed (catalog, seed tenant). */
   readonly seed: (client: pg.Client) => Promise<unknown>;
-  readonly wiring?: Partial<Pick<ExecutorWiring, 'dispatchInline' | 'now' | 'platformLimits' | 'maxQuoteAgeSeconds'>>;
+  readonly wiring?: Partial<Pick<ExecutorWiring, 'dispatchInline' | 'now' | 'platformLimits' | 'maxQuoteAgeSeconds' | 'live'>>;
 }
 
 interface HarnessParts {

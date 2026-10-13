@@ -14,6 +14,7 @@
     "db:up": "docker compose --project-directory . -f infra/compose.yaml up -d --wait",
     "db:migrate": "node --env-file-if-exists=.env apps/api/src/db/cli.ts migrate",
     "db:seed": "node --env-file-if-exists=.env apps/api/src/db/cli.ts seed",
+    "db:seed:live": "node --env-file-if-exists=.env apps/api/src/db/cli.ts seed-live",
     "db:down": "docker compose --project-directory . -f infra/compose.yaml down",
     "db:reset": "docker compose --project-directory . -f infra/compose.yaml down --volumes",
     "generate": "node packages/contracts/src/generate.mjs",
@@ -23,7 +24,10 @@
     "runtime:demo": "pnpm generate && node apps/runtime/src/demo.ts",
     "api:runtime": "pnpm generate && LOCAL_RUNTIME_CONTROL=1 node --env-file-if-exists=.env apps/api/src/runtime-control/server.ts",
     "executor:dev": "pnpm generate && LOCAL_EXECUTOR=1 node --env-file-if-exists=.env apps/executor/src/main.ts",
-    "stack:dev": "pnpm generate && node scripts/stack-dev.mjs"
+    "stack:dev": "pnpm generate && node scripts/stack-dev.mjs",
+    "custody:proof": "node --env-file-if-exists=.env scripts/custody-proof.ts",
+    "custody:hypersync": "node --env-file-if-exists=.env scripts/hypersync-check.ts",
+    "market:probe": "node --env-file-if-exists=.env scripts/market-probe.mjs"
   },
   "devDependencies": {
     "@types/node": "24.19.0",

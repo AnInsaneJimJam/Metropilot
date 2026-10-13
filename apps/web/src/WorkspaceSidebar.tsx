@@ -89,7 +89,7 @@ export function WorkspaceSidebar({
           </button>
         )}
         <p>
-          Synthetic environment
+          Mainnet observations · Paper effects
           <br />
           No real funds connected
         </p>

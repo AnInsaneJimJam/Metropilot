@@ -1,0 +1,13 @@
+{
+  "description": "Zero withdrawals are refused",
+  "expect": {
+    "fieldPath": "/amount",
+    "keyword": "pattern"
+  },
+  "document": {
+    "assetRef": "live.USD",
+    "amount": "0",
+    "destinationId": "019a0000-0000-7000-8000-0000000000d1",
+    "stepUpId": "019a0000-0000-7000-8000-0000000000e1"
+  }
+}

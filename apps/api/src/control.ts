@@ -43,7 +43,7 @@ export function checkBudget(request: SaveStrategy): void {
       fieldPath: "/budget",
     });
 }
-export async function validateDraft(request: SaveStrategy) {
+export async function validateDraft(request: SaveStrategy, catalog: import("@monad-hack/strategy").Catalog = syntheticCatalog) {
   if (!request.name.trim())
     throw new ControlError(
       400,
@@ -52,7 +52,7 @@ export async function validateDraft(request: SaveStrategy) {
       { fieldPath: "/name" },
     );
   checkBudget(request);
-  const converted = compileWorkspace(request.workspace, syntheticCatalog);
+  const converted = compileWorkspace(request.workspace, catalog);
   const issues = profileIssues(converted.strategy, {
     experience: request.experience,
     mode: "paper",
@@ -68,7 +68,7 @@ export async function validateDraft(request: SaveStrategy) {
   try {
     program = await compileStrategy(
       JSON.stringify(converted.strategy),
-      syntheticCatalog,
+      catalog,
     );
   } catch (error) {
     if (error instanceof LanguageError)

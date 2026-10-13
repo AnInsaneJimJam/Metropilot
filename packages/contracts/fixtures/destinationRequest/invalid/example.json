@@ -1,0 +1,13 @@
+{
+  "description": "Addresses are normalized lower-case",
+  "expect": {
+    "fieldPath": "/address",
+    "keyword": "pattern"
+  },
+  "document": {
+    "chainId": 10143,
+    "address": "0x00000000000000000000000000000000000000D5",
+    "label": "My wallet",
+    "stepUpId": "019a0000-0000-7000-8000-0000000000e1"
+  }
+}

@@ -13,9 +13,9 @@ const fields = [
   [
     "tradingUsdMicros",
     "Trading",
-    "Virtual USD available to your strategy",
+    "Virtual USDC units available to your strategy",
     6,
-    "USD",
+    "USDC",
   ],
   ["hostingUsdMicros", "Hosting", "Separate operating limit", 6, "USD"],
   [
@@ -63,7 +63,7 @@ export function BudgetReview({
     validation?.strategy?.triggers.flatMap((trigger) =>
       slippages(trigger.body),
     ) ?? [];
-  const total = ["tradingUsdMicros", "hostingUsdMicros", "dataAndAiUsdMicros"]
+  const total = ["hostingUsdMicros", "dataAndAiUsdMicros"]
     .reduce((n, k) => n + BigInt(budget[k as keyof typeof budget]), 0n)
     .toString();
   return (
@@ -116,7 +116,7 @@ export function BudgetReview({
             </div>
           ))}
           <div className="budget-total">
-            <span>Total virtual USD</span>
+            <span>Operating USD limit</span>
             <strong>
               {fromAtomic(total, 6)} <small>USD</small>
             </strong>
@@ -127,9 +127,8 @@ export function BudgetReview({
             </p>
           )}
           <p className="note">
-            Maximum 10,000 virtual USD. MON reserve is separate. These are saved
-            limits, not a deposit or a billed estimate. Rehearsal uses fixed
-            fixture balances.
+            Trading funds become virtual USDC units at launch; this is not a USD conversion. Maximum 10,000 trading units. MON reserve is separate. These are saved
+            limits, not a deposit or a billed estimate. Trading USDC and operating USD are separate denominations.
           </p>
         </div>
         <aside className="review-aside">

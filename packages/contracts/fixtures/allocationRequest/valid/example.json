@@ -1,0 +1,19 @@
+{
+  "assetRef": "live.USD",
+  "expectedBudgetVersion": 2,
+  "targets": [
+    {
+      "bucket": "hosting",
+      "amount": "10000000"
+    },
+    {
+      "bucket": "api",
+      "amount": "20000000"
+    },
+    {
+      "bucket": "trading",
+      "amount": "70000000"
+    }
+  ],
+  "stepUpId": "019a0000-0000-7000-8000-0000000000e1"
+}

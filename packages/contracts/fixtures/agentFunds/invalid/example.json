@@ -1,0 +1,19 @@
+{
+  "description": "Funds documents are live only",
+  "expect": {
+    "fieldPath": "/mode",
+    "keyword": "const"
+  },
+  "document": {
+    "schemaVersion": "agent-funds/1",
+    "agentId": "019a0000-0000-7000-8000-000000000001",
+    "mode": "paper",
+    "budgetVersion": 1,
+    "wallet": null,
+    "buckets": [],
+    "pendingDeposits": [],
+    "frozen": false,
+    "freezeReasons": [],
+    "asOf": "2026-10-12T12:00:00.000Z"
+  }
+}

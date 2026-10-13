@@ -9,8 +9,8 @@ export interface Catalog {
   // Block cadence per network: rehearsal and event ingestion read it here instead of hard-coding it.
   readonly networks: Readonly<Record<string, { readonly blockMillis: number; readonly finalityBlocks: number }>>;
   readonly assets: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live'; readonly decimals: number; readonly native?: true }>>;
-  readonly feeds: Readonly<Record<string, { readonly baseAssetRef: string; readonly quoteUnit: string; readonly source: 'poolTwap'; readonly connectorRef: string; readonly windowSeconds: number; readonly finality: 'finalized' }>>;
-  readonly connectors: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live'; readonly version: string; readonly venue: 'uniswap-v3' | 'kuru'; readonly actions: readonly string[] }>>;
+  readonly feeds: Readonly<Record<string, { readonly baseAssetRef: string; readonly quoteUnit: string; readonly source: 'poolTwap' | 'poolEma' | 'nativeOracle'; readonly connectorRef: string; readonly windowSeconds: number; readonly finality: 'finalized' }>>;
+  readonly connectors: Readonly<Record<string, { readonly networkRef: string; readonly mode: 'paper' | 'live'; readonly version: string; readonly venue: 'uniswap-v3' | 'kuru' | 'curve' | 'aave'; readonly actions: readonly string[] }>>;
   /** Allowlisted reads per connector and operation: typed arguments, the record they bind and how old its data may be. */
   readonly reads: Readonly<Record<string, Readonly<Record<string, { readonly arguments: RecordType; readonly result: RecordType; readonly maxAgeSeconds: number }>>>>;
   /** Model profiles an ai.decide block may name; the broker resolves provider credentials at deployment, never here. */
