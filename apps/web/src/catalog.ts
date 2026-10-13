@@ -4,17 +4,22 @@ import type { Catalog } from '@monad-hack/strategy';
 // The single adapter from catalog records to editor dropdowns. Paper catalog only until G3 serves a live one.
 export let editorCatalog: Catalog = marketCatalog;
 
-/** Only the explicitly supported paper demo profile can extend the bundled editor catalog. */
+/** Only the explicitly supported synthetic and Gateway paper profiles extend the editor catalog. */
 export function setEditorModels(raw: unknown): void {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid model catalog.');
   const models: Record<string, Catalog['modelProfiles'][string]> = {};
   for (const [ref, value] of Object.entries(raw)) {
-    if (ref !== 'paper.kimi-vercel' || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Unsupported model profile.');
+    const supported = ref === 'paper.kimi-vercel'
+      ? { provider: 'kimi', modelId: 'moonshotai/kimi-k2.7-code' }
+      : ref === 'paper.kimi'
+        ? { provider: 'synthetic', modelId: 'kimi-synthetic' }
+        : undefined;
+    if (!supported || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Unsupported model profile.');
     const profile = value as Record<string, unknown>;
     if (Object.keys(profile).sort().join() !== 'maxOutputTokens,maxTimeoutSeconds,mode,modelId,provider' ||
-      profile.mode !== 'paper' || profile.provider !== 'kimi' || profile.modelId !== 'moonshotai/kimi-k2.7-code' ||
+      profile.mode !== 'paper' || profile.provider !== supported.provider || profile.modelId !== supported.modelId ||
       profile.maxTimeoutSeconds !== 30 || profile.maxOutputTokens !== 1024) throw new Error('Unsupported model profile.');
-    models[ref] = { mode: 'paper', provider: 'kimi', modelId: profile.modelId, maxTimeoutSeconds: 30, maxOutputTokens: 1024 };
+    models[ref] = { mode: 'paper', ...supported, maxTimeoutSeconds: 30, maxOutputTokens: 1024 };
   }
   editorCatalog = { ...marketCatalog, modelProfiles: models };
 }
