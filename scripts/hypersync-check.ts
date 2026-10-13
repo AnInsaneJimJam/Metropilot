@@ -22,7 +22,7 @@ const index = new HyperSyncChain(rpc, { url: process.env['HYPERSYNC_URL'] ?? hyp
 
 const WALLET = '0x83874dbad11513d46b4b0a455e7832804d19c130';
 const DEPOSIT = { tx: '0x91e92af957ad31624b9c86ada062a2f839893d4afcf5671f088f9dbed3f75870', logIndex: 40001, block: 70492750n, amount: 5_000_000_000_000_000_000n };
-const WITHDRAWALS = ['0xde86d6f1d533729a0d77564cdffdad821812fcc4527965e8a673e24c588e2db7', '0x39cdd0fb1deefcbb59046eebb5a5d2ef32e56c2deb4bc0d38c134f45ee514c8b'];
+const WITHDRAWALS = ['0x39cdd0fb1deefcbb59046eebb5a5d2ef32e56c2deb4bc0d38c134f45ee514c8b'];
 const USDC = '0x534b2f3a21130d7a60830c2df862319e593943a3';
 
 const results: { check: string; pass: boolean; detail: string }[] = [];

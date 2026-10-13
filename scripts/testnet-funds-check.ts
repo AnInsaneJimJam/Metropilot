@@ -7,18 +7,22 @@
 //       Scans finalized blocks for the deposit, credits it once, allocates it to trading, withdraws part of it to
 //       <returnAddress> through the gateway (provider policy updated for that destination), waits for finality,
 //       settles actual gas and reconciles the wallet against the chain.
-// Needs PRIVY_APP_ID, PRIVY_APP_SECRET, PRIVY_AUTHORIZATION_KEY and CUSTODY_RPC (default: the public testnet RPC).
+// Needs PRIVY_APP_ID, PRIVY_APP_SECRET, PRIVY_AUTHORIZATION_KEY and CUSTODY_RPC (default: the public testnet RPC);
+// ENVIO_API_TOKEN, when set, scans through the HyperSync index.
 import { createHash, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { agentBalances, allocate, requestWithdrawal, uuidv7, withdrawalById } from '../packages/accounting/src/index.ts';
-import { DepositScanner, JsonRpcChain, PrivyCustody, WithdrawalGateway, provisionWallet, reconcileWallets } from '../packages/custody/src/index.ts';
+import { DepositScanner, HyperSyncChain, JsonRpcChain, PrivyCustody, hyperSyncUrlFor, WithdrawalGateway, provisionWallet, reconcileWallets } from '../packages/custody/src/index.ts';
 import type { CustodyConfig } from '../packages/custody/src/index.ts';
 
 const CHAIN = 10143;
 const endpoint = process.env['CUSTODY_RPC'] ?? 'https://testnet-rpc.monad.xyz';
 const pool = new pg.Pool({ connectionString: process.env['DATABASE_URL'] });
-const chain = new JsonRpcChain({ endpoint, chainId: CHAIN });
-await chain.verifyChainId();
+const rpc = new JsonRpcChain({ endpoint, chainId: CHAIN });
+await rpc.verifyChainId();
+// With ENVIO_API_TOKEN the scanner reads through the HyperSync deposit index (D48); RPC still supplies every value.
+const envio = process.env['ENVIO_API_TOKEN'];
+const chain = envio ? new HyperSyncChain(rpc, { url: process.env['HYPERSYNC_URL'] ?? hyperSyncUrlFor(CHAIN), apiToken: envio }) : rpc;
 const provider = new PrivyCustody({ appId: process.env['PRIVY_APP_ID']!, appSecret: process.env['PRIVY_APP_SECRET']!, authorizationKey: process.env['PRIVY_AUTHORIZATION_KEY']! });
 const tenant = (await pool.query<{ id: string }>(`select id from tenants where auth_subject = 'local-control-workspace'`)).rows[0]?.id
   ?? (await pool.query<{ id: string }>('select id from tenants order by created_at limit 1')).rows[0]!.id;
