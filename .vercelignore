@@ -1,0 +1,18 @@
+# Uploaded to Vercel: source needed to build apps/web from the monorepo root. Never secrets or local state.
+.env
+.env.*
+!.env.example
+.secrets/
+.claude/
+.vercel/
+node_modules/
+**/node_modules/
+**/dist/
+infra/terraform/.terraform/
+infra/terraform/*.tfstate*
+infra/terraform/terraform.tfvars
+.env.hosting
+graphify-out/
+apps/web/test-results/
+apps/web/playwright-report/
+*.dump

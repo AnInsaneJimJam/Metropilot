@@ -96,9 +96,11 @@ acm in us-east-1; Terraform ≥ 1.9; Docker with buildx and arm64 emulation (`do
 tonistiigi/binfmt --install arm64` once); AWS CLI v2 with profile `monad-hack`; Python 3; Vercel CLI logged in.
 All commands run from the repository root with a clean, committed working tree.
 
-1. **Vercel project** (to know the public origin): in the Vercel dashboard import the repository with **Root
-   Directory `apps/web`**, framework Vite (the install command in `vercel.json` installs at the monorepo root).
-   Note the production URL, e.g. `https://monad-hack.vercel.app`.
+1. **Vercel project:** created 2026-10-14 as `metropilot` (team `yash-agrawal-s-projects`, root directory
+   `apps/web`, framework Vite, Node 24.x), production URL **`https://metropilot.vercel.app`**, with
+   `VITE_PRIVY_APP_ID` set for Production. It has no Git connection: deploy from the repository root with
+   `vercel deploy --prod` (the root `.vercelignore` keeps `.env`, `.secrets/`, state and build output out of the
+   upload). Until step 8 adds the `/v1` rewrite the site loads but cannot reach an API.
 2. **Configure:** `cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars`, set
    `public_origin` to that URL and review `service_env`.
    `cp infra/env.hosting.example .env.hosting` and fill in the Privy values (save the verification PEM under
