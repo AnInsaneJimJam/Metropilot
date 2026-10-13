@@ -36,3 +36,4 @@ packages/contracts/src/generated-contracts.ts
 
 # Browser test output
 playwright-report/
+.claude/worktrees/

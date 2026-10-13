@@ -16,7 +16,7 @@ import type { CustodyConfig, CustodyProvider } from '@monad-hack/custody';
 import { ControlError, newId } from './control.ts';
 
 type Doc<K extends keyof GeneratedContractMap> = GeneratedContractMap[K];
-type Purpose = 'withdrawal' | 'destination' | 'allocation';
+type Purpose = 'withdrawal' | 'destination' | 'allocation' | 'livePolicy';
 
 /** Delivers a one-time step-up code out of band (provider MFA in production, the server log locally). */
 export interface StepUpDelivery {
@@ -64,6 +64,7 @@ function checked<K extends keyof GeneratedContractMap>(kind: K, body: unknown): 
 function actionTerms(purpose: Purpose, agentId: string, body: Record<string, unknown>): Record<string, unknown> {
   if (purpose === 'withdrawal') return { purpose, agentId, assetRef: body['assetRef'], amount: body['amount'], destinationId: body['destinationId'] };
   if (purpose === 'destination') return { purpose, agentId, chainId: body['chainId'], address: body['address'], label: body['label'] };
+  if (purpose === 'livePolicy') return { purpose, agentId, limits: body['limits'] };
   return { purpose, agentId, assetRef: body['assetRef'], expectedBudgetVersion: body['expectedBudgetVersion'], targets: body['targets'] };
 }
 
@@ -217,6 +218,26 @@ export class FundsService {
       throw new ControlError(403, 'FORBIDDEN', 'A fresh step-up approval for these exact terms is required.', { fieldPath: '/stepUpId' });
     }
     await c.query('update step_up_challenges set consumed_at = $3 where tenant_id = $1 and id = $2', [tenantId, stepUpId, this.#now()]);
+  }
+
+  // ---- live trading caps (D60) ---------------------------------------------------------------------------------
+
+  /**
+   * Set the agent's live trading caps as a new immutable policy version. Consent is a step-up approval for exactly
+   * these limits; the executor combines them with the platform limits by the most restrictive value.
+   */
+  async setLivePolicy(tenantId: string, agentId: string, body: unknown): Promise<{ policyVersion: number; limits: Record<string, unknown> }> {
+    const request = checked('livePolicyRequest', body);
+    return this.#tx(async (c) => {
+      await this.#agent(c, tenantId, agentId);
+      await c.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, agentId]);
+      await this.#consumeStepUp(c, tenantId, request.stepUpId, 'livePolicy', actionTerms('livePolicy', agentId, request as unknown as Record<string, unknown>));
+      const next = await c.query<{ version: number }>('select coalesce(max(version), 0) + 1 as version from policies where tenant_id = $1 and agent_id = $2', [tenantId, agentId]);
+      // The approval that set these caps is recorded: a live launch must name it (deployment/1 stepUpApprovalId).
+      const limits = { mode: 'live', ...request.limits, approvedBy: request.stepUpId };
+      await c.query('insert into policies (tenant_id, agent_id, version, limits) values ($1, $2, $3, $4)', [tenantId, agentId, next.rows[0]!.version, limits]);
+      return { policyVersion: next.rows[0]!.version, limits };
+    });
   }
 
   // ---- allocation and quotes -------------------------------------------------------------------------------------

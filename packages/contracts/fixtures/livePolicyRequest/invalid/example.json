@@ -1,0 +1,15 @@
+{
+  "description": "slippage above the live cap",
+  "document": {
+    "limits": {
+      "maxSlippageBps": 500,
+      "dailyActionCount": 5,
+      "dailyNotionalUsdMicros": "5000000"
+    },
+    "stepUpId": "019a0000-0000-7000-8000-0000000000e1"
+  },
+  "expect": {
+    "fieldPath": "/limits/maxSlippageBps",
+    "keyword": "maximum"
+  }
+}

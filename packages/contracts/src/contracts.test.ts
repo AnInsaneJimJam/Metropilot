@@ -249,6 +249,7 @@ describe('schema hygiene', () => {
         'event/1',
         'funding-quote/1',
         'intent-result/1',
+        'live-estimate/1',
         'paper-estimate/1',
         'paper-quota/1',
         'persisted-broker-result/1',

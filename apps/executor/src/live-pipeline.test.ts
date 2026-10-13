@@ -229,7 +229,7 @@ describe('live Uniswap pipeline', { skip }, () => {
     chain = new PoolChain();
     provider = new Provider(chain);
     routeConfig = {
-      connectorRef: CONNECTOR, connectorVersion: '1.0.0', route, quoteTtlSeconds: 60, gasMarginBps: 2_000,
+      connectorRef: CONNECTOR, connectorVersions: ['1.0.0'], route, quoteTtlSeconds: 60, gasMarginBps: 2_000,
       assets: { 'mainnet.MON': { address: u.wmon, native: true }, 'mainnet.WMON': { address: u.wmon, native: false }, 'mainnet.USDC': { address: u.usdc, native: false } },
       pairs: [['mainnet.MON', 'mainnet.USDC'], ['mainnet.WMON', 'mainnet.USDC'], ['mainnet.USDC', 'mainnet.WMON']],
       custody: { networkRef: NETWORK, chainId: CHAIN, gasAssetRef: 'mainnet.MON', startHeight: 0n, assets: [{ assetRef: 'mainnet.MON', chainId: CHAIN, token: 'native', decimals: 18, funding: true }], tradingContracts: [u.router, u.wmon, u.usdc] },

@@ -166,7 +166,7 @@ describe('database', { skip }, () => {
     await migrate(live);
     await seedLiveCatalog(live);
     await seedLiveCatalog(live);
-    const { rows } = await live.query<{ ref: string; definition: { identity: unknown } }>(`select ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) order by ref`);
+    const { rows } = await live.query<{ ref: string; definition: { identity: unknown } }>(`select distinct on (ref) ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) order by ref, version desc`);
     assert.deepEqual(rows.map((r) => r.ref), ['mainnet.MON', 'mainnet.USDC', 'mainnet.WMON', 'testnet.MON', 'testnet.USDC', 'testnet.WMON']);
     for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok, row.ref);
     // Same predicate as the executor store's catalogAllows for live assets.

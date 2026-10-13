@@ -40,7 +40,8 @@ export interface LiveChain extends RouteReader {
 
 export interface LiveRouteConfig {
   readonly connectorRef: string;
-  readonly connectorVersion: string;
+  /** Catalog versions of the connector this route serves (each pins the same reviewed contracts). */
+  readonly connectorVersions: readonly string[];
   readonly route: UniswapRoute;
   /** Catalog asset ref → token; native MON trades as the wrapped token sent as value. */
   readonly assets: Readonly<Record<string, { readonly address: string; readonly native: boolean }>>;
@@ -161,7 +162,7 @@ export class LivePipeline {
     const tin = cfg.assets[row.action.tokenInRef];
     const tout = cfg.assets[row.action.tokenOutRef];
     const offered = cfg.pairs.some(([a, b]) => a === row.action.tokenInRef && b === row.action.tokenOutRef);
-    if (!tin || !tout || tout.native || !offered || row.action.connectorRef !== cfg.connectorRef || row.action.connectorVersion !== cfg.connectorVersion) {
+    if (!tin || !tout || tout.native || !offered || row.action.connectorRef !== cfg.connectorRef || !cfg.connectorVersions.includes(row.action.connectorVersion)) {
       await this.#end(row, { code: 'EXECUTOR_ASSET_NOT_ALLOWED', message: 'This connector does not offer that pair.' }, now, report);
       return false;
     }
