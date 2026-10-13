@@ -3,5 +3,6 @@
   "framework": "vite",
   "installCommand": "cd ../.. && corepack enable && pnpm install --frozen-lockfile",
   "buildCommand": "pnpm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [{ "source": "/v1/:path*", "destination": "https://monad.yash-agrawal.dev/v1/:path*" }]
 }
