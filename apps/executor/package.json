@@ -11,7 +11,8 @@
     "@monad-hack/contracts": "workspace:*",
     "@monad-hack/policy": "workspace:*",
     "@monad-hack/strategy": "workspace:*",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "@monad-hack/connectors": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "8.23.1"

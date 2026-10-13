@@ -20,7 +20,7 @@ async function replaceText(page: Page, text: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
-test("threshold preset: edit, see an error, fix it, rehearse one crossing", async ({
+test("native threshold preset: edit, fix errors and explain unavailable playback", async ({
   page,
 }) => {
   await page.goto("/");
@@ -38,26 +38,32 @@ test("threshold preset: edit, see an error, fix it, rehearse one crossing", asyn
   const original = (await hash.textContent())!;
   expect(original).toMatch(/^0x[0-9a-f]{64}$/);
 
-  // Rapid edit + revert must revalidate rather than leave the editor stuck in Checking.
-  const initialThreshold = page.getByRole("textbox", {
-    name: "when price crosses above",
-    exact: true,
-  });
-  await tabTo(page, initialThreshold);
-  await replaceText(page, "2400");
-  await replaceText(page, "2500");
-  await expect(status).toContainText("Ready");
-  await expect(hash).toHaveText(original);
-
-  // Change the threshold through the outline form. 0 is refused with its reason and 2500 is kept.
   const outline = page.locator("ul.outline");
   await tabTo(
     page,
-    outline.getByRole("button", { name: /^when price crosses above/ }),
+    outline.getByRole("button", { name: /^when price crosses below/ }),
+  );
+  await page.keyboard.press("Enter");
+
+  // Rapid edit + revert must revalidate rather than leave the editor stuck in Checking.
+  const initialThreshold = page.getByRole("textbox", {
+    name: "when price crosses below",
+    exact: true,
+  });
+  await tabTo(page, initialThreshold);
+  await replaceText(page, "0.024");
+  await replaceText(page, "0.025");
+  await expect(status).toContainText("Ready");
+  await expect(hash).toHaveText(original);
+
+  // Change the threshold through the outline form. 0 is refused with its reason and the last valid price is kept.
+  await tabTo(
+    page,
+    outline.getByRole("button", { name: /^when price crosses below/ }),
   );
   await page.keyboard.press("Enter");
   const threshold = page.getByRole("textbox", {
-    name: "when price crosses above",
+    name: "when price crosses below",
   });
   await tabTo(page, threshold);
   await replaceText(page, "0");
@@ -68,7 +74,7 @@ test("threshold preset: edit, see an error, fix it, rehearse one crossing", asyn
   await expect(hash).toHaveText(original);
 
   // A valid threshold changes the strategy, so the hash updates.
-  await replaceText(page, "2400");
+  await replaceText(page, "0.024");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(hash).not.toHaveText(original);
   await expect(hash).toHaveText(/^0x[0-9a-f]{64}$/);
@@ -90,37 +96,23 @@ test("threshold preset: edit, see an error, fix it, rehearse one crossing", asyn
   await replaceText(page, "50");
   await expect(status).toContainText("Ready");
 
-  // Back to 2500: the same blocks give the same hash as the preset.
+  // Back to 0.025: the same blocks give the same hash as the preset.
   await tabTo(
     page,
-    outline.getByRole("button", { name: /^when price crosses above/ }),
+    outline.getByRole("button", { name: /^when price crosses below/ }),
   );
   await page.keyboard.press("Enter");
   await tabTo(page, threshold);
-  await replaceText(page, "2500");
+  await replaceText(page, "0.025");
   await expect(hash).toHaveText(original);
 
-  // Rehearse "crosses once": 2499 → 2501 → 2502 fires exactly once.
-  await tabTo(
-    page,
-    page.getByRole("button", { name: "02 Rehearse", exact: true }),
-  );
+  // Native oracle methods have no synthetic scenario playback; the view explains the limitation.
+  await tabTo(page,page.getByRole("button",{name:"02 Rehearse",exact:true}));
   await page.keyboard.press("Enter");
-  await expect(page.getByLabel("Scenario")).toHaveValue("crossesOnce");
-  await tabTo(page, page.getByRole("button", { name: "Skip to end" }));
-  await page.keyboard.press("Enter");
-  await tabTo(
-    page,
-    page.locator("summary").filter({ hasText: "Inspect the execution trace" }),
-  );
-  await page.keyboard.press("Enter");
-  const log = page.getByRole("list", { name: "Rehearsal log" });
-  await expect(log).toContainText("TWAP 2499 recorded as the baseline");
-  await expect(log.locator("li.event-fire")).toHaveCount(1);
-  await expect(log.locator("li.event-fire")).toContainText("crossed 2500");
-  await expect(log).toContainText("Run completed: 1 trade");
-  await expect(page.getByLabel("Synthetic feed")).toContainText("2502");
-  await expect(
-    page.getByText("Synthetic rehearsal — not a paper or live fill"),
-  ).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Native market observations."})).toBeVisible();
+  await expect(page.getByText(/Scenario playback for these oracle methods is not available yet/)).toBeVisible();
+  await expect(page.getByText(/Uniswap’s 30-second geometric TWAP, Curve’s native EMA, and Aave’s native USD prices/)).toBeVisible();
+  await expect(page.getByLabel("Scenario")).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Skip to end"})).toHaveCount(0);
+  await expect(page.getByLabel("Synthetic feed")).toHaveCount(0);
 });

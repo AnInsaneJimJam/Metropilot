@@ -134,7 +134,7 @@ Follow [executor.md section 8](../specs/executor.md#8-paper-execution). The stan
 
 Live capabilities are refused (403) unless the executor is wired with `live` ([`LiveConfig`](../../apps/executor/src/live.ts)). With it, admission for a live deployment on the configured network:
 
-- resolves the agent's custodial wallet (`wallets`, migration 0007) and the input from available **trading** inventory on the ledger;
+- resolves the agent's custodial wallet (`wallets`, migration 0009) and the input from available **trading** inventory on the ledger;
 - evaluates `action-policy/2` at the `admission` phase (identity, chain/recipient = agent wallet, notional, branch evidence, freezes); quote, gas, allowance and signer readiness are required at the signing phase;
 - reserves token-in plus the native gas ceiling in one `packages/accounting` reservation keyed `intent:<logicalKey>`, counted in the agent/tenant/platform UTC-day windows, and records the intent, verdict and outbox together. A ledger refusal records `rejected` with `EXECUTOR_INSUFFICIENT_BUDGET`, `EXECUTOR_DAILY_LIMIT_EXCEEDED` or `EXECUTOR_RECONCILIATION_REQUIRED`.
 

@@ -180,7 +180,7 @@ export class ExecutorService {
     try {
       catalog = await this.#o.store.catalogAllows(intent.connectorRef, intent.connectorVersion, intent.action, authority.networkRef, [intent.tokenInRef, intent.tokenOutRef]);
       limits = await this.#o.store.loadPolicyLimits(authority.tenantId, authority.agentId, authority.policyVersion);
-      quote = await this.#o.market.quote(intent.tokenInRef, intent.tokenOutRef);
+      quote = await this.#o.market.quote(intent.tokenInRef, intent.tokenOutRef, intent.connectorRef);
     } catch {
       return fail(503, 'PROVIDER_UNAVAILABLE', 'Required market or policy context is unavailable; nothing was dispatched.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
     }
@@ -293,7 +293,7 @@ export class ExecutorService {
     let catalog: { connector: boolean; assets: boolean };
     let limits: Record<string, unknown> | undefined;
     try {
-      quote = await this.#o.market.quote(row.action.tokenInRef, row.action.tokenOutRef);
+      quote = await this.#o.market.quote(row.action.tokenInRef, row.action.tokenOutRef, row.action.connectorRef);
       catalog = await this.#o.store.catalogAllows(row.action.connectorRef, row.action.connectorVersion, SUPPORTED_ACTION, authority.networkRef, [row.action.tokenInRef, row.action.tokenOutRef]);
       limits = await this.#o.store.loadPolicyLimits(authority.tenantId, authority.agentId, authority.policyVersion);
     } catch {

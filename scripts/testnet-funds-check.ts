@@ -20,7 +20,7 @@ const endpoint = process.env['CUSTODY_RPC'] ?? 'https://testnet-rpc.monad.xyz';
 const pool = new pg.Pool({ connectionString: process.env['DATABASE_URL'] });
 const rpc = new JsonRpcChain({ endpoint, chainId: CHAIN });
 await rpc.verifyChainId();
-// With ENVIO_API_TOKEN the scanner reads through the HyperSync deposit index (D48); RPC still supplies every value.
+// With ENVIO_API_TOKEN the scanner reads through the HyperSync deposit index (D50); RPC still supplies every value.
 const envio = process.env['ENVIO_API_TOKEN'];
 const chain = envio ? new HyperSyncChain(rpc, { url: process.env['HYPERSYNC_URL'] ?? hyperSyncUrlFor(CHAIN), apiToken: envio }) : rpc;
 const provider = new PrivyCustody({ appId: process.env['PRIVY_APP_ID']!, appSecret: process.env['PRIVY_APP_SECRET']!, authorizationKey: process.env['PRIVY_AUTHORIZATION_KEY']! });

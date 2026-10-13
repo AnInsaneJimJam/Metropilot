@@ -1,5 +1,5 @@
 import * as Blockly from 'blockly/core';
-import { PRESETS, workspaceFromStrategy } from '@monad-hack/strategy';
+import { MARKET_PRESETS as PRESETS, workspaceFromStrategy } from '@monad-hack/strategy';
 import type { Preset } from '@monad-hack/strategy';
 import { editorCatalog } from '../catalog.ts';
 

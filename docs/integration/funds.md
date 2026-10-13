@@ -2,7 +2,7 @@
 
 How the funds and policy track (#29) is built, how to run it, what each consumer calls, and what still needs
 accounts. Normative rules stay in [funds-and-budgets.md](../specs/funds-and-budgets.md),
-[executor.md §6](../specs/executor.md#6-policy-contract-and-denial-reasons) and [decisions D42–D46](../decisions.md).
+[executor.md §6](../specs/executor.md#6-policy-contract-and-denial-reasons) and [decisions D44–D48](../decisions.md).
 
 ## 1. What exists
 
@@ -40,7 +40,7 @@ All routes need the session cookie. Money commands take `Idempotency-Key`. Bodie
 | `GET /v1/agents/{id}/balances` | `agent-funds/1`: buckets (balance, held, available), pending/quarantined deposits, freeze state. |
 | `POST /v1/agents/{id}/allocations` | `AllocationRequest` (target totals; `stepUpId` when trading rises) → new `budgetVersion`. |
 | `POST /v1/agents/{id}/funding-quotes` | `FundingQuoteRequest` → stored `funding-quote/1` (5-minute expiry; advisory). |
-| `POST /v1/step-up/challenges`, `…/{id}/verify` | Bind a one-time code to exact terms (D45). |
+| `POST /v1/step-up/challenges`, `…/{id}/verify` | Bind a one-time code to exact terms (D47). |
 | `POST /v1/agents/{id}/withdrawal-destinations` | Verified owner address (step-up). Replaces the chain's previous address. |
 | `POST /v1/agents/{id}/withdrawals` → `GET /v1/withdrawals/{id}` | `withdrawal/1`. Works while paused or stopped; no strategy or runtime path reaches it. |
 
@@ -72,7 +72,7 @@ wallet with testnet MON for gas and the test token, then watch `GET /balances` m
 
 Without an index the scanner traces every block over RPC, which on the public endpoint runs at about chain speed.
 Set `ENVIO_API_TOKEN` (create one at https://envio.dev/app/api-tokens; `HYPERSYNC_URL` defaults to
-`https://<CUSTODY_CHAIN_ID>.hypersync.xyz`) and the scanner reads through `HyperSyncChain` (D48):
+`https://<CUSTODY_CHAIN_ID>.hypersync.xyz`) and the scanner reads through `HyperSyncChain` (D50):
 
 - HyperSync only names candidate blocks; RPC re-reads each one, so credited values, finality and receipts never
   come from the index. Heights are capped at the indexed height; an incomplete page fails the scan.

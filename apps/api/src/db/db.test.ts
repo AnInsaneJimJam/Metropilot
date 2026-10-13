@@ -54,6 +54,20 @@ async function rejects(promise: Promise<unknown>, code: string): Promise<void> {
   });
 }
 
+async function marketReadFixture(client: pg.Client): Promise<{runId:string;operationKey:string}> {
+  await seedPaper(client);
+  const {agentId,strategyRevisionId}=paperSeed().request;
+  const account='019a0000-0000-7000-8000-0000000002f1',deployment='019a0000-0000-7000-8000-0000000002f2';
+  const hash='0x'+'d1'.repeat(32),runId='0x'+'d2'.repeat(32),operationKey='0x'+'d3'.repeat(32);
+  await client.query('insert into simulation_accounts (tenant_id,id,agent_id,session) values ($1,$2,$3,21)',[seedTenantId,account,agentId]);
+  await client.query(`insert into deployments (tenant_id,id,agent_id,strategy_revision_id,mode,strategy_hash,catalog_hash,connector_versions,runtime_image_digest,network_ref,policy_version,budget_version,resource_profile_ref,simulation_account_id,desired_state)
+    values ($1,$2,$3,$4,'paper',$5,$5,'{}',$5,'paper-monad',1,1,'paper-small-v1',$6,'stopped')`,[seedTenantId,deployment,agentId,strategyRevisionId,hash,account]);
+  await client.query(`insert into runs (tenant_id,run_id,deployment_id,generation,deployment_revision,trigger_id,source_event_key,trigger)
+    values ($1,$2,$3,1,'revision/1','crossing','fixture:market-read','{}')`,[seedTenantId,runId,deployment]);
+  await client.query(`insert into run_operations (tenant_id,run_id,operation_key,kind,node_id,iteration_path) values ($1,$2,$3,'read','read_market','[]')`,[seedTenantId,runId,operationKey]);
+  return {runId,operationKey};
+}
+
 describe('database', { skip }, () => {
   let db: pg.Client;
   before(async () => {
@@ -130,7 +144,7 @@ describe('database', { skip }, () => {
         if (statement.type === 'swap.exactInput') refs.add(statement.connectorRef).add(statement.tokenInRef).add(statement.tokenOutRef);
       }
     }
-    const { rows } = await db.query<{ ref: string }>('select ref from catalog_versions where ref = any($1)', [[...refs]]);
+    const { rows } = await db.query<{ ref: string }>('select distinct ref from catalog_versions where ref = any($1)', [[...refs]]);
     assert.deepEqual(rows.map((row) => row.ref).sort(), [...refs].sort());
   });
 
@@ -275,6 +289,60 @@ describe('database', { skip }, () => {
       await rejects(db.query(`update artifacts set body = '[]'`), 'P0001');
       await db.query(`insert into timeline_entries (tenant_id, operation_key, run_id, node_id, message, inputs) values ($1, $2, $3, 'note', 'hello', '{}')`, [seedTenantId, H('cc'), runId]);
       await rejects(db.query(`delete from timeline_entries`), 'P0001');
+    });
+  });
+
+  describe('market persistence (0006, 0007)',()=>{
+    test('cursor constraints and canonical observation/log identity, finality and immutability',async()=>{
+      const hash='0x'+'e1'.repeat(32),feed='db.market-check';
+      await rejects(db.query('insert into market_cursors (feed_ref,block_number,block_hash) values ($1,-1,$2)',[feed,hash]),'23514');
+      await rejects(db.query('insert into market_cursors (feed_ref,block_number,block_hash) values ($1,1,$2)',[feed,'invalid']),'23514');
+      await db.query('insert into market_cursors (feed_ref,block_number,block_hash) values ($1,1,$2)',[feed,hash]);
+      await rejects(db.query('insert into market_cursors (feed_ref,block_number,block_hash) values ($1,2,$2)',[feed,hash]),'23505');
+      const observation={schemaVersion:'price-observation/1',finality:'finalized'};
+      const insertObservation=(doc:unknown)=>db.query('insert into finalized_market_observations values ($1,$2,$3)',[feed,'canonical:key',doc]);
+      await rejects(insertObservation({...observation,finality:'proposed'}),'23514');
+      await rejects(insertObservation({...observation,schemaVersion:'price-observation/2'}),'23514');
+      await rejects(insertObservation(null),'23502');
+      await insertObservation(observation);
+      await rejects(insertObservation(observation),'23505');
+      await rejects(db.query('update finalized_market_observations set document=$1 where feed_ref=$2',[observation,feed]),'P0001');
+      await rejects(db.query('delete from finalized_market_observations where feed_ref=$1',[feed]),'P0001');
+      await rejects(db.query('insert into finalized_market_logs values ($1,$2,-1,$3)',[feed,hash,{}]),'23514');
+      await rejects(db.query('insert into finalized_market_logs values ($1,$2,0,null)',[feed,hash]),'23502');
+      await db.query('insert into finalized_market_logs values ($1,$2,0,$3)',[feed,hash,{}]);
+      await rejects(db.query('insert into finalized_market_logs values ($1,$2,0,$3)',[feed,hash,{}]),'23505');
+      await rejects(db.query('update finalized_market_logs set document=$1 where feed_ref=$2',[{},feed]),'P0001');
+      await rejects(db.query('delete from finalized_market_logs where feed_ref=$1',[feed]),'P0001');
+    });
+    test('cached reads require an existing operation and its tenant, are unique and immutable',async()=>{
+      const {runId,operationKey}=await marketReadFixture(db),hash='0x'+'e2'.repeat(32);
+      const insert=(key:string,tenant:string|null,document:unknown={})=>db.query('insert into market_read_results (run_id,operation_key,request_hash,document,tenant_id) values ($1,$2,$3,$4,$5)',[runId,key,hash,document,tenant]);
+      await rejects(insert(hash,seedTenantId),'23503');
+      await rejects(insert(operationKey,null),'23502');
+      const otherTenant='019a0000-0000-7000-8000-0000000002f3';
+      await db.query("insert into tenants (id,auth_subject) values ($1,'synthetic|market-other')",[otherTenant]);
+      await rejects(insert(operationKey,otherTenant),'23503');
+      await rejects(insert(operationKey,seedTenantId,null),'23502');
+      await insert(operationKey,seedTenantId);
+      await rejects(insert(operationKey,seedTenantId),'23505');
+      await rejects(db.query('update market_read_results set document=$1 where run_id=$2',[{},runId]),'P0001');
+      await rejects(db.query('delete from market_read_results where run_id=$1',[runId]),'P0001');
+    });
+    test('0007 upgrades existing read ownership, restores immutability and installs the latest-feed index',async()=>{
+      const upgrade=await freshClient(),migrations=readMigrations();
+      await migrate(upgrade,migrations.filter(m=>m.version<=6));
+      const {runId,operationKey}=await marketReadFixture(upgrade);
+      const document={schemaVersion:'broker-result/1',operationKey,disposition:'refused',reason:{code:'BROKER_STALE_DATA',message:'Fixture'}};
+      await upgrade.query('insert into market_read_results (run_id,operation_key,request_hash,document) values ($1,$2,$3,$4)',[runId,operationKey,'0x'+'e3'.repeat(32),document]);
+      assert.deepEqual(await migrate(upgrade,migrations.filter(m=>m.version<=7)),[migrations[6]!.name]);
+      const row=(await upgrade.query('select tenant_id,document from market_read_results where run_id=$1',[runId])).rows[0];
+      assert.equal(row.tenant_id,seedTenantId);assert.deepEqual(row.document,document);
+      await rejects(upgrade.query('update market_read_results set document=$1 where run_id=$2',[{},runId]),'P0001');
+      await rejects(upgrade.query('delete from market_read_results where run_id=$1',[runId]),'P0001');
+      const index=(await upgrade.query("select indexdef from pg_indexes where indexname='finalized_market_observations_latest'")).rows[0].indexdef;
+      assert.match(index,/feed_ref/);assert.match(index,/observedAt/);assert.match(index,/DESC/);
+      assert.deepEqual(await migrate(upgrade,migrations.filter(m=>m.version<=7)),[]);
     });
   });
 

@@ -48,6 +48,7 @@ function requestTenant(request: FastifyRequest): string {
 
 export interface ApiOptions {
   store: ControlStore;
+  catalog?: import("@monad-hack/strategy").Catalog;
   /** Production callers must supply a verified session resolver. Never accept a tenant from the body. */
   authenticate: (cookie: string | undefined) => Promise<string | undefined>;
   origin: string;
@@ -188,8 +189,8 @@ export function createApp(options: ApiOptions) {
     });
     routes.get("/v1/catalog", async () => ({
       mode: "paper",
-      synthetic: true,
-      catalog: syntheticCatalog,
+      synthetic: options.catalog === undefined,
+      catalog: options.catalog ?? syntheticCatalog,
       capabilities: { save: true, deploy: Boolean(options.lifecycle), cloudExecution: false, live: false, custody: Boolean(options.funds?.liveCustody), localFaucet: Boolean(options.funds?.hasLocalFaucet) },
       ...(options.lifecycle ? { paperVersions: await options.lifecycle.paperVersions() } : {}),
     }));
@@ -234,7 +235,7 @@ export function createApp(options: ApiOptions) {
           checked.issues[0]!.message,
           { fieldPath: checked.issues[0]!.fieldPath },
         );
-      const p = await validateDraft(checked.value);
+      const p = await validateDraft(checked.value, options.catalog);
       return {
         valid: true,
         hash: p.hash,
@@ -277,7 +278,7 @@ export function createApp(options: ApiOptions) {
           "MALFORMED_REQUEST",
           "If-Match must contain the saved version.",
         );
-      const program = await validateDraft(checked.value);
+      const program = await validateDraft(checked.value, options.catalog);
       return options.store.save(
         requestTenant(request),
         key,

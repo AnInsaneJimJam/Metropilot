@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "price-observation/1",
+  "feedRef": "paper.aave-usdc-usd",
+  "connectorRef": "paper.aave",
+  "connectorVersion": "1.0.0",
+  "networkRef": "monad-mainnet",
+  "sourceEventKey": "143:0x69a5f9ad4f96ebf0a0c792dd42a01cc5c0102fef:0x47acca6d92db0c33653ffeefb809f32898c7864f2eae006087660283a94f6493:aave-native-oracle",
+  "poolAddress": "0x69a5f9ad4f96ebf0a0c792dd42a01cc5c0102fef",
+  "finality": "finalized",
+  "method": "aave-native-oracle",
+  "windowSeconds": 0,
+  "reserve": {
+    "assetAddress": "0x754704bc059f8c67012fed69bc8a327a5aafb603",
+    "oracleAddress": "0x0c02b2c2038066c10eab8fe1d5cdb73d5a78a1bf",
+    "oracleSourceAddress": "0x787962943811d279d01ec973bd3a15f1b3e1f0d9",
+    "priceUpdateTimeAvailable": false,
+    "supplyRateRay": "126093657761059592775463062",
+    "variableBorrowRateRay": "146174716727558170367305640",
+    "lastUpdateAt": "2026-10-12T17:50:27.000Z"
+  },
+  "price": {
+    "baseAssetRef": "paper.USDC",
+    "quoteUnit": "USD",
+    "decimal": "0.99984464"
+  },
+  "observedAt": "2026-10-12T17:50:46.000Z",
+  "receivedAt": "2026-10-12T17:50:49.789Z",
+  "block": {
+    "chainId": 143,
+    "number": "112818856",
+    "hash": "0x47acca6d92db0c33653ffeefb809f32898c7864f2eae006087660283a94f6493"
+  },
+  "provenanceHash": "0x37a700078e2ea4807af3d2b29ecdb614cfd8783fdecd77efc0ece9bddb3e935b"
+}

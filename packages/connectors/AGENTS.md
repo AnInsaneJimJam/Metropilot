@@ -6,9 +6,10 @@ Start with one verified Uniswap exact-input route and paper fixtures. Separate r
 
 ## Checklist
 
-- [ ] CNR-1 / G1,G4: define capability manifests, synthetic paper registry and observation schemas.
-  - G1 portion done 2026-10-03 (commit `5d94ea3`, green hosted CI): observation envelope [event-1](../contracts/schemas/event-1.schema.json) and the synthetic paper registry (seeded `catalog_versions`, `syntheticCatalog` in `packages/strategy`). Remaining (G4): connector capability manifests in this package.
+- [x] CNR-1 / G1,G4: define capability manifests, curated paper registry and observation schemas.
+  - G1 portion done 2026-10-03 (commit `5d94ea3`, green hosted CI): observation envelope [event-1](../contracts/schemas/event-1.schema.json) and the synthetic paper registry (seeded `catalog_versions`, `syntheticCatalog` in `packages/strategy`). G4 manifests, native oracle registry and closed observation schemas are implemented on `codex/issue-10-market-data`; evidence and selected Aave/Uniswap/Curve scope: [plan](../../plan.md#issue-10--market-data-ingestion-2026-10-12).
 - [ ] CNR-2 / G4,G8: implement authenticated/deduplicated event ingestion/backfill and bounded reads.
+  - G4 local path implemented: finalized hash checks, bounded durable cursors, duplicate/crash replay, current heartbeats during backfill, capability-scoped cached reads. G8 provider failover and live execution remain open. See [source evidence](../../docs/research/market-data-sources.md).
 - [ ] CNR-3 / G8: verify one mainnet/test target route, addresses, decimals, liquidity and reference price.
 - [ ] CNR-4 / G8: build/decode quote, exact allowance, swap and finalized receipt interpretation.
 - [ ] CNR-5 / G8: pass unsupported route, stale source, manipulated calldata and replay conformance checks.

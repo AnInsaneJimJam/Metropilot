@@ -3,7 +3,7 @@
 // reserved intents after restarts. Local development only until the hosted profile exists: loopback, no TLS.
 // Run it under a restricted database role in hosted environments (docs/integration/executor.md section 3a).
 import pg from 'pg';
-import { syntheticCatalog } from '@monad-hack/strategy';
+import { marketCatalog, MARKETS, TOKENS } from '@monad-hack/connectors/registry';
 import { PostgresAuthority } from './authority.ts';
 import { createExecutor } from './index.ts';
 import { PostgresMarketData } from './market.ts';
@@ -18,10 +18,7 @@ const secretHex = process.env['EXECUTOR_CAPABILITY_SECRET'];
 if (!secretHex || !/^[0-9a-f]{64}$/.test(secretHex)) throw new Error('EXECUTOR_CAPABILITY_SECRET must be 64 lower-case hex characters, shared with the control API only.');
 
 // Paper feeds come from the synthetic catalog: USD-quoted feeds price their base asset in paper.USD.
-const feeds: FeedPair[] = Object.entries(syntheticCatalog.feeds).map(([feedRef, feed]) => ({
-  feedRef, baseAssetRef: feed.baseAssetRef, quoteAssetRef: `paper.${feed.quoteUnit}`,
-  baseDecimals: syntheticCatalog.assets[feed.baseAssetRef]!.decimals, quoteDecimals: syntheticCatalog.assets[`paper.${feed.quoteUnit}`]!.decimals,
-}));
+const feeds: FeedPair[] = MARKETS.map(m => ({feedRef:m.feedRef,connectorRef:m.connectorRef,baseAssetRef:`paper.${m.base}`,quoteAssetRef:`paper.${m.quote}`,baseDecimals:TOKENS[m.base].decimals,quoteDecimals:TOKENS[m.quote].decimals}));
 const pool = new pg.Pool({ connectionString: url, max: 10, connectionTimeoutMillis: 3000 });
 const { service, server } = createExecutor({
   pool, authority: new PostgresAuthority(pool), market: new PostgresMarketData(pool, feeds), capabilitySecret: Buffer.from(secretHex, 'hex'),
