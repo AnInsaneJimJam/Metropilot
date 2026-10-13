@@ -11,15 +11,19 @@ export function providerResponse(content = '{"decision":"allow","summary":"Synth
 test('exact micro-USD rounding and cached input use integer arithmetic', () => {
   assert.equal(usageCost({ input: 100, cachedInput: 10, output: 20 }), 168n);
   assert.equal(usageCost({ input: 1, cachedInput: 0, output: 0 }), 1n);
+  assert.equal(usageCost({ input: 1000000, cachedInput: 1000000, output: 0 }), 190000n);
   assert.throws(() => usageCost({ input: 0, cachedInput: 1, output: 0 }));
 });
 
 test('Kimi disabled gate sends no request; enabled call carries fixed model and bounded parameters', async () => {
   let calls = 0;
   const transport: typeof fetch = async (url, init) => {
-    calls++; assert.equal(url, 'https://api.moonshot.ai/v1/chat/completions');
+    calls++; assert.equal(url, 'https://ai-gateway.vercel.sh/v1/chat/completions');
     const body = JSON.parse(init!.body as string);
-    assert.deepEqual(body.thinking, { type: 'disabled' });
+    assert.deepEqual(body.reasoning, { effort: 'low', exclude: true });
+    assert.deepEqual(body.providerOptions, { gateway: { only: ['moonshotai'], models: [] } });
+    assert.equal(body.model, 'moonshotai/kimi-k2.7-code');
+    assert.equal(body.thinking, undefined);
     assert.equal(body.max_completion_tokens, request.maxOutputTokens);
     assert.equal(body.stream, false); assert.equal(body.n, 1); assert.equal(body.tools, undefined);
     assert.equal(init!.redirect, 'error'); assert.ok(init!.signal);
@@ -67,4 +71,15 @@ test('provider deadline abort is an unknown bill, never a fabricated failed-free
     throw new Error('unreachable');
   } });
   assert.equal((await adapter.call(timed, adapter.prepare(timed))).result.disposition, 'unknown');
+});
+
+
+test('Gateway reasoning is discarded while all billed completion tokens stay inside the hold', async () => {
+  const raw = providerResponse();
+  raw.choices[0]!.message = { ...raw.choices[0]!.message, reasoning: 'Untrusted private model text; never execute it.' } as typeof raw.choices[0]['message'];
+  const adapter = new KimiAdapter({ apiKey: 'synthetic-not-a-provider-key', verified: true, fetch: async () => new Response(JSON.stringify(raw)) });
+  const answer = await adapter.call(request, adapter.prepare(request));
+  assert.equal(answer.result.disposition, 'completed');
+  assert.deepEqual(Object.keys(answer.result.value!).sort(), ['decision', 'summary']);
+  assert.equal(answer.usage?.output, 20);
 });

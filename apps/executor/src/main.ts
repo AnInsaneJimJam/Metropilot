@@ -11,7 +11,7 @@ import { liveFromEnv } from './live-wiring.ts';
 import { PostgresMarketData } from './market.ts';
 import type { FeedPair } from './market.ts';
 
-if (process.env['KIMI_API_KEY'] || process.env['MOONSHOT_API_KEY']) throw new Error('Model credentials are restricted to the broker process.');
+if (process.env['AI_GATEWAY_API_KEY'] || process.env['KIMI_API_KEY'] || process.env['MOONSHOT_API_KEY']) throw new Error('Model credentials are restricted to the broker process.');
 if (process.env['LOCAL_EXECUTOR'] !== '1' || process.env['NODE_ENV'] === 'production') {
   throw new Error('Local development only. Set LOCAL_EXECUTOR=1; hosted executors need the selected identity and a restricted database role.');
 }

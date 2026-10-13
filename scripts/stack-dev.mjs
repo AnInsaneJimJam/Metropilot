@@ -14,7 +14,7 @@ if (existsSync('.env')) {
   }
 }
 // Provider credentials belong only to the control/broker process.
-const otherEnv = Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith('KIMI_') && name !== 'MOONSHOT_API_KEY'));
+const otherEnv = Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith('KIMI_') && name !== 'MOONSHOT_API_KEY' && name !== 'AI_GATEWAY_API_KEY'));
 const secret = env.EXECUTOR_CAPABILITY_SECRET || randomBytes(32).toString('hex');
 const brokerSecret = env.BROKER_CAPABILITY_SECRET || randomBytes(32).toString('hex');
 const image = env.RUNTIME_IMAGE_DIGEST || '0x' + '5a'.repeat(32);
