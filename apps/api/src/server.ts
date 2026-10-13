@@ -9,7 +9,7 @@ import { RuntimeControlStore } from "./runtime-control/store.ts";
 import { escalateUnknownUsage, expireHeld } from "@monad-hack/accounting";
 import { DepositScanner, NATIVE, WithdrawalGateway, reconcileWallets } from "@monad-hack/custody";
 import { FundsService } from "./funds.ts";
-import { custodyFromEnv } from "./funds-config.ts";
+import { assertCustodyCatalog, custodyFromEnv } from "./funds-config.ts";
 
 // Explicitly local-only until the production identity adapter and HTTPS deployment are supplied.
 if (
@@ -34,6 +34,7 @@ const lifecycle = new LifecycleService({ pool, runtime: new RuntimeControlStore(
 const tenant = await store.tenant("local-control-workspace");
 // Live funds: off unless CUSTODY_PROVIDER is set (funds-config.ts). Step-up codes go to this server's log locally.
 const custody = custodyFromEnv(process.env);
+if (custody && !custody.localChain) await assertCustodyCatalog(pool, custody.config);
 const funds = new FundsService({
   pool,
   ...(custody ? { custody: { provider: custody.provider, config: custody.config } } : {}),

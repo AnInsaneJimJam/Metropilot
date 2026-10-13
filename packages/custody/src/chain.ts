@@ -5,6 +5,13 @@ import { isHex } from './provider.ts';
 
 export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
+export interface ReceiptLog {
+  readonly address: string;
+  readonly topics: readonly string[];
+  readonly data: string;
+  readonly logIndex: number;
+}
+
 export interface Receipt {
   readonly txHash: string;
   readonly succeeded: boolean;
@@ -12,6 +19,19 @@ export interface Receipt {
   readonly blockHash: string;
   /** Native fee actually paid: gasUsed × effectiveGasPrice. */
   readonly feeAtomic: bigint;
+  /** Sender and target, lower-case (absent from local stand-ins). */
+  readonly from?: string;
+  readonly to?: string | null;
+  /** Event logs in log-index order (absent from local stand-ins). */
+  readonly logs?: readonly ReceiptLog[];
+}
+
+/** A transaction to simulate or estimate (eth_call / eth_estimateGas). */
+export interface CallRequest {
+  readonly from: string;
+  readonly to: string;
+  readonly data: string;
+  readonly value?: bigint;
 }
 
 export interface TransferLog {
@@ -50,6 +70,7 @@ export class ChainError extends Error {
 }
 
 const q = (n: bigint): string => `0x${n.toString(16)}`;
+const txObject = (r: CallRequest) => ({ from: r.from.toLowerCase(), to: r.to.toLowerCase(), data: r.data, ...(r.value ? { value: q(r.value) } : {}) });
 export const topicFor = (address: string): string => `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}`;
 const addressFromTopic = (topic: string): string => `0x${topic.slice(-40)}`.toLowerCase();
 
@@ -129,11 +150,13 @@ export class JsonRpcChain implements ChainReader {
   }
 
   async receipt(txHash: string): Promise<Receipt | undefined> {
-    const r = await this.call<{ status: string; blockNumber: string; blockHash: string; gasUsed: string; effectiveGasPrice?: string } | null>('eth_getTransactionReceipt', [txHash]);
+    const r = await this.call<{ status: string; blockNumber: string; blockHash: string; gasUsed: string; effectiveGasPrice?: string; from: string; to: string | null;
+      logs?: { address: string; topics: string[]; data: string; logIndex: string; removed?: boolean }[] } | null>('eth_getTransactionReceipt', [txHash]);
     if (!r) return undefined;
     return {
       txHash: txHash.toLowerCase(), succeeded: r.status === '0x1', blockNumber: BigInt(r.blockNumber), blockHash: r.blockHash.toLowerCase(),
-      feeAtomic: BigInt(r.gasUsed) * BigInt(r.effectiveGasPrice ?? '0x0'),
+      feeAtomic: BigInt(r.gasUsed) * BigInt(r.effectiveGasPrice ?? '0x0'), from: r.from.toLowerCase(), to: r.to?.toLowerCase() ?? null,
+      logs: (r.logs ?? []).filter((l) => !l.removed).map((l) => ({ address: l.address.toLowerCase(), topics: l.topics.map((t) => t.toLowerCase()), data: l.data.toLowerCase(), logIndex: Number(BigInt(l.logIndex)) })),
     };
   }
 
@@ -223,6 +246,26 @@ export class JsonRpcChain implements ChainReader {
     return BigInt(await this.call<string>('eth_getBalance', [owner.toLowerCase(), q(height)]));
   }
 
+  /** eth_call of the exact transaction at a block tag or height; returns the raw result. */
+  async simulate(request: CallRequest, block: bigint | 'latest' = 'latest'): Promise<string> {
+    return this.call<string>('eth_call', [txObject(request), typeof block === 'bigint' ? q(block) : block]);
+  }
+
+  async estimateGas(request: CallRequest): Promise<bigint> {
+    return BigInt(await this.call<string>('eth_estimateGas', [txObject(request)]));
+  }
+
+  /** Current gas price (legacy price; on Monad the fee is gas limit × price). */
+  async gasPrice(): Promise<bigint> {
+    return BigInt(await this.call<string>('eth_gasPrice', []));
+  }
+
+  /** ERC-20 allowance(owner, spender) at a height. */
+  async erc20Allowance(token: string, owner: string, spender: string, height: bigint | 'latest' = 'latest'): Promise<bigint> {
+    const data = `0xdd62ed3e${topicFor(owner).slice(2)}${topicFor(spender).slice(2)}`;
+    return BigInt(await this.call<string>('eth_call', [{ to: token.toLowerCase(), data }, typeof height === 'bigint' ? q(height) : height]));
+  }
+
   /** Transactions sent by the owner up to and including the block (its nonce after that block). */
   async transactionCount(owner: string, height: bigint): Promise<bigint> {
     return BigInt(await this.call<string>('eth_getTransactionCount', [owner.toLowerCase(), q(height)]));
@@ -255,7 +298,9 @@ export class CrossCheckedChain implements ChainReader {
   async receipt(txHash: string): Promise<Receipt | undefined> {
     const [a, b] = await Promise.all([this.primary.receipt(txHash), this.secondary.receipt(txHash)]);
     if (!a || !b) return undefined;
-    if (a.blockHash !== b.blockHash || a.succeeded !== b.succeeded || a.feeAtomic !== b.feeAtomic) throw new ChainError('Endpoints disagree on a receipt.');
+    if (a.blockHash !== b.blockHash || a.succeeded !== b.succeeded || a.feeAtomic !== b.feeAtomic || JSON.stringify(a.logs ?? null) !== JSON.stringify(b.logs ?? null)) {
+      throw new ChainError('Endpoints disagree on a receipt.');
+    }
     return a;
   }
   transferLogs(token: string, destinations: readonly string[], fromBlock: bigint, toBlock: bigint): Promise<TransferLog[]> {

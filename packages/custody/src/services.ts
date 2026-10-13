@@ -30,6 +30,19 @@ export interface CustodyConfig {
   readonly gasAssetRef: string;
   /** First block the scanner reads when it has no cursor. */
   readonly startHeight: bigint;
+  /** Contracts live trades call (the reviewed router and the traded tokens it is approved on). */
+  readonly tradingContracts?: readonly string[];
+}
+
+/**
+ * The one approved-destination set for an agent wallet's provider policy: configured token contracts, the trading
+ * route's contracts and the agent's verified withdrawal destinations. Every caller that refreshes the policy uses it,
+ * because a refresh replaces the list.
+ */
+export async function walletPolicyDestinations(pool: Pick<pg.Pool, 'query'>, config: CustodyConfig, agentId: string): Promise<string[]> {
+  const verified = await pool.query<{ address: string }>('select address from withdrawal_destinations where agent_id = $1 and chain_id = $2 and revoked_at is null', [agentId, config.chainId]);
+  const tokens = config.assets.filter((a) => a.chainId === config.chainId && a.token !== 'native').map((a) => a.token as string);
+  return [...new Set([...tokens, ...(config.tradingContracts ?? []), ...verified.rows.map((r) => r.address)].map((a) => a.toLowerCase()))];
 }
 
 async function tx<T>(pool: pg.Pool, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
@@ -67,7 +80,7 @@ export async function walletFor(c: Pick<pg.ClientBase, 'query'>, tenantId: strin
 export async function provisionWallet(pool: pg.Pool, provider: CustodyProvider, config: CustodyConfig, tenantId: string, agentId: string, now: Date): Promise<WalletView> {
   const existing = await walletFor(pool, tenantId, agentId, config.chainId);
   if (existing) return existing;
-  const allowedTo = config.assets.filter((a) => a.chainId === config.chainId && a.token !== 'native').map((a) => a.token as string);
+  const allowedTo = await walletPolicyDestinations(pool, config, agentId);
   await pool.query('insert into wallet_provisioning (agent_id, chain_id) values ($1, $2) on conflict do nothing', [agentId, config.chainId]);
   const attempt = (await pool.query<{ attempt: number }>('select attempt from wallet_provisioning where agent_id = $1 and chain_id = $2', [agentId, config.chainId])).rows[0]!.attempt;
   let created;
@@ -244,9 +257,8 @@ export class WithdrawalGateway {
         try {
           if (asset.token === 'native') {
             // A native transfer goes straight to the recipient: the provider policy must list the verified destinations.
-            const verified = await this.pool.query<{ address: string }>('select address from withdrawal_destinations where agent_id = $1 and chain_id = $2 and revoked_at is null', [w.agentId, this.chain.chainId]);
-            const tokens = this.config.assets.filter((a) => a.chainId === this.chain.chainId && a.token !== 'native').map((a) => a.token as string);
-            await this.provider.allowDestinations(wallet.rows[0]!.provider_wallet_id, wallet.rows[0]!.provider_policy_id ?? undefined, { chainId: this.chain.chainId, allowedTo: [...tokens, ...verified.rows.map((r) => r.address)] });
+            const allowedTo = await walletPolicyDestinations(this.pool, this.config, w.agentId);
+            await this.provider.allowDestinations(wallet.rows[0]!.provider_wallet_id, wallet.rows[0]!.provider_policy_id ?? undefined, { chainId: this.chain.chainId, allowedTo });
           }
           const sent = await this.provider.send({
             providerWalletId: wallet.rows[0]!.provider_wallet_id, idempotencyKey: w.id, chainId: this.chain.chainId,

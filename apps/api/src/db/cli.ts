@@ -62,9 +62,9 @@ const commands: Record<string, () => Promise<void>> = {
     }),
   'seed-live': () =>
     withClient(async (client, url) => {
-      // Real Monad testnet network and asset entries (verified addresses); no accounts or secrets.
+      // Real Monad testnet and mainnet network, asset and route entries (verified addresses); no accounts or secrets.
       await seedLiveCatalog(client);
-      console.log(`${redactUrl(url)}: Monad testnet live catalog present`);
+      console.log(`${redactUrl(url)}: Monad testnet and mainnet live catalogs present`);
     }),
 };
 

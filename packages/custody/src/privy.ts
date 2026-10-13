@@ -125,7 +125,7 @@ export class PrivyCustody implements CustodyProvider {
   async send(request: SendRequest): Promise<SendResult> {
     const body = {
       method: 'eth_sendTransaction', caip2: `eip155:${request.chainId}`, chain_type: 'ethereum', reference_id: request.idempotencyKey.slice(0, 64),
-      params: { transaction: { to: request.to.toLowerCase(), data: request.data, value: toQuantity(request.value), chain_id: request.chainId } },
+      params: { transaction: { to: request.to.toLowerCase(), data: request.data, value: toQuantity(request.value), chain_id: request.chainId, ...(request.gasLimit ? { gas_limit: toQuantity(request.gasLimit) } : {}) } },
     };
     const { status, json } = await this.request('POST', `/v1/wallets/${encodeURIComponent(request.providerWalletId)}/rpc`, body, { signed: true, idempotencyKey: request.idempotencyKey });
     const hash = (json['data'] as Json | undefined)?.['hash'];

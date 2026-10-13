@@ -30,6 +30,8 @@ export interface SendRequest {
   readonly to: string;
   readonly data: string;
   readonly value: bigint;
+  /** Gas limit to sign with (Monad charges the full limit); the provider estimates when absent. */
+  readonly gasLimit?: bigint;
 }
 
 export interface SendResult {

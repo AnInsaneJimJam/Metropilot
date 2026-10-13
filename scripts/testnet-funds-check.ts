@@ -16,6 +16,8 @@ import { DepositScanner, HyperSyncChain, JsonRpcChain, PrivyCustody, hyperSyncUr
 import type { CustodyConfig } from '../packages/custody/src/index.ts';
 
 const CHAIN = 10143;
+// Testnet asset ref (per-network refs, D52); runs before 2026-10-13 recorded the balance under live.MON.
+const MON = process.env['GAS_ASSET_REF'] ?? 'testnet.MON';
 const endpoint = process.env['CUSTODY_RPC'] ?? 'https://testnet-rpc.monad.xyz';
 const pool = new pg.Pool({ connectionString: process.env['DATABASE_URL'] });
 const rpc = new JsonRpcChain({ endpoint, chainId: CHAIN });
@@ -48,7 +50,7 @@ if (mode === 'prepare') {
   const agentId = uuidv7();
   await pool.query(`insert into agents (tenant_id, id, name) values ($1, $2, 'Testnet funds check (test agent)')`, [tenant, agentId]);
   const startHeight = await chain.finalizedHeight();
-  const config: CustodyConfig = { networkRef: 'monad-testnet', chainId: CHAIN, gasAssetRef: 'live.MON', startHeight, assets: [{ assetRef: 'live.MON', chainId: CHAIN, token: 'native', decimals: 18, funding: true }] };
+  const config: CustodyConfig = { networkRef: 'monad-testnet', chainId: CHAIN, gasAssetRef: MON, startHeight, assets: [{ assetRef: MON, chainId: CHAIN, token: 'native', decimals: 18, funding: true }] };
   const w = await provisionWallet(pool, provider, config, tenant, agentId, new Date());
   await pool.query(`insert into chain_cursors (chain_id, name, height, updated_at) values ($1, 'observed', $2, now()), ($1, 'finalized', $2, now()) on conflict (chain_id, name) do update set height = greatest(chain_cursors.height, excluded.height)`, [CHAIN, startHeight.toString()]);
   console.log(JSON.stringify({ agentId, walletAddress: w.address, chainId: CHAIN, scanFrom: startHeight.toString() }));
@@ -58,7 +60,7 @@ if (mode === 'prepare') {
 }
 if (mode === 'reconcile') {
   // Catch the scanner up to the finalized head, then compare every testnet wallet with the ledger.
-  const config: CustodyConfig = { networkRef: 'monad-testnet', chainId: CHAIN, gasAssetRef: 'live.MON', startHeight: 0n, assets: [{ assetRef: 'live.MON', chainId: CHAIN, token: 'native', decimals: 18, funding: true }] };
+  const config: CustodyConfig = { networkRef: 'monad-testnet', chainId: CHAIN, gasAssetRef: MON, startHeight: 0n, assets: [{ assetRef: MON, chainId: CHAIN, token: 'native', decimals: 18, funding: true }] };
   const scanner = new DepositScanner(pool, chain, config, 400n);
   for (let i = 0; i < 400; i++) {
     const r = await scanner.tick(new Date());
@@ -82,11 +84,11 @@ const agentId = agentArg;
 const destination = returnArg.toLowerCase();
 const withdrawAtomic = BigInt(Math.round(Number(amountArg ?? '0.001') * 1e6)) * 10n ** 12n;
 const cursor = await pool.query<{ height: string }>(`select height from chain_cursors where chain_id = $1 and name = 'finalized'`, [CHAIN]);
-const config: CustodyConfig = { networkRef: 'monad-testnet', chainId: CHAIN, gasAssetRef: 'live.MON', startHeight: BigInt(cursor.rows[0]?.height ?? '0'), assets: [{ assetRef: 'live.MON', chainId: CHAIN, token: 'native', decimals: 18, funding: true }] };
+const config: CustodyConfig = { networkRef: 'monad-testnet', chainId: CHAIN, gasAssetRef: MON, startHeight: BigInt(cursor.rows[0]?.height ?? '0'), assets: [{ assetRef: MON, chainId: CHAIN, token: 'native', decimals: 18, funding: true }] };
 const scope = { mode: 'live' as const, tenantId: tenant, agentId };
 const scanner = new DepositScanner(pool, chain, config, 200n);
 const gateway = new WithdrawalGateway(pool, provider, chain, config);
-const mon = async (bucket: string) => (await agentBalances(pool, scope)).find((b) => b.kind === 'user' && b.bucket === bucket && b.assetRef === 'live.MON')?.balance ?? 0n;
+const mon = async (bucket: string) => (await agentBalances(pool, scope)).find((b) => b.kind === 'user' && b.bucket === bucket && b.assetRef === MON)?.balance ?? 0n;
 
 console.log('Scanning finalized blocks for the deposit…');
 for (let i = 0; i < 600 && (await mon('unallocated')) + (await mon('trading')) === 0n; i++) {
@@ -98,7 +100,7 @@ const credited = await mon('unallocated');
 console.log(`Credited after finality: ${credited} wei MON (unallocated)`);
 if (credited > 0n) {
   const v = (await pool.query<{ budget_version: number }>('select budget_version from agents where id = $1', [agentId])).rows[0]!.budget_version;
-  await tx((c) => allocate(c, { scope, assetRef: 'live.MON', expectedBudgetVersion: v, targets: { trading: credited }, actor: 'testnet-check', now: new Date() }));
+  await tx((c) => allocate(c, { scope, assetRef: MON, expectedBudgetVersion: v, targets: { trading: credited }, actor: 'testnet-check', now: new Date() }));
 }
 // Operator-verified destination and approval for this test (the user API requires a one-time code instead).
 const stepUp = async () => {
@@ -113,7 +115,7 @@ const walletId = (await pool.query<{ id: string }>('select id from wallets where
 const gasCeiling = 200_000n * 200_000_000_000n;
 const { withdrawal } = await tx(async (c) => requestWithdrawal(c, {
   tenantId: tenant, agentId, idempotencyKey: `testnet-check-${agentId}`, requestHash: `0x${createHash('sha256').update(`${agentId}:${destination}:${withdrawAtomic}`).digest('hex')}`,
-  walletId, destinationId, assetRef: 'live.MON', amount: withdrawAtomic, gasAssetRef: 'live.MON', gasCeiling, stepUpId: await stepUp(), now: new Date(),
+  walletId, destinationId, assetRef: MON, amount: withdrawAtomic, gasAssetRef: MON, gasCeiling, stepUpId: await stepUp(), now: new Date(),
 }));
 console.log(`Withdrawal ${withdrawal.id} reserved: ${withdrawAtomic} wei + gas ceiling ${gasCeiling}`);
 for (let i = 0; i < 240; i++) {

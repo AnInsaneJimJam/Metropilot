@@ -9,6 +9,7 @@
 // LIVE_OUTFLOWS=1 enables the withdrawal gateway; it stays off until the E03 proof has dated evidence.
 import { CrossCheckedChain, HyperSyncChain, JsonRpcChain, LocalChain, LocalCustody, PrivyCustody, hyperSyncUrlFor } from '@monad-hack/custody';
 import type { ChainReader, CustodyConfig, CustodyProvider } from '@monad-hack/custody';
+import { MAINNET_UNISWAP } from './db/live-catalog.ts';
 
 export interface CustodySetup {
   readonly provider: CustodyProvider;
@@ -60,16 +61,33 @@ export function custodyFromEnv(env: NodeJS.ProcessEnv): CustodySetup | undefined
   const checked = secondaryUrl ? new CrossCheckedChain(primary, new JsonRpcChain({ endpoint: secondaryUrl, chainId })) : primary;
   const envioToken = env['ENVIO_API_TOKEN'];
   const chain = envioToken ? new HyperSyncChain(primary, { url: env['HYPERSYNC_URL'] ?? hyperSyncUrlFor(chainId), apiToken: envioToken }, checked) : checked;
-  const gasAssetRef = env['GAS_ASSET_REF'] ?? 'live.MON';
+  // Asset refs are per network (testnet.* / mainnet.*); the ledger never mixes chains.
+  const gasAssetRef = env['GAS_ASSET_REF'] ?? (chainId === 143 ? 'mainnet.MON' : chainId === 10143 ? 'testnet.MON' : need(env, 'GAS_ASSET_REF'));
   return {
     provider: new PrivyCustody({ appId: need(env, 'PRIVY_APP_ID'), appSecret: need(env, 'PRIVY_APP_SECRET'), authorizationKey: need(env, 'PRIVY_AUTHORIZATION_KEY') }),
     chain, outflows: env['LIVE_OUTFLOWS'] === '1',
     config: {
       networkRef: need(env, 'CUSTODY_NETWORK_REF'), chainId, gasAssetRef, startHeight: BigInt(env['CUSTODY_START_HEIGHT'] ?? '0'),
+      // Mainnet wallets may call the reviewed Uniswap router and approve it on the traded tokens.
+      ...(chainId === 143 ? { tradingContracts: [MAINNET_UNISWAP.router, MAINNET_UNISWAP.wmon, MAINNET_UNISWAP.usdc] } : {}),
       assets: [
         ...(tokenAddress ? [{ assetRef: need(env, 'FUNDING_ASSET_REF'), chainId, token: tokenAddress, decimals, funding: true }] : []),
         { assetRef: gasAssetRef, chainId, token: 'native', decimals: 18, funding: true },
       ],
     },
   };
+}
+
+/**
+ * Every custody asset must be the catalog asset of the same chain (and contract): a ref that names another network's
+ * asset would let a balance credited on one chain back a spend on another. Checked at startup, before any scan.
+ */
+export async function assertCustodyCatalog(pool: { query: (sql: string, params: unknown[]) => Promise<{ rows: { ref: string; definition: { identity?: { kind?: string; chainId?: number; contractAddress?: string } } }[] }> }, config: CustodyConfig): Promise<void> {
+  const { rows } = await pool.query(`select ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) and disabled_reason is null and ref = any($1)`, [config.assets.map((a) => a.assetRef)]);
+  for (const asset of config.assets) {
+    const identity = rows.find((r) => r.ref === asset.assetRef)?.definition.identity;
+    const ok = identity !== undefined && identity.chainId === asset.chainId
+      && (asset.token === 'native' ? identity.kind === 'native' : identity.kind === 'erc20' && identity.contractAddress?.toLowerCase() === asset.token.toLowerCase());
+    if (!ok) throw new Error(`Custody asset ${asset.assetRef} is not the live catalog asset for chain ${asset.chainId}; run pnpm db:seed:live or fix the asset refs.`);
+  }
 }

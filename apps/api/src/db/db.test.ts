@@ -166,14 +166,18 @@ describe('database', { skip }, () => {
     await seedLiveCatalog(live);
     await seedLiveCatalog(live);
     const { rows } = await live.query<{ ref: string; definition: { identity: unknown } }>(`select ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) order by ref`);
-    assert.deepEqual(rows.map((r) => r.ref), ['live.MON', 'live.USDC', 'live.WMON']);
+    assert.deepEqual(rows.map((r) => r.ref), ['mainnet.MON', 'mainnet.USDC', 'mainnet.WMON', 'testnet.MON', 'testnet.USDC', 'testnet.WMON']);
     for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok, row.ref);
     // Same predicate as the executor store's catalogAllows for live assets.
     const allowed = await live.query(
       `select distinct ref from catalog_versions where kind = 'asset' and ref = any($1) and 'live' = any(modes) and disabled_reason is null
-         and definition -> 'identity' ->> 'kind' = any($2) and definition -> 'identity' ->> 'networkRef' = 'monad-testnet'`,
-      [['live.MON', 'live.WMON', 'live.USDC'], ['erc20', 'native']]);
-    assert.equal(allowed.rowCount, 3);
+         and definition -> 'identity' ->> 'kind' = any($2) and definition -> 'identity' ->> 'networkRef' = 'monad-mainnet'`,
+      [['mainnet.MON', 'mainnet.WMON', 'mainnet.USDC', 'testnet.MON'], ['erc20', 'native']]);
+    assert.equal(allowed.rowCount, 3, 'a testnet asset never resolves on mainnet');
+    const connector = await live.query(
+      `select 1 from catalog_versions where kind = 'connector' and ref = 'mainnet.uniswap-v3' and version = '1.0.0' and 'live' = any(modes)
+         and disabled_reason is null and definition ->> 'networkRef' = 'monad-mainnet' and definition -> 'capabilities' ? 'swap.exactInput'`);
+    assert.equal(connector.rowCount, 1);
     assert.equal((await live.query('select count(*)::int as n from catalog_versions')).rows[0].n, liveCatalog().length);
   });
 
