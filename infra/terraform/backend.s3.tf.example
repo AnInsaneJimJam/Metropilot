@@ -1,0 +1,12 @@
+# Optional shared state. Create the bucket once (versioned, private), copy this file to backend.tf, then run
+# `terraform init -migrate-state`. Local state is the default for a single operator.
+terraform {
+  backend "s3" {
+    bucket       = "monad-hack-demo-tfstate-<account-id>"
+    key          = "hosting/terraform.tfstate"
+    region       = "us-east-1"
+    profile      = "monad-hack"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

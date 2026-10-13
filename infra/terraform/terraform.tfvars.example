@@ -1,0 +1,39 @@
+# Copy to terraform.tfvars (git-ignored) and edit. No secret values here: secrets go in .env.hosting and are
+# written to Secrets Manager by infra/scripts/put-secrets.sh.
+
+aws_profile = "monad-hack"
+region      = "us-east-1"
+
+# The studio's public origin: your Vercel production URL (or custom domain). Must match exactly.
+public_origin = "https://monad-hack.vercel.app"
+
+# Set by infra/scripts/build-push.sh output (git sha tag and 0x image digest).
+image_tag            = "bootstrap"
+runtime_image_digest = "0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+
+desired_counts = { api = 1, control = 1, executor = 1, runtime = 2, runtime_live = 1 }
+
+# Non-secret configuration per service. Live switches default to off (LIVE_OUTFLOWS = "0", EXECUTOR_LIVE = "0");
+# flip them only after the funds checks in docs/integration/funds.md.
+service_env = {
+  api = {
+    CUSTODY_PROVIDER    = "privy"
+    CUSTODY_CHAIN_ID    = "143"
+    CUSTODY_NETWORK_REF = "monad-mainnet"
+    LIVE_OUTFLOWS       = "0"
+  }
+  control = {
+    # DEMO_KIMI = "1"   # registers the paper Kimi profile; needs KIMI_VERIFICATION_JSON + AI_GATEWAY_API_KEY
+  }
+  executor = {
+    EXECUTOR_LIVE = "0"
+    LIVE_OUTFLOWS = "0"
+  }
+}
+
+# Keep false until you have decided to drop backups and images (docs/hosting/TEARDOWN.md).
+allow_destroy_with_data = false
+
+# Optional custom API hostname (CloudFront + ACM). Leave empty to use the *.cloudfront.net name.
+custom_domain   = ""
+route53_zone_id = ""
