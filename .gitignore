@@ -48,3 +48,6 @@ infra/lightsail/.env.server
 infra/stack/.env.server
 infra/tunnel/.env.server
 infra/tunnel/cloudflared/
+
+# Demo video build (brag / Hyperframes)
+brag-output*/
