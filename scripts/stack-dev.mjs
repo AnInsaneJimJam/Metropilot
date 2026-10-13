@@ -17,7 +17,7 @@ const secret = env.EXECUTOR_CAPABILITY_SECRET || randomBytes(32).toString('hex')
 const image = env.RUNTIME_IMAGE_DIGEST || '0x' + '5a'.repeat(32);
 const node = process.execPath;
 const services = [
-  ['api', ['apps/api/src/server.ts'], { ...env, LOCAL_WORKSPACE: '1', RUNTIME_IMAGE_DIGEST: image }],
+  ['api', ['apps/api/src/server.ts'], { ...env, LOCAL_WORKSPACE: '1', RUNTIME_IMAGE_DIGEST: image, CUSTODY_PROVIDER: env.CUSTODY_PROVIDER ?? 'local' }],
   ['control', ['apps/api/src/runtime-control/server.ts'], { ...env, LOCAL_RUNTIME_CONTROL: '1', EXECUTOR_CAPABILITY_SECRET: secret }],
   ['executor', ['apps/executor/src/main.ts'], { ...env, LOCAL_EXECUTOR: '1', EXECUTOR_CAPABILITY_SECRET: secret }],
   // Clean environment: only what the runtime's closed configuration accepts.

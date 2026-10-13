@@ -2018,3 +2018,47 @@ summary:hover {
     padding-left: 12px;
   }
 }
+
+.funds-panel {
+  margin-top: 1.5rem;
+}
+.funds-panel h4 {
+  margin: 1rem 0 0.4rem;
+}
+.funds-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  margin: 0.75rem 0;
+}
+.funds-table th,
+.funds-table td {
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--line, #e3e1dc);
+}
+.funds-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+.funds-form label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+.funds-form input,
+.funds-form select {
+  min-width: 0;
+  width: 9rem;
+}
+@media (max-width: 640px) {
+  .funds-form input,
+  .funds-form select {
+    width: 100%;
+  }
+  .funds-table {
+    font-size: 0.8rem;
+  }
+}

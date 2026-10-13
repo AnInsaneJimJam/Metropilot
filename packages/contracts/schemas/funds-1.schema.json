@@ -1,0 +1,625 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/funds-1.schema.json",
+  "title": "Funds documents",
+  "description": "Live funding, budget allocation, step-up approvals and withdrawals (docs/specs/funds-and-budgets.md, api-and-data.md section 4). Bucket names are enum values, never field names.",
+  "$defs": {
+    "BucketTarget": {
+      "title": "BucketTarget",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bucket",
+        "amount"
+      ],
+      "properties": {
+        "bucket": {
+          "type": "string",
+          "enum": [
+            "hosting",
+            "api",
+            "trading"
+          ]
+        },
+        "amount": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        }
+      }
+    },
+    "AllocationRequest": {
+      "title": "AllocationRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetRef",
+        "expectedBudgetVersion",
+        "targets"
+      ],
+      "properties": {
+        "assetRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "expectedBudgetVersion": {
+          "$ref": "common.schema.json#/$defs/recordVersion"
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/BucketTarget"
+          }
+        },
+        "stepUpId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        }
+      },
+      "description": "Desired total per operating or trading bucket; unallocated absorbs the difference. Increasing trading needs a step-up approval for these exact terms."
+    },
+    "StepUpRequest": {
+      "title": "StepUpRequest",
+      "description": "Start a step-up approval bound to the exact terms of one financial command.",
+      "oneOf": [
+        {
+          "title": "WithdrawalStepUp",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "purpose",
+            "agentId",
+            "assetRef",
+            "amount",
+            "destinationId"
+          ],
+          "properties": {
+            "purpose": {
+              "const": "withdrawal"
+            },
+            "agentId": {
+              "$ref": "common.schema.json#/$defs/uuidv7"
+            },
+            "assetRef": {
+              "$ref": "common.schema.json#/$defs/catalogRef"
+            },
+            "amount": {
+              "$ref": "common.schema.json#/$defs/positiveAtomicAmount"
+            },
+            "destinationId": {
+              "$ref": "common.schema.json#/$defs/uuidv7"
+            }
+          }
+        },
+        {
+          "title": "DestinationStepUp",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "purpose",
+            "agentId",
+            "chainId",
+            "address",
+            "label"
+          ],
+          "properties": {
+            "purpose": {
+              "const": "destination"
+            },
+            "agentId": {
+              "$ref": "common.schema.json#/$defs/uuidv7"
+            },
+            "chainId": {
+              "$ref": "common.schema.json#/$defs/chainId"
+            },
+            "address": {
+              "$ref": "common.schema.json#/$defs/evmAddress"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        {
+          "title": "AllocationStepUp",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "purpose",
+            "agentId",
+            "assetRef",
+            "expectedBudgetVersion",
+            "targets"
+          ],
+          "properties": {
+            "purpose": {
+              "const": "allocation"
+            },
+            "agentId": {
+              "$ref": "common.schema.json#/$defs/uuidv7"
+            },
+            "assetRef": {
+              "$ref": "common.schema.json#/$defs/catalogRef"
+            },
+            "expectedBudgetVersion": {
+              "$ref": "common.schema.json#/$defs/recordVersion"
+            },
+            "targets": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "items": {
+                "$ref": "#/$defs/BucketTarget"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "StepUpVerification": {
+      "title": "StepUpVerification",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[0-9]{6}$"
+        }
+      }
+    },
+    "DestinationRequest": {
+      "title": "DestinationRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "chainId",
+        "address",
+        "label",
+        "stepUpId"
+      ],
+      "properties": {
+        "chainId": {
+          "$ref": "common.schema.json#/$defs/chainId"
+        },
+        "address": {
+          "$ref": "common.schema.json#/$defs/evmAddress"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "stepUpId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        }
+      }
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetRef",
+        "amount",
+        "destinationId",
+        "stepUpId"
+      ],
+      "properties": {
+        "assetRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "amount": {
+          "$ref": "common.schema.json#/$defs/positiveAtomicAmount"
+        },
+        "destinationId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "stepUpId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        }
+      }
+    },
+    "FundingQuoteRequest": {
+      "title": "FundingQuoteRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetRef",
+        "depositAtomic",
+        "minTradingAtomic",
+        "gasAtomic",
+        "resourceProfileRef",
+        "aiCallsPerDay",
+        "maxInputTokens",
+        "maxOutputTokens",
+        "marginBps"
+      ],
+      "properties": {
+        "assetRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "depositAtomic": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        },
+        "minTradingAtomic": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        },
+        "gasAtomic": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        },
+        "operatingDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "resourceProfileRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "modelProfileRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "aiCallsPerDay": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "maxInputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000000
+        },
+        "maxOutputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000000
+        },
+        "marginBps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      },
+      "description": "Inputs for the runway recommendation (funds-and-budgets.md section 6). Without operatingDays the operating pool is split by daily rate."
+    },
+    "AgentFunds": {
+      "title": "AgentFunds",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "agentId",
+        "mode",
+        "budgetVersion",
+        "wallet",
+        "buckets",
+        "pendingDeposits",
+        "frozen",
+        "freezeReasons",
+        "asOf"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "agent-funds/1"
+        },
+        "agentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "mode": {
+          "const": "live"
+        },
+        "budgetVersion": {
+          "$ref": "common.schema.json#/$defs/recordVersion"
+        },
+        "wallet": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "title": "FundsWallet",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "address",
+                "chainId",
+                "networkRef",
+                "provider"
+              ],
+              "properties": {
+                "address": {
+                  "$ref": "common.schema.json#/$defs/evmAddress"
+                },
+                "chainId": {
+                  "$ref": "common.schema.json#/$defs/chainId"
+                },
+                "networkRef": {
+                  "$ref": "common.schema.json#/$defs/catalogRef"
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "privy",
+                    "local"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "buckets": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "title": "BucketBalance",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bucket",
+              "assetRef",
+              "balance",
+              "held",
+              "available"
+            ],
+            "properties": {
+              "bucket": {
+                "type": "string",
+                "enum": [
+                  "unallocated",
+                  "hosting",
+                  "api",
+                  "trading"
+                ]
+              },
+              "assetRef": {
+                "$ref": "common.schema.json#/$defs/catalogRef"
+              },
+              "balance": {
+                "$ref": "common.schema.json#/$defs/atomicAmount"
+              },
+              "held": {
+                "$ref": "common.schema.json#/$defs/atomicAmount"
+              },
+              "available": {
+                "$ref": "common.schema.json#/$defs/atomicAmount"
+              }
+            }
+          }
+        },
+        "pendingDeposits": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "title": "PendingDeposit",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "txHash",
+              "logIndex",
+              "amount",
+              "state",
+              "blockHeight"
+            ],
+            "properties": {
+              "txHash": {
+                "$ref": "common.schema.json#/$defs/hash32"
+              },
+              "logIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100000
+              },
+              "assetRef": {
+                "$ref": "common.schema.json#/$defs/catalogRef"
+              },
+              "amount": {
+                "$ref": "common.schema.json#/$defs/positiveAtomicAmount"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "quarantined"
+                ]
+              },
+              "blockHeight": {
+                "$ref": "common.schema.json#/$defs/blockHeight"
+              }
+            }
+          }
+        },
+        "frozen": {
+          "type": "boolean"
+        },
+        "freezeReasons": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z_]{2,60}$"
+          }
+        },
+        "asOf": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      },
+      "description": "Finalized balances per bucket and asset, active holds, pending (unspendable) deposits and any reconciliation freeze."
+    },
+    "Withdrawal": {
+      "title": "Withdrawal",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "agentId",
+        "state",
+        "assetRef",
+        "amount",
+        "gasAssetRef",
+        "gasCeiling",
+        "destination",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "withdrawal/1"
+        },
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "agentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "reserved",
+            "submitted",
+            "finalized",
+            "failed",
+            "reconciling",
+            "cancelled"
+          ]
+        },
+        "assetRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "amount": {
+          "$ref": "common.schema.json#/$defs/positiveAtomicAmount"
+        },
+        "gasAssetRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "gasCeiling": {
+          "$ref": "common.schema.json#/$defs/positiveAtomicAmount"
+        },
+        "destination": {
+          "title": "WithdrawalDestination",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "chainId",
+            "address",
+            "label"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/uuidv7"
+            },
+            "chainId": {
+              "$ref": "common.schema.json#/$defs/chainId"
+            },
+            "address": {
+              "$ref": "common.schema.json#/$defs/evmAddress"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        "transactionHash": {
+          "$ref": "common.schema.json#/$defs/hash32"
+        },
+        "gasUsed": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        },
+        "failureReason": {
+          "$ref": "common.schema.json#/$defs/safeText"
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "FundingQuote": {
+      "title": "FundingQuote",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "agentId",
+        "assetRef",
+        "rateCardVersions",
+        "allocations",
+        "gasAtomic",
+        "feasible",
+        "shortfallAtomic",
+        "dailyCost",
+        "createdAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "funding-quote/1"
+        },
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "agentId": {
+          "$ref": "common.schema.json#/$defs/uuidv7"
+        },
+        "assetRef": {
+          "$ref": "common.schema.json#/$defs/catalogRef"
+        },
+        "rateCardVersions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "allocations": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/BucketTarget"
+          }
+        },
+        "gasAtomic": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        },
+        "feasible": {
+          "type": "boolean"
+        },
+        "shortfallAtomic": {
+          "$ref": "common.schema.json#/$defs/atomicAmount"
+        },
+        "runwaySeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4503599627370495
+        },
+        "dailyCost": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/BucketTarget"
+          }
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "expiresAt": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      },
+      "description": "A stored, expiring runway recommendation. Re-estimation is advisory; allocation always needs an explicit user command."
+    }
+  }
+}

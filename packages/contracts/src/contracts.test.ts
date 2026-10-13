@@ -229,6 +229,7 @@ describe('schema hygiene', () => {
       [
         'action-intent/1',
         'agent-deployment/1',
+        'agent-funds/1',
         'artifact/1',
         'assignment-offer/1',
         'assignment-offer/2',
@@ -245,6 +246,7 @@ describe('schema hygiene', () => {
         'deployment-operation/1',
         'deployment/1',
         'event/1',
+        'funding-quote/1',
         'intent-result/1',
         'paper-estimate/1',
         'price-observation/1',
@@ -260,6 +262,7 @@ describe('schema hygiene', () => {
         'strategy-run/2',
         'strategy/1',
         'timeline-entry/1',
+        'withdrawal/1',
       ],
     );
     for (const schema of versioned) assert.ok((schema['required'] as string[]).includes('schemaVersion'));

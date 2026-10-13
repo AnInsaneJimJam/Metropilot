@@ -10,6 +10,7 @@ import { after, before, describe, test } from 'node:test';
 import pg from 'pg';
 import { contentHash, validate } from '@monad-hack/contracts';
 import { migrate, readMigrations } from './migrate.ts';
+import { liveCatalog, seedLiveCatalog } from './live-catalog.ts';
 import { paperSeed, seedPaper, seedTenantId } from './seed.ts';
 
 const required = process.env['REQUIRE_DB'] === '1';
@@ -157,6 +158,27 @@ describe('database', { skip }, () => {
   test('paper asset identities are valid contract shapes', async () => {
     const { rows } = await db.query<{ definition: { identity: unknown } }>(`select definition from catalog_versions where kind = 'asset'`);
     for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok);
+  });
+
+  test('live catalog: idempotent, valid on-chain identities, and found by the executor catalog query', async () => {
+    const live = await freshClient();
+    await migrate(live);
+    await seedLiveCatalog(live);
+    await seedLiveCatalog(live);
+    const { rows } = await live.query<{ ref: string; definition: { identity: unknown } }>(`select ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) order by ref`);
+    assert.deepEqual(rows.map((r) => r.ref), ['mainnet.MON', 'mainnet.USDC', 'mainnet.WMON', 'testnet.MON', 'testnet.USDC', 'testnet.WMON']);
+    for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok, row.ref);
+    // Same predicate as the executor store's catalogAllows for live assets.
+    const allowed = await live.query(
+      `select distinct ref from catalog_versions where kind = 'asset' and ref = any($1) and 'live' = any(modes) and disabled_reason is null
+         and definition -> 'identity' ->> 'kind' = any($2) and definition -> 'identity' ->> 'networkRef' = 'monad-mainnet'`,
+      [['mainnet.MON', 'mainnet.WMON', 'mainnet.USDC', 'testnet.MON'], ['erc20', 'native']]);
+    assert.equal(allowed.rowCount, 3, 'a testnet asset never resolves on mainnet');
+    const connector = await live.query(
+      `select 1 from catalog_versions where kind = 'connector' and ref = 'mainnet.uniswap-v3' and version = '1.0.0' and 'live' = any(modes)
+         and disabled_reason is null and definition ->> 'networkRef' = 'monad-mainnet' and definition -> 'capabilities' ? 'swap.exactInput'`);
+    assert.equal(connector.rowCount, 1);
+    assert.equal((await live.query('select count(*)::int as n from catalog_versions')).rows[0].n, liveCatalog().length);
   });
 
   describe('tenant-scoped references', () => {
@@ -317,14 +339,14 @@ describe('database', { skip }, () => {
       const {runId,operationKey}=await marketReadFixture(upgrade);
       const document={schemaVersion:'broker-result/1',operationKey,disposition:'refused',reason:{code:'BROKER_STALE_DATA',message:'Fixture'}};
       await upgrade.query('insert into market_read_results (run_id,operation_key,request_hash,document) values ($1,$2,$3,$4)',[runId,operationKey,'0x'+'e3'.repeat(32),document]);
-      assert.deepEqual(await migrate(upgrade),[migrations[6]!.name]);
+      assert.deepEqual(await migrate(upgrade,migrations.filter(m=>m.version<=7)),[migrations[6]!.name]);
       const row=(await upgrade.query('select tenant_id,document from market_read_results where run_id=$1',[runId])).rows[0];
       assert.equal(row.tenant_id,seedTenantId);assert.deepEqual(row.document,document);
       await rejects(upgrade.query('update market_read_results set document=$1 where run_id=$2',[{},runId]),'P0001');
       await rejects(upgrade.query('delete from market_read_results where run_id=$1',[runId]),'P0001');
       const index=(await upgrade.query("select indexdef from pg_indexes where indexname='finalized_market_observations_latest'")).rows[0].indexdef;
       assert.match(index,/feed_ref/);assert.match(index,/observedAt/);assert.match(index,/DESC/);
-      assert.deepEqual(await migrate(upgrade),[]);
+      assert.deepEqual(await migrate(upgrade,migrations.filter(m=>m.version<=7)),[]);
     });
   });
 

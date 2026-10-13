@@ -155,3 +155,4 @@ export function validateSwapLog(market: Market, log: { address: string; data: He
   if (log.address.toLowerCase() !== market.pool) throw new Error('Log came from an unregistered pool.');
   decodeEventLog({ abi, data: log.data, topics: log.topics as [Hex, ...Hex[]], strict: true });
 }
+export * from './live-uniswap.ts';

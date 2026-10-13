@@ -187,12 +187,18 @@ importers:
 
   apps/api:
     dependencies:
+      '@monad-hack/accounting':
+        specifier: workspace:*
+        version: link:../../packages/accounting
       '@monad-hack/connectors':
         specifier: workspace:*
         version: link:../../packages/connectors
       '@monad-hack/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@monad-hack/custody':
+        specifier: workspace:*
+        version: link:../../packages/custody
       '@monad-hack/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
@@ -211,12 +217,18 @@ importers:
 
   apps/executor:
     dependencies:
+      '@monad-hack/accounting':
+        specifier: workspace:*
+        version: link:../../packages/accounting
       '@monad-hack/connectors':
         specifier: workspace:*
         version: link:../../packages/connectors
       '@monad-hack/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@monad-hack/custody':
+        specifier: workspace:*
+        version: link:../../packages/custody
       '@monad-hack/policy':
         specifier: workspace:*
         version: link:../../packages/policy
@@ -230,6 +242,9 @@ importers:
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
+      viem:
+        specifier: 2.57.4
+        version: 2.57.4(typescript@7.0.2)
 
   apps/runtime:
     dependencies:
@@ -280,7 +295,18 @@ importers:
         specifier: 8.3.2
         version: 8.3.2(@types/node@24.19.0)
 
-  packages/accounting: {}
+  packages/accounting:
+    dependencies:
+      '@monad-hack/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
 
   packages/connectors:
     dependencies:
@@ -303,6 +329,22 @@ importers:
       ajv-formats:
         specifier: 3.0.1
         version: 3.0.1
+
+  packages/custody:
+    dependencies:
+      '@monad-hack/accounting':
+        specifier: workspace:*
+        version: link:../accounting
+      '@monad-hack/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
 
   packages/policy:
     dependencies:

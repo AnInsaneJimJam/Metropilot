@@ -75,7 +75,7 @@ const worker = setInterval(() => {
   if (busy) return;
   busy = true;
   // Schedules, lost leases and executor outbox → audit stream and resumed runs.
-  Promise.all([store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox()])
+  Promise.all([store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.meterHosting()])
     .catch((error: unknown) => console.error(`worker tick failed: ${(error as Error).name}`))
     .finally(() => { busy = false; });
 }, 1_000);

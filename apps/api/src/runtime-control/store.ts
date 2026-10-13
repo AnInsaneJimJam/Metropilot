@@ -5,6 +5,7 @@ import type { BrokerRequest, BrokerResult } from '@monad-hack/contracts';
 //  - API-worker roles the runtime never performs (deploy, fan-out, schedules, resume, pause, lease reclaim).
 // Every run mutation runs in one transaction that holds the run row lock and checks the current lease and
 // generation in that transaction. Network calls never happen inside a transaction here.
+import { AccountingError, chargeHostingSlice, currentRateCard, sliceIndexAt } from '@monad-hack/accounting';
 import { createHash, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { contentHash, validate } from '@monad-hack/contracts';
@@ -198,15 +199,66 @@ export class RuntimeControlStore {
     await this.#tx((c) => this.pauseIn(c, deploymentId, actor));
   }
 
-  async pauseIn(c: pg.PoolClient, deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }): Promise<void> {
+  async pauseIn(c: pg.PoolClient, deploymentId: string, actor: AuditActor = { kind: 'controlPlane' }, reason?: string): Promise<void> {
     {
       const d = await this.#lockDeployment(c, deploymentId);
       if (d.desired_state === 'paused') return;
       if (d.desired_state !== 'active') throw new RunControlError('IDEMPOTENCY_CONFLICT', `A ${d.desired_state} deployment cannot be paused.`);
       await c.query("update deployments set desired_state = 'paused', updated_at = now() where id = $1", [deploymentId]);
       await c.query('update trigger_state set active = false where deployment_id = $1', [deploymentId]);
-      await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId, actor, type: 'deployment.stateChanged', payload: { from: 'active', to: 'paused', generation: d.generation }, source: `deployment:${deploymentId}:${d.generation}:paused` });
+      await this.#audit(c, { tenantId: d.tenant_id, agentId: d.agent_id, deploymentId, actor, type: 'deployment.stateChanged', payload: { from: 'active', to: 'paused', generation: d.generation, ...(reason ? { reason } : {}) }, source: `deployment:${deploymentId}:${d.generation}:paused` });
     }
+  }
+
+  /**
+   * Hosting metering (ACC-4; funds-and-budgets.md section 5): every active deployment whose resource profile has a
+   * published hosting rate card pays for its current and next slice from the hosting bucket before its compute is
+   * extended. A bucket that cannot pay pauses the deployment with a visible reason; other buckets are never used.
+   * Deployments without a rate card (paper sessions today) are not billed.
+   */
+  async meterHosting(): Promise<{ charged: number; paused: string[] }> {
+    const now = new Date(this.#now());
+    type Active = { id: string; tenant_id: string; agent_id: string; mode: 'paper' | 'live'; resource_profile_ref: string };
+    // Bounded pages over the whole active set (keyset on id), so later deployments are metered too.
+    const active: Active[] = [];
+    for (let after = '00000000-0000-0000-0000-000000000000'; ;) {
+      const page = await this.#pool.query<Active>(
+        `select id, tenant_id, agent_id, mode, resource_profile_ref from deployments where desired_state = 'active' and id > $1 order by id limit 500`, [after]);
+      active.push(...page.rows);
+      if (page.rows.length < 500) break;
+      after = page.rows.at(-1)!.id;
+    }
+    let charged = 0;
+    const paused: string[] = [];
+    for (const d of active) {
+      const card = await currentRateCard(this.#pool, 'hosting', d.mode, d.resource_profile_ref, now);
+      if (!card?.sliceSeconds) continue;
+      const scope = { mode: d.mode, tenantId: d.tenant_id, agentId: d.agent_id };
+      const slice = sliceIndexAt(now, card.sliceSeconds);
+      await this.#tx(async (c) => {
+        // A pause or stop that landed after the list was read wins: lock and recheck before authorizing charges.
+        const current = await c.query<{ desired_state: string }>('select desired_state from deployments where id = $1 for update', [d.id]);
+        if (current.rows[0]?.desired_state !== 'active') return;
+        // Each slice is its own savepoint: a paid slice stays paid even when the next one cannot be.
+        for (const index of [slice, slice + 1n]) {
+          await c.query('savepoint hosting_slice');
+          try {
+            const outcome = await chargeHostingSlice(c, { scope, deploymentId: d.id, card, sliceIndex: index, now });
+            if (outcome.status === 'charged') charged++;
+            await c.query('release savepoint hosting_slice');
+          } catch (error) {
+            if (!(error instanceof AccountingError) || (error.code !== 'INSUFFICIENT_BUDGET' && error.code !== 'RECONCILIATION_REQUIRED')) throw error;
+            await c.query('rollback to savepoint hosting_slice');
+            const reason = 'The hosting budget is exhausted. Add hosting funds, then resume.';
+            await c.query('update deployments set pause_reason = $2 where id = $1', [d.id, reason]);
+            await this.pauseIn(c, d.id, { kind: 'system' }, reason);
+            paused.push(d.id);
+            return;
+          }
+        }
+      });
+    }
+    return { charged, paused };
   }
 
   /** Resume mints a new generation. Unfinished runs of the old generation are revoked and never offered again. */
@@ -220,7 +272,7 @@ export class RuntimeControlStore {
       if (d.desired_state === 'stopping' || d.desired_state === 'stopped') throw new RunControlError('IDEMPOTENCY_CONFLICT', 'A stopped deployment cannot be resumed; launch a new deployment.');
       await this.#revokeOpenRuns(c, d, actor);
       const next = d.generation + 1;
-      await c.query("update deployments set generation = $2, desired_state = 'active', updated_at = now() where id = $1", [deploymentId, next]);
+      await c.query("update deployments set generation = $2, desired_state = 'active', pause_reason = null, updated_at = now() where id = $1", [deploymentId, next]);
       // A new generation needs a fresh crossing baseline (strategy-language.md section 4), but keeps the last
       // accepted schedule slot: a resume must not re-run a slot the previous generation already ran.
       await c.query("update trigger_state set generation = $2, active = true, crossing = '{}' where deployment_id = $1", [deploymentId, next]);
