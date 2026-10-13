@@ -68,6 +68,30 @@ Set `CUSTODY_PROVIDER=privy`, `CUSTODY_CHAIN_ID`, `CUSTODY_NETWORK_REF`, `CUSTOD
 issuer's official source and a block explorer; do not copy them from a chat or a search snippet. Fund the agent
 wallet with testnet MON for gas and the test token, then watch `GET /balances` move from pending to credited.
 
+### Second RPC (Alchemy, D60)
+
+With `CUSTODY_RPC_SECONDARY` set, the chain reader is a `CrossCheckedChain`: before a deposit credits or a
+withdrawal settles, both endpoints must agree on the finalized height (the lower one is used), block hashes, receipts
+(status, block hash, fee, logs) and balances at that height. A disagreement throws and settlement pauses; nothing is
+guessed. Keep the public Monad RPC as `CUSTODY_RPC`: deposit observation (`eth_getLogs`, call traces) reads only the
+primary, and Alchemy disables `debug_` methods.
+
+```
+CUSTODY_RPC=https://testnet-rpc.monad.xyz
+CUSTODY_RPC_SECONDARY=https://monad-testnet.g.alchemy.com/v2/<key>
+```
+
+The key sits in the URL path, so keep it only in `.env` or the hosting secret store. Chain errors never include the
+endpoint (`chain.test.ts`). Run `pnpm alchemy:check` after setting it: it checks the chain, finality and recent block
+hashes, the recorded E03 receipts, current and historical balances, and (when set) the market RPC and `newHeads`
+subscription, printing host names only. `scripts/testnet-funds-check.ts` uses the same cross-check when the variable
+is set.
+
+The market feed can use Alchemy too (`MARKET_RPC_URL`, `MARKET_WS_URL` on Monad mainnet). On the free tier also set
+`MARKET_LOG_SPAN=10`, `MARKET_RPC_MAX_RPS=15` and `MARKET_PUSH_MIN_MILLIS=2500`; without them ingestion fails on the
+10-block `eth_getLogs` cap and HTTP 429. Ingestion verifies every pool on each tick, so a continuously running stack
+can use up the free monthly compute units quickly; watch the Alchemy dashboard and run it there for demos.
+
 ### Deposit index (Envio HyperSync, E10)
 
 Without an index the scanner traces every block over RPC, which on the public endpoint runs at about chain speed.

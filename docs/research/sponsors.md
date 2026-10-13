@@ -37,6 +37,7 @@ Best-fit submission track, as a project recommendation: **Onchain Finance & Trad
 | Uniswap | No Metropolis sponsor evidence found | Initial spot-swap connector | Verified Monad integration, useful regardless of bounty status. |
 | Aave / Curve / Morpho | No Metropolis sponsor evidence found | Later lending or trading connectors | Monad availability has primary evidence below; each needs its own narrowed action set. |
 | AWS | No Metropolis sponsor evidence found | Initial hosting option | General credits are separate from hackathon sponsorship. |
+| Alchemy | "Best Projects using Alchemy" bounty in the team's event portal (seen 2026-10-14) | Second custody RPC witness; market HTTPS/WSS transport | Integrated (D60): `CUSTODY_RPC_SECONDARY`, `MARKET_RPC_URL`/`MARKET_WS_URL`, `pnpm alchemy:check`. Gas Manager and Webhooks deferred; see below. |
 
 Perpl and MetaMask are also event-listed candidates. Do not expand this spot-only first version into leveraged perpetuals or a second wallet stack merely for a bounty. Their specific product fit and bounty rules need separate research if selected.
 
@@ -89,6 +90,23 @@ The older [Assistant API function-calling page](https://www.alibabacloud.com/hel
 The user's “Morpheus” may mean Morpho, but that name is not silently resolved: **Morpho is the researched lending protocol; a different Morpheus product needs its own specification.** “DeFi” is a category, not a connector implementation.
 
 No research here proves that every protocol ships an official complete MCP server or a managed webhook product. Our connector bundle is an application-maintained combination of validated actions, event adapters, schemas and agent instructions. It may expose those actions through MCP; it may use RPC logs/polling where no trusted webhook provider exists. Label capability and provenance accurately.
+
+## RPC provider: Alchemy
+
+Checked 2026-10-14. [Alchemy's Monad page](https://www.alchemy.com/monad) lists three supported products: the Node RPC
+API, Gas Manager and Webhooks. Monad's [network information](https://docs.monad.xyz/developer-essentials/network-information)
+lists `rpc1.monad.xyz` as Alchemy-run (15 rps, `debug_`/`trace_` disabled) and `rpc.monad.xyz` as QuickNode-run, so an
+Alchemy app key gives a second, independent operator. Our app's endpoints (`monad-testnet.g.alchemy.com`,
+`monad-mainnet.g.alchemy.com`) served chain 10143 and 143, finalized blocks, receipts, historical `eth_getBalance`/`eth_call`
+and WSS `newHeads`; evidence under E06 in [decisions](../decisions.md). Free-tier limits seen: `eth_getLogs` at most
+10 blocks per request, HTTP 429 at about 20 requests/s.
+
+- **Node RPC API: used.** Second witness for custody finality, receipts and balances, and market transport (D60).
+- **Gas Manager: deferred.** It sponsors gas for ERC-4337 smart accounts; custody uses Privy server-wallet EOAs (D48),
+  so it would need a new wallet stack.
+- **Webhooks (Address Activity): deferred.** It could only wake the deposit scanner early, never credit, and the
+  scanner already polls every 2 s. It needs a public HTTPS route with signature verification. Monad support is listed
+  on the product page but was not checked in the dashboard.
 
 ## Data, prices and stablecoins
 
