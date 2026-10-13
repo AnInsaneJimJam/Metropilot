@@ -1,116 +1,265 @@
-# Monad Hack
+<p align="center">
+  <img src="docs/assets/metropilot-banner.jpg" alt="Metropilot — Your strategy, on autopilot. No-code trading agents, built on Monad." width="100%" />
+</p>
 
-A managed platform for retail traders to configure, test, and run trading agents on Monad without setting up servers, model accounts, protocol integrations, or a programming environment.
+<p align="center">
+  <strong>No-code trading agents on Monad.</strong><br />
+  Build a strategy from blocks, run it against live Monad market data, and keep every action inside limits you set.
+</p>
 
-**Status: local paper stack with real Monad mainnet observations.** The selected connectors are **Aave, Uniswap, and Curve**. Uniswap and Curve provide native prices for reviewed markets and simulated swaps; Aave provides native USD prices and reserve supply/variable-borrow rates. No live signing or lending action is enabled. Hosted infrastructure, identity, model providers and production wallets remain separate work. Run `pnpm market:probe` for a read-only finalized source check. See [domain context](CONTEXT.md), [connector scope](docs/specs/connectors.md#selected-connectors-2026-10-12) and [source evidence](docs/research/market-data-sources.md).
+<p align="center">
+  <img src="https://img.shields.io/badge/node-24.21-339933?logo=node.js&logoColor=white" alt="Node 24.21" />
+  <img src="https://img.shields.io/badge/pnpm-12.8-F69220?logo=pnpm&logoColor=white" alt="pnpm 12.8" />
+  <img src="https://img.shields.io/badge/chain-Monad%20mainnet%20data-836EF9" alt="Monad mainnet data" />
+  <img src="https://img.shields.io/badge/execution-paper-C2A36C" alt="Paper execution" />
+</p>
 
-## Local strategy studio
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#status">Status</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#documentation">Documentation</a>
+</p>
 
-The React/Blockly workspace and Fastify control API support authoritative validation, virtual budget limits and immutable saved revisions. See [setup, contracts and integration boundaries](docs/specs/control-workspace.md). The runtime reads finalized observations through the control API and sends permitted paper swaps to the separate executor. Hosted execution and identity remain separate integrations.
 
-## The product
+<p align="center">
+  <img src="docs/assets/studio-build.png" alt="The Metropilot studio: a scheduled WMON purchase built from blocks, with the inspector open" width="100%" />
+</p>
 
-Users choose connectors, assemble a strategy, review operating costs, and launch an agent. Rookie mode offers editable market presets; advanced mode exposes the same underlying strategy language and additional settings. A connector-only distribution supports people operating their own runtime. The block editor includes conditions, market observations, actions, and bounded AI decisions.
+## Why Metropilot
 
-The platform supplies hosted isolation and a free, quota-limited paper-trading sandbox. One custodial agent wallet is presented with separate hosting, model/API, and trading budgets. The platform estimates operating runway and enforces limits; it does not promise profitable trading or an optimal allocation. Users retain control of allocation, pause, withdrawal, and permission changes through the application.
+Running a trading agent today means renting servers, wiring model APIs, writing protocol code and trusting a wallet setup you assembled yourself. Metropilot replaces all of that with one workspace.
 
-## Start reading
-
-| Document | Purpose |
+| Benefit | What it means for you |
 | --- | --- |
-| [architecture.md](architecture.md) | Chosen stack, deployment shape, trust boundaries, end-to-end flows, tradeoffs |
-| [design.md](design.md) | Repository policy, ownership, interfaces, change and collaboration rules |
-| [goals.md](goals.md) | Sequential delivery gates and the root progress checklist |
-| [plan.md](plan.md) | Workstreams, dependencies, integration order, release evidence |
-| [docs/README.md](docs/README.md) | Detailed product, language, financial, runtime, and interface specifications |
-| [docs/specs/agent-runtime.md](docs/specs/agent-runtime.md) | Agent-runtime role, component boundaries, contracts, sandboxing, recovery and implementation plan |
-| [docs/specs/executor.md](docs/specs/executor.md) | Executor HTTP contract, intent identity, paper/live state machines, signing and recovery |
-| [docs/decisions.md](docs/decisions.md) | Settled choices and external verification gates |
-| [docs/research/sponsors.md](docs/research/sponsors.md) | Sponsor evidence and integration priorities |
-| [AGENTS.md](AGENTS.md) | Instructions for contributors and coding agents |
+| **No code, no servers, no keys** | Start from a template, edit it as blocks or plain forms, and launch. Isolation, market data and execution are provided. |
+| **Real market data** | Strategies react to finalized Monad mainnet prices from Uniswap, Curve and Aave — not a synthetic feed. |
+| **Guardrails you can see** | Budgets, per-run limits and slippage caps are checked as you type, again by the server on save, and again by the executor before any fill. |
+| **You stay in control** | Every save is an immutable revision. Pause, resume or stop at any time, and follow each step in a live activity stream. |
 
-## Repository map
+## How it works
 
-```text
-apps/
-  web/                 Landing page, onboarding, strategy editor, agent controls
-  api/                 Authenticated control plane, lifecycle, metering coordination
-  runtime/             Isolated interpreter; cannot sign or directly spend
-  executor/            Privileged transaction authorization and reconciliation
-  docs/                Public documentation site build; source lives in docs/guide/
-packages/
-  contracts/           Versioned JSON schemas and transport types
-  strategy/            Block definitions, compiler, deterministic interpreter core
-  connectors/          Curated protocol tools, market data, MCP distribution
-  accounting/          Atomic ledger, reservations, budget and cost arithmetic
-  policy/              Deterministic authorization rules and limit evaluation
-infra/                 Deployment, secrets, isolation, backup and recovery definitions
-tests/                 Cross-module acceptance, recovery, isolation and demo checks
-docs/
-  specs/               Normative implementation specifications
-  research/            Dated primary-source evidence
-  guide/               User documentation source and tutorial plan
+A strategy moves through four stages. Each one is a tab in the studio.
+
+```mermaid
+flowchart LR
+  B["<b>01 Build</b><br/>Template → blocks<br/>live validation"] --> R["<b>02 Rehearse</b><br/>Check against<br/>market data"]
+  R --> V["<b>03 Review</b><br/>Budgets and<br/>per-run limits"]
+  V --> O["<b>04 Operate</b><br/>Launch on paper<br/>pause · resume · stop"]
+  O -. new revision .-> B
 ```
 
-Every directory contains a scoped `AGENTS.md` with implementation tasks. Those files make the directories trackable by Git; `.gitkeep` is only needed if a future directory is genuinely empty.
+| Stage | What you do | What the platform guarantees |
+| --- | --- | --- |
+| **Build** | Pick one of 8 templates, then edit blocks: triggers, reads, conditions, swaps, bounded AI decisions | The compiler validates every change; problems link straight to the field to fix |
+| **Rehearse** | Check how the strategy reads its markets | Native oracle methods are explained; scenario playback for them is not available yet |
+| **Review** | Set trading, hosting and AI budgets plus the network reserve | Trading funds are virtual USDC units (max 10,000); operating limits are USD; nothing is a deposit |
+| **Operate** | Save a revision and launch it on paper | The launch shows exactly what the agent may do; runs, trades and denials stream live |
 
-## First implementation target
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/studio-templates.png" alt="Template picker" /><br /><sub><b>Start from a template.</b> Eight editable strategies across Uniswap, Curve and Aave.</sub></td>
+    <td width="50%"><img src="docs/assets/studio-review.png" alt="Budget review" /><br /><sub><b>Set the boundaries.</b> Separate trading, hosting and AI budgets with per-run limits.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/assets/studio-operate.png" alt="Operate: a completed paper run and the live activity stream" /><br /><sub><b>Run it on paper.</b> A real run from the local stack: the agent read the Uniswap TWAP, reserved virtual USDC and settled a simulated fill.</sub></td>
+  </tr>
+</table>
 
-Deliver a vertical slice: one user → a preset or editable strategy → hosted paper run → bounded AI decision → proposed swap → spend-policy check → visible result and costs. Then prove a capped Monad transaction using a verified connector and team-controlled funds. Public custodial deposits are a separate release gate, not a condition for demonstrating the product.
+### What happens on every run
 
-The initial stack is a TypeScript pnpm workspace, React/Vite, Blockly, Fastify on Node 24 LTS, PostgreSQL, and separate runtime/executor processes. The current connector scope is Aave, Uniswap, and Curve. Kimi and Privy remain subject to their separate integration and capability checks. Qwen and sponsor hosting are additional integrations, not prerequisites for the first slice. See the architecture and sponsor research for exact limitations.
+The agent never holds keys or spends directly. It proposes; a separate executor decides.
 
-## Working together
+```mermaid
+sequenceDiagram
+  autonumber
+  participant M as Monad mainnet
+  participant C as Control plane
+  participant R as Agent runtime
+  participant E as Executor
+  participant U as You (studio)
+  M->>C: Finalized block: Uniswap TWAP, Curve EMA, Aave oracle
+  C->>R: Trigger fires (price crossing or schedule)
+  R->>C: Read market price
+  R->>E: Propose a typed trade intent
+  E->>E: Policy, budget and slippage checks
+  alt allowed
+    E->>E: Reserve virtual funds, simulate fill, settle
+  else denied
+    E-->>R: Blocked with a readable reason
+  end
+  E-->>U: Activity stream: queued, reserved, settled or blocked
+```
 
-Read the root and nearest scoped `AGENTS.md`. Claim a workstream in `plan.md` before editing shared contracts. Implement only after the documentation-only phase ends through a new implementation request. Mark tasks complete only with working behavior and linked verification evidence; a design paragraph is not an implemented feature. Do not commit real credentials, private keys, user prompts, or wallet exports.
+## Supported markets
 
-## Development setup
+All sources are Monad mainnet (chain 143), read from finalized blocks. Thresholds in templates are editable examples, not quotes or recommendations.
 
-G1 provides the contracts, a local database with migrations and synthetic paper seed data, and checks; no hosted application process exists yet. Requirements: pnpm 12.8.1 (the `packageManager` pin) and a running Docker daemon. `pnpm install` downloads the exact Node 24.21.0 runtime declared in `devEngines.runtime`; project scripts use that local runtime even if your shell has another Node version. `.node-version` also pins CI. See [pnpm runtime management](https://pnpm.io/package_json#devenginesruntime).
+| Venue | Market | Price method | Agent can |
+| --- | --- | --- | --- |
+| **Uniswap v3** | WMON / USDC | 30-second geometric TWAP | Read price · paper swap |
+| **Curve** StableSwap-NG | AUSD / USDC | Native EMA (866 s) | Read price · paper swap |
+| **Aave v3** | USDC, AUSD | Native USD oracle + supply / variable-borrow APR | Read only |
+
+Pool addresses, discovery and finality probes: [market data sources](docs/research/market-data-sources.md) · connector scope: [connectors](docs/specs/connectors.md#selected-connectors-2026-10-12).
+
+## Safety model
+
+- **Propose, then authorize.** The runtime interprets your strategy and proposes; only the executor can reserve funds or settle, after deterministic policy checks.
+- **Configuration is data.** Strategies are bounded JSON compiled from blocks — no scripts, URLs, API keys or wallet keys ever enter a strategy, manifest or export.
+- **Atomic budgets.** Every trade reserves funds per asset in one database transaction; concurrent overspend fails.
+- **Paper and live never mix.** Separate identities, balances and effects; a simulated fill is never shown as an on-chain transaction.
+- **Ambiguity is not success.** A timed-out external call is reconciled, never assumed to have had no effect.
+- **Honest custody.** Agent wallets are platform-controlled, and described that way.
+
+Full rules: [security](docs/specs/security.md) · [funds and budgets](docs/specs/funds-and-budgets.md) · [executor](docs/specs/executor.md).
+
+## Status
+
+| Capability | Status | Evidence |
+| --- | --- | --- |
+| Strategy studio: templates, blocks, keyboard forms, live validation | Working | Playwright browser tests in [apps/web/e2e](apps/web/e2e/) |
+| Full local paper stack on live mainnet prices | Working | `pnpm stack:dev`; first run 8 s after launch (2026-10-14) |
+| Launch, pause, resume, stop, run history, live activity, paper quotas | Working (local) | [operate.spec.ts](apps/web/e2e/operate.spec.ts), [paper-stack.test.ts](tests/paper-stack.test.ts) |
+| Ledger, atomic reservations, allocations, withdrawals | Working (local chain) | [funds guide](docs/integration/funds.md) |
+| Privy server-wallet custody | Proven on Monad testnet, 9/9 checks (2026-10-13) | [decisions E03](docs/decisions.md) |
+| Alchemy as a second RPC witness | Proven, 6/6 checks (2026-10-13) | [decisions E06 / D60](docs/decisions.md) |
+| Hosted deployment and sign-in | In progress | [goals G3–G4](goals.md) |
+| Metered AI decisions (Kimi) | In progress | [goals G6](goals.md), [Kimi broker](docs/integration/kimi-broker.md) |
+| Capped live trading | Planned | [goals G8](goals.md) |
+
+Delivery gates and their exit criteria live in [goals.md](goals.md).
+
+## Quick start
+
+**Requirements:** Docker, [pnpm](https://pnpm.io) 12.8.1 (it downloads the pinned Node 24.21 for you), and internet access to `rpc.monad.xyz`.
 
 ```sh
-cp .env.example .env       # then set a new POSTGRES_PASSWORD and the same value in DATABASE_URL
-pnpm bootstrap             # install, preflight, start Postgres, migrate, seed, full checks
-pnpm strategy:demo         # synthetic threshold-sale execution; no network or wallet
-pnpm runtime:demo          # synthetic paper runtime: triggers, host loop, crash recovery, fencing, pause
-pnpm api:runtime           # local runtime-facing control API on 127.0.0.1:3002 (after pnpm db:migrate)
-pnpm stack:dev             # whole local paper stack: user API, control API + worker, executor, runtime, studio
-pnpm web:dev               # Blockly strategy editor
+git clone git@github.com:AnInsaneJimJam/monad-hack.git && cd monad-hack
+cp .env.example .env        # set a new POSTGRES_PASSWORD and the same value in DATABASE_URL
+pnpm bootstrap              # install, start Postgres, migrate, seed, run every check
+pnpm stack:dev              # start the full local paper stack
 ```
 
-`pnpm bootstrap` stops at the first failing step. Preflight explains each `.env` mistake without printing secret values. The same steps are available one at a time:
+Open **http://127.0.0.1:5173**, then try it in under a minute:
+
+1. **New strategy** → **WMON scheduled purchase**.
+2. In the right panel, set **every** to `60` seconds.
+3. **Save**, open **Operate**, click **Launch on paper**.
+4. Watch **Runs** and **Activity**: the first run completes within 60 seconds.
+
+| Service | Port | Role |
+| --- | --- | --- |
+| Studio | 5173 | React + Blockly web app |
+| User API | 3001 | Strategies, revisions, launches, history |
+| Control API + worker | 3002 | Mainnet ingestion, scheduling, runtime leases |
+| Paper executor | 3003 | Policy checks, reservations, simulated fills |
+| PostgreSQL 17 | 5432 | Source of truth (Docker) |
+
+<details>
+<summary><b>Everyday commands</b></summary>
 
 | Command | Effect |
 | --- | --- |
-| `pnpm db:preflight` | Checks the Node version, `.env`, and the local-only `DATABASE_URL` |
-| `pnpm db:up` / `pnpm db:down` | Starts or stops local Postgres 17 on 127.0.0.1 |
-| `pnpm db:migrate` | Applies new files from `apps/api/migrations/`; already-applied files are skipped |
-| `pnpm db:seed` | Loads deterministic spec fixtures plus the reviewed mainnet-data/paper-effect registry; refuses non-local databases |
-| `pnpm check` | Regenerates schema types, strict typecheck and every node:test suite. Database tests skip without a reachable database unless `REQUIRE_DB=1` |
-| `pnpm db:reset` | Deletes the local database volume; run `pnpm bootstrap` again afterwards |
+| `pnpm check` | Regenerate schema types, strict typecheck, every test suite (`REQUIRE_DB=1` to fail without a database) |
+| `pnpm --filter @monad-hack/web test:e2e` | Playwright browser tests |
+| `pnpm web:dev` | Studio only, without the backend |
+| `pnpm db:migrate` / `pnpm db:seed` | Apply new migrations / load paper seed data |
+| `pnpm db:reset` | Delete the local database volume (run `pnpm bootstrap` again after) |
+| `pnpm market:probe` | Read-only check of the finalized mainnet sources |
+| `pnpm alchemy:check` | Compare Alchemy with the public Monad RPC |
 
-Secrets: only `.env` (git-ignored) holds local credentials. `pnpm check` scans tracked and new files for credential-shaped content; committed files only ever hold documented placeholders.
+</details>
 
-Language entry points and implemented semantics: [strategy specification](docs/specs/strategy-language.md#9-first-local-implementation-2026-10-02).
+<details>
+<summary><b>Optional configuration</b></summary>
 
-## Market data in the local stack
+All values go in your git-ignored `.env`; see [.env.example](.env.example) for the full list.
 
-`pnpm stack:dev` starts the studio on 5173, user API on 3001, control/ingestion on 3002, paper executor on 3003 and a warm runtime. PostgreSQL uses 5432. RPC access belongs to the API worker; the runtime receives no RPC endpoint or database credential.
+| Variable | Purpose |
+| --- | --- |
+| `MARKET_RPC_URL`, `MARKET_WS_URL` | Use an Alchemy Monad mainnet endpoint for market data. On the free tier also set `MARKET_LOG_SPAN=10`, `MARKET_RPC_MAX_RPS=15`, `MARKET_PUSH_MIN_MILLIS=2500` |
+| `CUSTODY_PROVIDER` | `local` (default in `stack:dev`) for the labelled in-process chain; `privy` with your own Privy app for testnet custody |
+| `CUSTODY_RPC_SECONDARY` | Second RPC witness: deposits credit and withdrawals settle only when both providers agree |
+| `DEMO_KIMI` | Register the paper Kimi profile for AI blocks (broker verification still required) |
 
-The worker uses `https://rpc.monad.xyz` and `wss://rpc.monad.xyz`; optional `MARKET_RPC_URL`/`MARKET_WS_URL` overrides (Alchemy is recommended, see below) belong only in your ignored local environment. HTTPS/WSS are required. New-head notifications are hints; finalized heads, canonical hashes and bounded 100-block recovery determine acceptance. A 5-second watchdog handles disconnects and quiet markets. No Envio account is required and no synthetic market fallback is enabled.
+Secrets live only in `.env` or a hosting secret store. `pnpm check` scans tracked files for credential-shaped content.
 
-Trading budget values become virtual USDC units on launch, with six decimals; this is an explicit simulation denomination, not a USD/USDC conversion. Operating budget limits remain USD-denominated. Example thresholds are editable examples, not current quotes. Scenario playback for native oracle methods is unavailable; legacy synthetic rehearsal remains a test fixture.
+</details>
 
-Live transaction builders and signing belong to issues #38–42, the complete broker service to #5, and connector-selection onboarding to #44. The market-read route here implements only authenticated, replayable observation reads.
+## Architecture
 
-## Sponsor integrations
+A modular TypeScript control plane with separately isolated runtime and executor processes. PostgreSQL is the source of truth for configuration, jobs, events, ledger entries and reservations.
 
-### Alchemy
+```mermaid
+flowchart LR
+  subgraph Client
+    W["Studio<br/>React · Vite · Blockly"]
+  end
+  subgraph Control["Control plane"]
+    A["User API<br/>Fastify"]
+    C["Control API + worker<br/>ingestion · scheduling"]
+    DB[("PostgreSQL 17")]
+  end
+  subgraph Isolated["Isolated execution"]
+    R["Agent runtime<br/>no keys · no DB · no RPC"]
+    E["Executor<br/>policy · ledger · fills"]
+  end
+  N[("Monad mainnet<br/>Uniswap · Curve · Aave")]
+  W -->|HTTPS + SSE| A
+  A --> DB
+  C --> DB
+  N -->|finalized blocks| C
+  C -->|leases, reads| R
+  R -->|trade intents| E
+  E --> DB
+```
 
-Alchemy is the second witness for money and can carry market data ([D60](docs/decisions.md)):
+The browser never reaches the runtime or the executor. The runtime starts with a closed configuration and refuses database URLs, secrets and provider keys; its capability is scoped to one agent, one deployment generation and one mode. Design rationale: [architecture.md](architecture.md).
 
-- **Custody cross-check.** With `CUSTODY_RPC_SECONDARY` set to an Alchemy Monad endpoint, a deposit credits and a withdrawal settles only when the public Monad RPC and Alchemy agree on the finalized height, block hashes, receipts and balances. If they disagree, settlement pauses. One lying or lagging provider cannot cause a credit.
-- **Market transport.** `MARKET_RPC_URL` and `MARKET_WS_URL` on Alchemy's Monad mainnet endpoints carry finalized pool reads and `eth_subscribe newHeads` wakeups. For the free tier also set `MARKET_LOG_SPAN=10`, `MARKET_RPC_MAX_RPS=15` and `MARKET_PUSH_MIN_MILLIS=2500` ([funds guide](docs/integration/funds.md#second-rpc-alchemy-d60)).
-- **Probe.** `pnpm alchemy:check` compares Alchemy with the public RPC (chain, finality and block hashes, recorded testnet receipts, current and historical balances, mainnet market RPC, WSS heads) and prints PASS/FAIL with host names only.
+| Path | Responsibility |
+| --- | --- |
+| [`apps/web`](apps/web) | Studio: templates, Blockly editor, review, operate |
+| [`apps/api`](apps/api) | User API, control API, ingestion worker, migrations |
+| [`apps/runtime`](apps/runtime) | Strategy interpreter host; cannot sign or spend |
+| [`apps/executor`](apps/executor) | Authorization, reservations, paper fills, reconciliation |
+| [`packages/strategy`](packages/strategy) | Block vocabulary, compiler, deterministic interpreter |
+| [`packages/contracts`](packages/contracts) | Versioned JSON schemas and generated types |
+| [`packages/connectors`](packages/connectors) | Reviewed Monad markets and protocol reads |
+| [`packages/accounting`](packages/accounting) · [`policy`](packages/policy) · [`custody`](packages/custody) | Ledger and reservations · authorization rules · wallet providers |
 
-The Alchemy key is part of the URL, so it belongs only in `.env` or a hosting secret store; errors and logs never include the endpoint. Gas Manager and Webhooks were reviewed and deferred ([sponsor research](docs/research/sponsors.md#rpc-provider-alchemy)).
+**Stack:** TypeScript (strict), Node 24 LTS, React 19 + Vite, Blockly 13, Fastify, PostgreSQL 17 with explicit SQL, JSON Schema 2020-12.
+
+## Built with
+
+| Partner | Role in Metropilot |
+| --- | --- |
+| **[Monad](https://monad.xyz)** | Chain for market data today and capped live trades next |
+| **[Uniswap](https://uniswap.org) · [Curve](https://curve.fi) · [Aave](https://aave.com)** | Native price methods and reserve data on Monad mainnet |
+| **[Alchemy](https://www.alchemy.com)** | Second RPC witness for custody; optional market transport |
+| **[Privy](https://www.privy.io)** | Server wallets for agent custody (testnet proof complete) |
+| **[Kimi](https://www.moonshot.ai)** | Bounded AI decisions via the broker (in progress) |
+
+Sponsor evidence and priorities: [docs/research/sponsors.md](docs/research/sponsors.md).
+
+## Documentation
+
+| Read | For |
+| --- | --- |
+| [CONTEXT.md](CONTEXT.md) | Domain vocabulary |
+| [architecture.md](architecture.md) | Stack, deployment shape, trust boundaries, end-to-end flows |
+| [goals.md](goals.md) · [plan.md](plan.md) | Delivery gates and status · workstreams and ownership |
+| [docs/README.md](docs/README.md) | Index of product, language, financial, runtime and interface specs |
+| [docs/specs/control-workspace.md](docs/specs/control-workspace.md) | Studio setup, contracts and integration boundaries |
+| [docs/specs/executor.md](docs/specs/executor.md) · [agent-runtime.md](docs/specs/agent-runtime.md) | Executor and runtime contracts, recovery |
+| [docs/decisions.md](docs/decisions.md) | Settled decisions and external verification evidence |
+| [design.md](design.md) | Repository policy, ownership and interfaces |
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md) and the nearest scoped `AGENTS.md` before editing — every directory has one with its checklist. Claim your scope in [plan.md](plan.md), keep `pnpm check` green, and tick a task only with linked evidence. Never commit credentials, private keys, user prompts or wallet exports.
+
+---
+
+<sub>Metropilot is a working product name; the repository is <code>monad-hack</code>. Paper mode uses virtual funds and simulated fills. Nothing here is investment advice, and the platform does not promise profitable trading.</sub>
