@@ -52,6 +52,8 @@ export interface ApiOptions {
   /** Production callers must supply a verified session resolver. Never accept a tenant from the body. */
   authenticate: (cookie: string | undefined) => Promise<string | undefined>;
   origin: string;
+  /** Number of reverse-proxy hops in front of the API (rate limits key on the client address they forward). */
+  trustedProxyHops?: number;
   /**
    * The enabled paper catalog drafts compile against; production resolves it from catalog_versions (issue #18).
    * Absent only in tests that never compile: the synthetic rehearsal catalog, labelled synthetic.
@@ -77,6 +79,8 @@ export function createApp(options: ApiOptions) {
   if (options.identity && options.localSession)
     throw new Error("A hosted identity provider and the local development session cannot be combined.");
   const app = Fastify({
+    // Trust exactly the configured number of hops (closest first), never arbitrary X-Forwarded-For entries.
+    trustProxy: options.trustedProxyHops ? (_address: string, hop: number) => hop < options.trustedProxyHops! : false,
     bodyLimit: 512 * 1024,
     genReqId: newId,
     requestIdHeader: false,

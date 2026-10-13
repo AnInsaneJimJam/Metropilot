@@ -102,21 +102,31 @@ export interface PrivyConfig {
  */
 export class PrivyVerifier implements IdentityVerifier {
   readonly provider = "privy";
-  readonly #key: KeyObject;
+  /** One or more keys: Privy publishes its current signing keys (rotation overlaps); a token may match any. */
+  readonly #keys: KeyObject[];
   readonly #config: PrivyConfig;
   constructor(config: PrivyConfig) {
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(config.appId)) throw new AuthError("PRIVY_APP_ID is malformed");
-    this.#key = es256Key(config.verificationKey);
+    const pems = config.verificationKey.replaceAll("\\n", "\n").match(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/g) ?? [config.verificationKey];
+    this.#keys = pems.map(es256Key);
     this.#config = config;
   }
   async verify(token: string): Promise<VerifiedIdentity> {
-    const subject = verifyEs256(token, {
-      key: this.#key,
-      issuer: "privy.io",
-      audience: this.#config.appId,
-      subject: /^did:privy:[A-Za-z0-9]{8,64}$/,
-      ...(this.#config.now ? { now: this.#config.now } : {}),
-    });
-    return { provider: this.provider, subject };
+    let last: unknown;
+    for (const key of this.#keys) {
+      try {
+        const subject = verifyEs256(token, {
+          key,
+          issuer: "privy.io",
+          audience: this.#config.appId,
+          subject: /^did:privy:[A-Za-z0-9]{8,64}$/,
+          ...(this.#config.now ? { now: this.#config.now } : {}),
+        });
+        return { provider: this.provider, subject };
+      } catch (error) {
+        last = error;
+      }
+    }
+    throw last;
   }
 }

@@ -1,0 +1,3 @@
+# cp terraform.tfvars.example terraform.tfvars (git-ignored), then fill in.
+ssh_public_key = "ssh-ed25519 AAAA... you@laptop"
+ssh_cidrs      = ["203.0.113.10/32"]

@@ -20,6 +20,6 @@ const telemetry = new Telemetry({ write: (event) => console.log(JSON.stringify(e
 const supervisor = new Supervisor({ config, control, broker, executor, clock: systemClock, telemetry });
 process.on('SIGTERM', () => supervisor.drain());
 process.on('SIGINT', () => supervisor.drain());
-console.log(`Runtime ${config.runtimeId} serving (paper, ${endpoints.broker} broker)`);
+console.log(`Runtime ${config.runtimeId} serving (${config.mode}, ${endpoints.broker} broker)`);
 await supervisor.serve();
 process.exit(0);

@@ -29,7 +29,8 @@ case "${1:-}" in
     # The runtime refuses credential-shaped variables (AWS_*, *_TOKEN, ...). Fargate injects AWS_* variables, so
     # it starts from an empty environment with only what its closed configuration accepts. Its ID is bound to
     # the ECS task, matching the workload proxy beside it.
-    id="$(node -e 'fetch(process.env.ECS_CONTAINER_METADATA_URI_V4 + "/task").then((r) => r.json()).then((t) => console.log("runtime-" + String(t.TaskARN).split("/").pop()))')"
+    # On a single server (Lightsail, docker compose) RUNTIME_ID is set per container instead.
+    id="${RUNTIME_ID:-$(node -e 'fetch(process.env.ECS_CONTAINER_METADATA_URI_V4 + "/task").then((r) => r.json()).then((t) => console.log("runtime-" + String(t.TaskARN).split("/").pop()))')}"
     exec env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp \
       RUNTIME_ID="$id" RUNTIME_MODE="${RUNTIME_MODE:-paper}" RUNTIME_IMAGE_DIGEST="$RUNTIME_IMAGE_DIGEST" \
       RUNTIME_CONTROL_API_ORIGIN=http://127.0.0.1:3002 RUNTIME_EXECUTOR_ORIGIN=http://127.0.0.1:3003 RUNTIME_DEV_WORKLOAD=1 \

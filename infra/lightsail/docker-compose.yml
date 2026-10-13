@@ -1,0 +1,165 @@
+# The whole backend on one Lightsail server (docs/hosting/LIGHTSAIL.md). Values come from .env.server, interpolated
+# per service so each container gets only what it needs. Networks:
+#   edge     Caddy ↔ API (public HTTPS terminates at Caddy)
+#   backend  internal only (no internet): Postgres, API, control, executor, runtime proxies
+#   egress   internet for the services that call RPC, Privy, Envio and the AI Gateway
+# Runtimes share their proxy's network namespace and see only 127.0.0.1:3002/3003: no internet, no database.
+name: metropilot
+
+x-app: &app
+  image: ${APP_IMAGE}
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+services:
+  postgres:
+    # postgres:17.11-alpine, multi-arch index digest (same pin as infra/compose.yaml).
+    image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: monad
+      POSTGRES_DB: monad
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=100"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monad -d monad"]
+      interval: 5s
+      retries: 20
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+  migrate:
+    <<: *app
+    restart: "no"
+    profiles: [tools]
+    command: ["migrate"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+    networks: [backend]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  api:
+    <<: *app
+    command: ["api"]
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3001"
+      TRUSTED_PROXY_HOPS: "2"
+      DATABASE_URL: ${DATABASE_URL}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}
+      RUNTIME_IMAGE_DIGEST: ${RUNTIME_IMAGE_DIGEST}
+      PRIVY_APP_ID: ${PRIVY_APP_ID}
+      PRIVY_APP_SECRET: ${PRIVY_APP_SECRET}
+      PRIVY_AUTHORIZATION_KEY: ${PRIVY_AUTHORIZATION_KEY}
+      PRIVY_VERIFICATION_KEY: ${PRIVY_VERIFICATION_KEY}
+      CUSTODY_PROVIDER: ${CUSTODY_PROVIDER}
+      CUSTODY_CHAIN_ID: ${CUSTODY_CHAIN_ID}
+      CUSTODY_NETWORK_REF: ${CUSTODY_NETWORK_REF}
+      CUSTODY_RPC: ${CUSTODY_RPC}
+      CUSTODY_START_HEIGHT: ${CUSTODY_START_HEIGHT}
+      ENVIO_API_TOKEN: ${ENVIO_API_TOKEN}
+      LIVE_OUTFLOWS: ${LIVE_OUTFLOWS}
+      LIVE_LAUNCH: ${LIVE_LAUNCH}
+    networks: [edge, backend, egress]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  control:
+    <<: *app
+    command: ["control"]
+    environment:
+      NODE_ENV: production
+      HOSTED: "1"
+      RUNTIME_CONTROL_PORT: "3002"
+      DATABASE_URL: ${DATABASE_URL}
+      EXECUTOR_CAPABILITY_SECRET: ${EXECUTOR_CAPABILITY_SECRET}
+      BROKER_CAPABILITY_SECRET: ${BROKER_CAPABILITY_SECRET}
+      RUNTIME_WORKLOAD_SECRET: ${RUNTIME_WORKLOAD_SECRET}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY}
+      KIMI_VERIFICATION_JSON: ${KIMI_VERIFICATION_JSON}
+    networks: [backend, egress]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  executor:
+    <<: *app
+    command: ["executor"]
+    environment:
+      NODE_ENV: production
+      HOSTED: "1"
+      EXECUTOR_PORT: "3003"
+      EXECUTOR_DATABASE_URL: ${DATABASE_URL}
+      EXECUTOR_CAPABILITY_SECRET: ${EXECUTOR_CAPABILITY_SECRET}
+      EXECUTOR_LIVE: ${EXECUTOR_LIVE}
+      LIVE_OUTFLOWS: ${LIVE_OUTFLOWS}
+      PRIVY_APP_ID: ${PRIVY_APP_ID}
+      PRIVY_APP_SECRET: ${PRIVY_APP_SECRET}
+      PRIVY_AUTHORIZATION_KEY: ${PRIVY_AUTHORIZATION_KEY}
+      CUSTODY_RPC: ${CUSTODY_RPC}
+    networks: [backend, egress]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  # One proxy + runtime pair per worker; the runtime runs inside its proxy's network namespace.
+  proxy-paper-1: &proxy
+    <<: *app
+    command: ["proxy"]
+    environment: &proxy-env
+      WORKLOAD_ID: runtime-paper-1
+      RUNTIME_WORKLOAD_SECRET: ${RUNTIME_WORKLOAD_SECRET}
+      CONTROL_UPSTREAM: http://control:3002
+      EXECUTOR_UPSTREAM: http://executor:3003
+    networks: [backend]
+  runtime-paper-1: &runtime
+    <<: *app
+    command: ["runtime"]
+    network_mode: service:proxy-paper-1
+    environment:
+      RUNTIME_ID: runtime-paper-1
+      RUNTIME_MODE: paper
+      RUNTIME_IMAGE_DIGEST: ${RUNTIME_IMAGE_DIGEST}
+    depends_on: [proxy-paper-1, control]
+
+  proxy-paper-2:
+    <<: *proxy
+    environment: { <<: *proxy-env, WORKLOAD_ID: runtime-paper-2 }
+  runtime-paper-2:
+    <<: *runtime
+    network_mode: service:proxy-paper-2
+    environment: { RUNTIME_ID: runtime-paper-2, RUNTIME_MODE: paper, RUNTIME_IMAGE_DIGEST: "${RUNTIME_IMAGE_DIGEST}" }
+    depends_on: [proxy-paper-2, control]
+
+  proxy-live-1:
+    <<: *proxy
+    environment: { <<: *proxy-env, WORKLOAD_ID: runtime-live-1 }
+  runtime-live-1:
+    <<: *runtime
+    network_mode: service:proxy-live-1
+    environment: { RUNTIME_ID: runtime-live-1, RUNTIME_MODE: live, RUNTIME_IMAGE_DIGEST: "${RUNTIME_IMAGE_DIGEST}" }
+    depends_on: [proxy-live-1, control]
+
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      API_HOST: ${API_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge, egress]
+    depends_on: [api]
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+networks:
+  edge: {}
+  backend: { internal: true }
+  egress: {}
+
+volumes:
+  pgdata: {}
+  caddy-data: {}
+  caddy-config: {}

@@ -1,0 +1,8 @@
+# HTTPS for the API with an automatic Let's Encrypt certificate for API_HOST (an sslip.io name for the static IP,
+# or your own domain). Streams (/v1/agents/*/stream) are flushed immediately.
+{$API_HOST} {
+	encode gzip
+	reverse_proxy api:3001 {
+		flush_interval -1
+	}
+}

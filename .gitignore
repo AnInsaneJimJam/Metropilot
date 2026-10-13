@@ -42,3 +42,6 @@ packages/contracts/src/generated-contracts.ts
 playwright-report/
 .claude/worktrees/
 .vercel
+infra/lightsail/terraform.tfvars
+infra/lightsail/*.tfstate*
+infra/lightsail/.env.server
