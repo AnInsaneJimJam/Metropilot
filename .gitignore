@@ -23,6 +23,10 @@ coverage/
 *.tfstate
 *.tfstate.*
 *.tfplan
+# Hosting inputs with account-specific values (.env.hosting is covered by .env.* above)
+infra/terraform/terraform.tfvars
+infra/terraform/*.auto.tfvars.json
+infra/terraform/backend.tf
 *.log
 *.db
 *.sqlite*

@@ -1,0 +1,17 @@
+# Never send secrets, local state or build output into the image build context.
+.env
+.env.*
+!.env.example
+.secrets
+**/node_modules
+**/dist
+.git
+.claude
+graphify-out
+apps/web/test-results
+apps/web/playwright-report
+infra/terraform/.terraform
+infra/terraform/*.tfstate*
+infra/terraform/*.tfvars
+!infra/terraform/terraform.tfvars.example
+*.log

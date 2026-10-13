@@ -1,0 +1,92 @@
+#!/bin/bash
+# First-boot setup for the self-hosted Postgres 17 host (rendered by Terraform; no secret values in it).
+# Waits for the data volume and for the password in Secrets Manager (put-secrets.sh writes it after apply),
+# installs Postgres 17 from the PGDG repository, keeps data on the attached volume, listens on the private
+# address only, allows the VPC with scram-sha-256, and installs a nightly pg_dump to S3.
+set -euo pipefail
+exec > >(tee -a /var/log/monad-db-init.log) 2>&1
+
+REGION='${region}'
+SECRET_ID='${secret_id}'
+VOLUME_ID='${volume_id}'
+VPC_CIDR='${vpc_cidr}'
+BUCKET='${backup_bucket}'
+DB_NAME='${db_name}'
+DB_USER='${db_user}'
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y curl ca-certificates gnupg unzip jq nvme-cli
+if ! command -v aws >/dev/null; then
+  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o /tmp/awscli.zip
+  unzip -q /tmp/awscli.zip -d /tmp && /tmp/aws/install && rm -rf /tmp/aws /tmp/awscli.zip
+fi
+
+# ---- data volume: find it by its serial (vol-xxxx without the dash), format only if blank -------------------
+SERIAL="$${VOLUME_ID//-/}"
+DEVICE=""
+for i in $(seq 1 60); do
+  for dev in /dev/nvme*n1; do
+    if nvme id-ctrl -o json "$dev" 2>/dev/null | jq -e --arg s "$SERIAL" '.sn | gsub(" ";"") == $s' >/dev/null; then DEVICE="$dev"; fi
+  done
+  [ -n "$DEVICE" ] && break
+  sleep 5
+done
+[ -n "$DEVICE" ] || { echo "data volume $VOLUME_ID not attached"; exit 1; }
+if ! blkid "$DEVICE" >/dev/null 2>&1; then mkfs.ext4 -L pgdata "$DEVICE"; fi
+mkdir -p /var/lib/postgresql
+grep -q 'LABEL=pgdata' /etc/fstab || echo 'LABEL=pgdata /var/lib/postgresql ext4 defaults,nofail 0 2' >> /etc/fstab
+mount -a
+
+# ---- Postgres 17 from PGDG -------------------------------------------------------------------------------------
+install -d /usr/share/postgresql-common/pgdg
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+. /etc/os-release
+echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+apt-get update -y
+apt-get install -y postgresql-17
+chown postgres:postgres /var/lib/postgresql
+
+PRIVATE_IP="$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token | xargs -I{} curl -fsS -H 'X-aws-ec2-metadata-token: {}' http://169.254.169.254/latest/meta-data/local-ipv4)"
+CONF=/etc/postgresql/17/main
+cat > "$CONF/conf.d/monad.conf" <<EOF
+listen_addresses = 'localhost,$PRIVATE_IP'
+password_encryption = 'scram-sha-256'
+max_connections = 100
+shared_buffers = '256MB'
+log_connections = on
+EOF
+grep -q "monad-hack" "$CONF/pg_hba.conf" || cat >> "$CONF/pg_hba.conf" <<EOF
+# monad-hack: application tasks inside the VPC only
+hostssl $DB_NAME $DB_USER $VPC_CIDR scram-sha-256
+host    $DB_NAME $DB_USER $VPC_CIDR scram-sha-256
+EOF
+systemctl enable postgresql
+systemctl restart postgresql
+
+# ---- password from Secrets Manager (written after apply) ---------------------------------------------------------
+PASSWORD=""
+for i in $(seq 1 360); do
+  PASSWORD="$(aws secretsmanager get-secret-value --region "$REGION" --secret-id "$SECRET_ID" --query SecretString --output text 2>/dev/null | jq -r '.POSTGRES_PASSWORD // empty' 2>/dev/null || true)"
+  [ -n "$PASSWORD" ] && break
+  echo "waiting for the database password in Secrets Manager ($i)"
+  sleep 10
+done
+[ -n "$PASSWORD" ] || { echo "no database password after 60 minutes; rerun: sudo bash /var/lib/cloud/instance/scripts/part-001"; exit 1; }
+sudo -u postgres psql -v ON_ERROR_STOP=1 -v user="$DB_USER" -v pass="$PASSWORD" -v db="$DB_NAME" <<'SQL'
+SELECT format('CREATE ROLE %I LOGIN', :'user') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'user') \gexec
+ALTER ROLE :"user" WITH LOGIN PASSWORD :'pass';
+SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'user') WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'db') \gexec
+SQL
+unset PASSWORD
+
+# ---- nightly backup to S3 ------------------------------------------------------------------------------------------
+cat > /usr/local/bin/monad-pg-backup <<EOF
+#!/bin/bash
+set -euo pipefail
+STAMP=\$(date -u +%Y-%m-%dT%H%M%SZ)
+sudo -u postgres pg_dump --format=custom "$DB_NAME" | aws s3 cp - "s3://$BUCKET/pg/$DB_NAME-\$STAMP.dump" --region "$REGION"
+EOF
+chmod 0755 /usr/local/bin/monad-pg-backup
+echo "17 3 * * * root /usr/local/bin/monad-pg-backup >> /var/log/monad-pg-backup.log 2>&1" > /etc/cron.d/monad-pg-backup
+echo "postgres ready on $PRIVATE_IP:5432"
