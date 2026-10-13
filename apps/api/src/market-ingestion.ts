@@ -27,7 +27,12 @@ export interface MarketSource {
 }
 export class RpcMarketSource implements MarketSource {
   readonly markets: MainnetMarkets;
-  constructor(markets = new MainnetMarkets()) { this.markets = markets; }
+  /** Blocks per eth_getLogs request; providers cap the range (Alchemy free tier: 10, D60). */
+  readonly logSpan: bigint;
+  constructor(markets = new MainnetMarkets(), logSpan = 100n) {
+    if (logSpan < 1n) throw new Error('Market log span must be at least one block.');
+    this.markets = markets; this.logSpan = logSpan;
+  }
   async finalized(): Promise<FinalizedBlock> {
     const b = await this.markets.client.getBlock({ blockTag: 'finalized' });
     if (b.number === null || !b.hash) throw new MarketIngestionError('FINALIZED_HEAD_MISSING', 'Finalized block identity missing.');
@@ -41,7 +46,11 @@ export class RpcMarketSource implements MarketSource {
   verify(market: Market, number: bigint): Promise<void> { return this.markets.verify(market, number); }
   async logs(market: Market, fromBlock: bigint, toBlock: bigint): Promise<readonly MarketLog[]> {
     const topics = eventTopics(market);
-    const logs = await this.markets.client.getLogs({ address: market.pool, fromBlock, toBlock });
+    const logs = [];
+    for (let from = fromBlock; from <= toBlock; from += this.logSpan) {
+      const to = from + this.logSpan - 1n < toBlock ? from + this.logSpan - 1n : toBlock;
+      logs.push(...await this.markets.client.getLogs({ address: market.pool, fromBlock: from, toBlock: to }));
+    }
     return logs.filter((l) => l.topics[0] && topics.includes(l.topics[0]) && (market.protocol !== 'aave-v3' || l.topics[1]?.slice(-40).toLowerCase() === TOKENS[market.base].address.slice(2))).map((l) => {
       validateSwapLog(market, l);
       if (l.blockNumber === null || !l.blockHash || l.logIndex === null) throw new MarketIngestionError('LOG_IDENTITY_MISSING', 'Unfinalized log identity.');
