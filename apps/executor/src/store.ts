@@ -2,7 +2,9 @@
 // audit/outbox rows; no provider or network call happens inside a transaction. Lock order: simulation
 // account row, then balance rows by asset ref.
 import type pg from 'pg';
-import type { Strategy } from '@monad-hack/contracts';
+import { verifyBranchEvidence } from './branch-evidence.ts';
+import type { DeploymentAuthority } from './authorization.ts';
+import type { ActionIntent, Strategy } from '@monad-hack/contracts';
 import type { Denial, Verdict } from '@monad-hack/policy';
 
 export type IntentState =
@@ -191,6 +193,10 @@ export class ExecutorStore {
       [limit],
     );
     return rows.map(toRow);
+  }
+
+  async verifyBranch(authority: DeploymentAuthority, intent: ActionIntent, now: Date): Promise<boolean> {
+    return verifyBranchEvidence(this.#pool, authority, intent, now);
   }
 
   async loadStrategy(tenantId: string, revisionId: string): Promise<Strategy | undefined> {

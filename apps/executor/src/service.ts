@@ -166,6 +166,12 @@ export class ExecutorService {
     if (!strategy) return fail(503, 'PROVIDER_UNAVAILABLE', 'The approved strategy revision is missing.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
     const match = matchApprovedNode(strategy, intent);
     if (!match.ok) return fail(422, 'UNSUPPORTED_CAPABILITY', match.message, 'EXECUTOR_AST_MISMATCH');
+    if (match.branchGated) {
+      let verified: boolean;
+      try { verified = await this.#o.store.verifyBranch(authority, intent, this.#now()); }
+      catch { return fail(503, 'PROVIDER_UNAVAILABLE', 'Branch evidence is unavailable; nothing was dispatched.', 'EXECUTOR_PROVIDER_UNAVAILABLE'); }
+      if (!verified) return fail(422, 'UNSUPPORTED_CAPABILITY', 'Persisted results do not prove this approved branch.', 'EXECUTOR_AST_MISMATCH');
+    }
     if (authority.connectorPins[intent.connectorRef] !== intent.connectorVersion || intent.tokenInRef === intent.tokenOutRef) {
       return fail(422, 'UNSUPPORTED_CAPABILITY', 'The connector version is not pinned by the deployment.', 'EXECUTOR_CONNECTOR_DISABLED');
     }

@@ -353,3 +353,35 @@ describe('paper executor clock ordering', { skip }, () => {
 test('executor conformance strategy is a valid strategy/1 document', () => {
   assert.ok(validate('strategy', STRATEGY satisfies Strategy).ok);
 });
+
+// Actual broker records and pinned run artifacts, rather than invented checkpoint bindings.
+import { brokerHarness } from './broker-harness.ts';
+import { createExecutor, PostgresAuthority, PostgresMarketData, signCapability } from '../apps/executor/src/index.ts';
+import { verifyCapability } from '../packages/contracts/src/capability.ts';
+import { uuidv7 } from '../apps/api/src/runtime-control/store.ts';
+
+describe('executor branch evidence / PostgreSQL', { skip }, () => {
+  for (const scenario of ['verified', 'missing', 'contradicting', 'foreign-run', 'expired', 'future-dated'] as const) {
+    test(`${scenario} persisted evidence is checked before funds are reserved`, async () => {
+      const h = await brokerHarness({ decide: async r => ({ schemaVersion: 'broker-result/1', operationKey: r.operationKey, disposition: 'completed', resultId: uuidv7(), value: { decision: scenario === 'contradicting' ? 'skip' : 'allow', summary: 'Synthetic test decision.' }, receivedAt: new Date().toISOString() }) });
+      const request = await h.arrange('ai.decide');
+      await h.broker.request(request);
+      const claims = verifyCapability(h.tokens.get(request.runId)!, h.secret, Math.floor(Date.now()/1000), 'broker');
+      let refs = (await h.pool.query<{ id: string }>('select id from broker_results where run_id=$1 and response->>\'disposition\'=\'completed\' order by id', [request.runId])).rows.map(r => r.id);
+      if (scenario === 'missing') refs = refs.slice(0, 1);
+      if (scenario === 'foreign-run') {
+        const foreign = await h.arrange('ai.decide'); await h.broker.request(foreign);
+        refs = (await h.pool.query<{ id: string }>('select id from broker_results where run_id=$1 and response->>\'disposition\'=\'completed\'', [foreign.runId])).rows.map(r => r.id);
+      }
+      const executor = createExecutor({ pool: h.pool, authority: new PostgresAuthority(h.pool), market: new PostgresMarketData(h.pool, [{ feedRef: 'paper.weth-usd', baseAssetRef: 'paper.WETH', quoteAssetRef: 'paper.USD', baseDecimals: 18, quoteDecimals: 6 }]), capabilitySecret: h.secret, ...(scenario === 'expired' ? { now: () => new Date(Date.now()+60000) } : scenario === 'future-dated' ? { now: () => new Date(Date.now()-60000) } : {}), platformLimits: { maxSlippageBps: 100, dailyActionCount: 1000 }, maxQuoteAgeSeconds: 120 });
+      const intent: ActionIntent = { schemaVersion: 'action-intent/1', logicalKey: await intentKey({ deploymentId: claims.deploymentId, generation: claims.generation, runId: request.runId, nodeId: 'buy_weth', iterationPath: [] }), runId: request.runId, nodeId: 'buy_weth', iterationPath: [], connectorRef: 'paper.uniswap', connectorVersion: '1.0.0', action: 'swap.exactInput', tokenInRef: 'paper.USD', tokenOutRef: 'paper.WETH', amount: { kind: 'fixed', atomic: '25000000' }, maxSlippageBps: 30, observationRefs: refs };
+      const reply = await executor.service.submit({ authorization: `Bearer ${signCapability({ ...claims, iat: Math.floor(Date.now()/1000)-120, exp: Math.floor(Date.now()/1000)+120, aud: 'executor', actions: ['swap.exactInput'] }, h.secret)}`, idempotencyKey: intent.logicalKey, body: JSON.stringify(intent) });
+      if (scenario === 'verified') assert.ok('result' in reply, JSON.stringify(reply));
+      else {
+        assert.ok('failure' in reply, JSON.stringify(reply));
+        assert.equal(reply.failure.reason, 'EXECUTOR_AST_MISMATCH');
+        assert.equal((await h.pool.query('select 1 from intents')).rowCount, 0);
+      }
+    });
+  }
+});

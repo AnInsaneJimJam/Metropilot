@@ -173,7 +173,7 @@ The executor performs these checks in order. Steps described as atomic run in on
 5. Resolve an existing logical key. Same canonical body returns its current result; different body is an idempotency conflict.
 6. Load current deployment authority and deny stale generation, paused/stopping/stopped deployment, expired capability or wrong run.
 7. Load the immutable strategy revision/manifest and resolve `nodeId` as the declared financial action.
-8. Validate the iteration path against bounded repeat structure and verify the active branch from persisted predecessor results using the shared pure evaluator.
+8. Validate the iteration path against bounded repeat structure and verify the active branch from persisted predecessor results using the shared pure evaluator. The executor replays from immutable run identity and pinned artifacts, never runtime checkpoint bindings. Referenced broker results must belong to this tenant/deployment/generation/run, match the authored request and be complete and fresh. Missing or contradictory evidence denies before reservation.
 9. Confirm action, connector/version, assets, amount rule and slippage do not widen the AST or manifest.
 10. Load fresh wallet/simulation identity, balances, policy, budget, connector readiness, spend-window state and referenced observations.
 11. Evaluate pure policy. Missing or stale required context denies.
