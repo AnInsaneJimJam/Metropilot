@@ -31,14 +31,17 @@ const skip=!process.env['DATABASE_URL'];
 if(skip&&process.env['REQUIRE_DB']==='1')throw new Error('REQUIRE_DB=1 needs DATABASE_URL');
 describe('finalized market ingestion / PostgreSQL',{skip},()=>{
   let pool:pg.Pool, admin:pg.Client;
+  const disconnected: Promise<void>[] = [];
   const name='market_'+randomBytes(6).toString('hex');
   before(async()=>{
     admin=new pg.Client({connectionString:process.env['DATABASE_URL']});await admin.connect();await admin.query(`create database ${name}`);
     const url=new URL(process.env['DATABASE_URL']!);url.pathname='/'+name;
     pool=new pg.Pool({connectionString:url.toString()});
+    // pg-pool end() resolves before idle sockets close. Wait for their end events before DROP FORCE.
+    pool.on('connect', client => disconnected.push(new Promise(resolve => client.once('end', resolve))));
     const c=await pool.connect();try{await migrate(c);await seedPaper(c);}finally{c.release();}
   });
-  after(async()=>{await pool?.end();await admin?.query(`drop database if exists ${name} with (force)`);await admin?.end();});
+  after(async()=>{await pool?.end();await Promise.all(disconnected);await admin?.query(`drop database if exists ${name} with (force)`);await admin?.end();});
   const reset=async()=>pool.query('truncate market_cursors, finalized_market_observations, finalized_market_logs');
   test('recorded Curve swap ABI, quiet heartbeat, immutable provenance, restart and duplicate replay',async()=>{
     await reset();
