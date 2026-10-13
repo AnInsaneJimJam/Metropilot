@@ -12,6 +12,7 @@ import type { Capability } from './capability.ts';
 import { uuidv7, UUIDV7 } from './ids.ts';
 import { computeFill, PAPER_ADAPTER_VERSION, PAPER_ASSUMPTIONS, paperFillId } from './paper.ts';
 import type { MarketData, RecordedQuote } from './paper.ts';
+import type { LiveIntents } from './live.ts';
 import { TERMINAL_STATES } from './store.ts';
 import type { ExecutorStore, FrozenAction, IntentRow } from './store.ts';
 
@@ -37,6 +38,8 @@ export interface ExecutorOptions {
   readonly maxQuoteAgeSeconds: number;
   /** Fill paper intents during the admitting request (true) or only through reconcile() (false). */
   readonly dispatchInline?: boolean;
+  /** Live intents on the funds ledger; absent means live capabilities are refused (403). */
+  readonly live?: LiveIntents;
   readonly now?: () => Date;
 }
 
@@ -50,7 +53,7 @@ const fail = (status: Failure['status'], code: ErrorCode, message: string, reaso
 const jsonSafe = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v)));
 
 /** Read the approved policy snapshot's limits; unknown fields are ignored, malformed known fields are dropped (and so deny). */
-function policyLimits(limits: Record<string, unknown> | undefined, tokenInRef: string): ActionLimits {
+export function policyLimits(limits: Record<string, unknown> | undefined, tokenInRef: string): ActionLimits {
   if (!limits) return {};
   const out: { -readonly [K in keyof ActionLimits]: ActionLimits[K] } = {};
   const int = (v: unknown, max: number): number | undefined => (Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= max ? (v as number) : undefined);
@@ -73,7 +76,7 @@ export function toResult(row: IntentRow): IntentResult {
     schemaVersion: 'intent-result/1',
     intentId: row.id,
     logicalKey: row.logicalKey,
-    mode: 'paper',
+    mode: row.mode,
     state: row.state,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -81,7 +84,10 @@ export function toResult(row: IntentRow): IntentResult {
   };
   if (row.reason) result.reason = { code: row.reason.code, message: row.reason.message };
   if (row.paperFillId) result.paperFillId = row.paperFillId;
-  if (row.state === 'settled') result.settlement = { inputAtomic: row.settledInputAtomic!.toString(), outputAtomic: row.settledOutputAtomic!.toString() };
+  if (row.mode === 'live' && row.transactionHash) result.transactionHash = row.transactionHash;
+  if (row.state === 'settled') {
+    result.settlement = { inputAtomic: row.settledInputAtomic!.toString(), outputAtomic: row.settledOutputAtomic!.toString(), ...(row.settledGasAtomic !== undefined ? { gasAtomic: row.settledGasAtomic.toString() } : {}) };
+  }
   return result;
 }
 
@@ -117,7 +123,7 @@ export class ExecutorService {
     // 2–3. Capability: identity comes from here, never from the body.
     const capability = this.#authenticate(request.authorization);
     if ('failure' in capability) return capability;
-    if (capability.mode !== 'paper') return fail(403, 'CAPABILITY_DISABLED', 'Live execution is not enabled on this executor.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
+    if (capability.mode === 'live' && !this.#o.live) return fail(403, 'CAPABILITY_DISABLED', 'Live execution is not enabled on this executor.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
     if (!capability.actions.includes(intent.action) || capability.connectors[intent.connectorRef] !== intent.connectorVersion || (capability.runId !== undefined && capability.runId !== intent.runId)) {
       return fail(403, 'FORBIDDEN', 'The capability does not cover this action, connector or run.', 'EXECUTOR_CAPABILITY_INVALID');
     }
@@ -145,7 +151,10 @@ export class ExecutorService {
       return fail(409, 'GENERATION_REVOKED', 'This deployment generation is no longer authorized.', 'EXECUTOR_STALE_GENERATION');
     }
     if (authority.desiredState !== 'active') return fail(409, 'GENERATION_REVOKED', 'The deployment is paused; no new action starts.', 'EXECUTOR_DEPLOYMENT_INACTIVE');
-    if (!authority.simulationAccountId) return fail(503, 'PROVIDER_UNAVAILABLE', 'The paper deployment has no simulation account.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
+    if (authority.mode === 'live' && authority.networkRef !== this.#o.live?.config.networkRef) {
+      return fail(422, 'UNSUPPORTED_CAPABILITY', 'The deployment network is not the live network this executor serves.', 'EXECUTOR_ASSET_NOT_ALLOWED');
+    }
+    if (authority.mode === 'paper' && !authority.simulationAccountId) return fail(503, 'PROVIDER_UNAVAILABLE', 'The paper deployment has no simulation account.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
 
     // 7–9. Approved immutable strategy: the intent must be one approved swap execution and cannot widen it.
     let strategy;
@@ -167,6 +176,9 @@ export class ExecutorService {
       return fail(422, 'UNSUPPORTED_CAPABILITY', 'The connector version is not pinned by the deployment.', 'EXECUTOR_CONNECTOR_DISABLED');
     }
 
+    // 10–13 (live): ledger reservation of token-in plus gas, live policy at the admission phase.
+    if (authority.mode === 'live') return this.#admitLive(capability, authority, intent, match, strategy.limits.maxIntentsPerRun, requestHash);
+
     // 10. Fresh context, read outside any transaction.
     let catalog: { connector: boolean; assets: boolean };
     let limits: Record<string, unknown> | undefined;
@@ -174,7 +186,7 @@ export class ExecutorService {
     try {
       catalog = await this.#o.store.catalogAllows(intent.connectorRef, intent.connectorVersion, intent.action, authority.networkRef, [intent.tokenInRef, intent.tokenOutRef]);
       limits = await this.#o.store.loadPolicyLimits(authority.tenantId, authority.agentId, authority.policyVersion);
-      quote = await this.#o.market.quote(intent.tokenInRef, intent.tokenOutRef);
+      quote = await this.#o.market.quote(intent.tokenInRef, intent.tokenOutRef, intent.connectorRef);
     } catch {
       return fail(503, 'PROVIDER_UNAVAILABLE', 'Required market or policy context is unavailable; nothing was dispatched.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
     }
@@ -186,7 +198,7 @@ export class ExecutorService {
     const outcome = await this.#o.store.admit(
       {
         intentId: uuidv7(now.getTime()), tenantId: authority.tenantId, agentId: authority.agentId, deploymentId: authority.deploymentId,
-        generation: authority.generation, simulationAccountId: authority.simulationAccountId, runId: intent.runId, nodeId: intent.nodeId,
+        generation: authority.generation, simulationAccountId: authority.simulationAccountId!, runId: intent.runId, nodeId: intent.nodeId,
         iterationPath: intent.iterationPath, logicalKey: intent.logicalKey, requestHash, request: intent, action,
         maxIntentsPerRun: strategy.limits.maxIntentsPerRun, now,
       },
@@ -220,6 +232,32 @@ export class ExecutorService {
     return { status: 201, result: toResult(row) };
   }
 
+  async #admitLive(capability: Capability, authority: DeploymentAuthority, intent: Parameters<LiveIntents['admit']>[0]['intent'], match: Extract<ReturnType<typeof matchApprovedNode>, { ok: true }>, maxIntentsPerRun: number, requestHash: string): Promise<Reply> {
+    const live = this.#o.live!;
+    let catalog: { connector: boolean; assets: boolean };
+    let limits: Record<string, unknown> | undefined;
+    try {
+      catalog = await this.#o.store.catalogAllows(intent.connectorRef, intent.connectorVersion, intent.action, authority.networkRef, [intent.tokenInRef, intent.tokenOutRef], 'live');
+      limits = await this.#o.store.loadPolicyLimits(authority.tenantId, authority.agentId, authority.policyVersion);
+    } catch {
+      return fail(503, 'PROVIDER_UNAVAILABLE', 'Required policy context is unavailable; nothing was dispatched.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
+    }
+    let outcome;
+    try {
+      outcome = await live.admit({
+        capability, authority, intent, match, maxIntentsPerRun, requestHash, catalog, clock: this.#now,
+        limits: [policyLimits(limits, intent.tokenInRef), { maxSlippageBps: match.node.maxSlippageBps }],
+      });
+    } catch {
+      return fail(503, 'PROVIDER_UNAVAILABLE', 'The funds ledger or valuation is unavailable; nothing was reserved.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
+    }
+    if (outcome.kind === 'noWallet') return fail(503, 'PROVIDER_UNAVAILABLE', 'This agent has no custodial wallet on the live network.', 'EXECUTOR_PROVIDER_UNAVAILABLE');
+    if (outcome.kind === 'runLimit') return fail(422, 'UNSUPPORTED_CAPABILITY', 'The run already holds its maximum number of intents.', 'EXECUTOR_AST_MISMATCH');
+    if (outcome.kind === 'existing') return this.#duplicate(outcome.row, requestHash);
+    // Live signing is a separate pipeline; the admitted intent stays reserved until it runs (202 while not terminal).
+    return { status: 201, result: toResult(outcome.row) };
+  }
+
   #duplicate(row: IntentRow, requestHash: string): Reply {
     if (row.requestHash !== requestHash) return fail(409, 'IDEMPOTENCY_CONFLICT', 'The same logical key was presented with a different body.', 'EXECUTOR_INTENT_CONFLICT');
     return { status: TERMINAL_STATES.has(row.state) ? 200 : 202, result: toResult(row) };
@@ -244,7 +282,7 @@ export class ExecutorService {
   async dispatch(intentId: string): Promise<IntentRow> {
     const row = await this.#o.store.findById(intentId);
     if (!row) throw new Error('intent not found');
-    if (row.state !== 'reserved') return row;
+    if (row.state !== 'reserved' || row.mode !== 'paper') return row;
     let authority: DeploymentAuthority | undefined;
     try {
       authority = await this.#o.authority.current(row.tenantId, row.deploymentId);
@@ -261,7 +299,7 @@ export class ExecutorService {
     let catalog: { connector: boolean; assets: boolean };
     let limits: Record<string, unknown> | undefined;
     try {
-      quote = await this.#o.market.quote(row.action.tokenInRef, row.action.tokenOutRef);
+      quote = await this.#o.market.quote(row.action.tokenInRef, row.action.tokenOutRef, row.action.connectorRef);
       catalog = await this.#o.store.catalogAllows(row.action.connectorRef, row.action.connectorVersion, SUPPORTED_ACTION, authority.networkRef, [row.action.tokenInRef, row.action.tokenOutRef]);
       limits = await this.#o.store.loadPolicyLimits(authority.tenantId, authority.agentId, authority.policyVersion);
     } catch {
@@ -293,6 +331,7 @@ export class ExecutorService {
     for (const row of await this.#o.store.reservedIntents()) {
       if (TERMINAL_STATES.has((await this.dispatch(row.id)).state)) finished += 1;
     }
+    if (this.#o.live) finished += await this.#o.live.reconcile((t, d) => this.#o.authority.current(t, d), this.#now());
     return finished;
   }
 }

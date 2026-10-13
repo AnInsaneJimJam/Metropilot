@@ -1,5 +1,5 @@
 // Local paper stack: user API (3001), runtime-facing control API + worker (3002), paper executor (3003),
-// one runtime process and the web studio (5173). Development only, loopback, synthetic data.
+// one runtime process and the web studio (5173). Development only, loopback; mainnet data and simulated effects.
 // The executor capability secret is generated per run and shared only by the control API and executor;
 // the runtime starts with a clean environment (it refuses database URLs, secrets and provider keys).
 import { spawn } from 'node:child_process';
@@ -18,8 +18,8 @@ const brokerSecret = env.BROKER_CAPABILITY_SECRET || randomBytes(32).toString('h
 const image = env.RUNTIME_IMAGE_DIGEST || '0x' + '5a'.repeat(32);
 const node = process.execPath;
 const services = [
-  ['api', ['apps/api/src/server.ts'], { ...env, LOCAL_WORKSPACE: '1', RUNTIME_IMAGE_DIGEST: image }],
-  ['control', ['apps/api/src/runtime-control/server.ts'], { ...env, LOCAL_RUNTIME_CONTROL: '1', EXECUTOR_CAPABILITY_SECRET: secret, BROKER_CAPABILITY_SECRET: brokerSecret, LOCAL_SYNTHETIC_FEED: env.LOCAL_SYNTHETIC_FEED ?? '1' }],
+  ['api', ['apps/api/src/server.ts'], { ...env, LOCAL_WORKSPACE: '1', RUNTIME_IMAGE_DIGEST: image, CUSTODY_PROVIDER: env.CUSTODY_PROVIDER ?? 'local' }],
+  ['control', ['apps/api/src/runtime-control/server.ts'], { ...env, LOCAL_RUNTIME_CONTROL: '1', EXECUTOR_CAPABILITY_SECRET: secret, BROKER_CAPABILITY_SECRET: brokerSecret }],
   ['executor', ['apps/executor/src/main.ts'], { ...env, LOCAL_EXECUTOR: '1', EXECUTOR_CAPABILITY_SECRET: secret }],
   // Clean environment: only what the runtime's closed configuration accepts.
   ['runtime', ['apps/runtime/src/main.ts'], {
@@ -47,6 +47,6 @@ const shutdown = (code) => {
 };
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
-console.log('Local paper stack: synthetic data, no wallet, no provider. Open http://127.0.0.1:5173');
+console.log('Local paper stack: Monad mainnet native oracles, virtual inventory, simulated fills. Open http://127.0.0.1:5173');
 services.forEach(([name, args, childEnv], i) => start(name, node, args, childEnv, name === 'runtime' ? 1500 : i * 100));
 start('web', 'pnpm', ['--filter', '@monad-hack/web', 'dev'], env, 300);

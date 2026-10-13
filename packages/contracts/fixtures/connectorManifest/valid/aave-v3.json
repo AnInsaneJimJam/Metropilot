@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "connector-manifest/1",
+  "ref": "paper.aave",
+  "version": "1.0.0",
+  "networkRef": "paper-monad",
+  "mode": "paper",
+  "sourceNetworkRef": "monad-mainnet",
+  "sourceChainId": 143,
+  "protocol": "aave-v3",
+  "poolAddress": "0x69a5f9ad4f96ebf0a0c792dd42a01cc5c0102fef",
+  "capabilities": [
+    "price.read",
+    "reserve.read",
+    "ausd.price.read",
+    "ausd.reserve.read"
+  ],
+  "limitations": [
+    "USDC and AUSD reserve prices and annualized supply/variable borrow rates only.",
+    "Block observation time is not underlying price update time; adapter exposes no latestRoundData.",
+    "No supply, borrow, repay, withdraw, swap or signing capability."
+  ],
+  "verifiedAt": "2026-10-12T17:45:17.000Z"
+}

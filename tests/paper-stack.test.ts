@@ -1,3 +1,9 @@
+import { marketCatalog, MARKETS, AAVE_RESERVES } from '../packages/connectors/src/registry.ts';
+import { decimal } from '../packages/strategy/src/expression.ts';
+import type { Strategy } from '../packages/contracts/src/index.ts';
+import { checkedObservation } from '../packages/connectors/src/index.ts';
+import { readFileSync } from 'node:fs';
+import { MARKET_PRESETS } from '../packages/strategy/src/index.ts';
 // The whole local paper stack on real PostgreSQL (TEST-2, INT-2): user API launch → runtime-facing control API
 // → runtime HTTP clients → real paper executor (Postgres authority, recorded prices) → executor outbox → resumed
 // runs, history and the live event stream. Synthetic paper data; the broker serves recorded reads and explicitly synthetic AI over HTTP.
@@ -84,8 +90,10 @@ const listen = async (server: { listen: (port: number, host: string, cb: () => v
 
 const budget = { tradingUsdMicros: '1000000000', hostingUsdMicros: '10000000', dataAndAiUsdMicros: '5000000', monReserveAtomic: '1000000000000000000' };
 
-async function stack(options: { dispatchInline?: boolean } = {}) {
+async function stack(options: { dispatchInline?: boolean; decisions?: ScriptAnswer[]; mainnet?: boolean } = {}) {
   const pool = await freshPool();
+  const catalog: import("../packages/strategy/src/index.ts").Catalog = options.mainnet ? marketCatalog : syntheticCatalog;
+  const presets = options.mainnet ? MARKET_PRESETS : PRESETS;
   const secret = randomBytes(32);
   const brokerSecret = randomBytes(32);
   const runtimeStore = new RuntimeControlStore({ pool, executorCapabilitySecret: secret, brokerCapabilitySecret: brokerSecret });
@@ -94,15 +102,15 @@ async function stack(options: { dispatchInline?: boolean } = {}) {
   const tenant = await controlStore.tenant(`stack-${randomBytes(4).toString('hex')}`);
   // The lifecycle clock can be skewed forward to expire estimates (estimate rows are immutable).
   const skew = { millis: 0 };
-  const lifecycle = new LifecycleService({ pool, runtime: runtimeStore, runtimeImageDigest: IMAGE, now: () => new Date(Date.now() + skew.millis) });
-  const user = createApp({ store: controlStore, lifecycle, origin: 'http://127.0.0.1:5173', authenticate: async (cookie) => (cookie === 'me' ? tenant : undefined), streamPollMillis: 20 });
+  const lifecycle = new LifecycleService({ pool, runtime: runtimeStore, runtimeImageDigest: IMAGE, catalog, ...(options.mainnet ? { paperFundingAsset: 'paper.USDC' } : {}), now: () => new Date(Date.now() + skew.millis) });
+  const user = createApp({ store: controlStore, lifecycle, catalog, origin: 'http://127.0.0.1:5173', authenticate: async (cookie) => (cookie === 'me' ? tenant : undefined), streamPollMillis: 20 });
   await user.ready();
   const userOrigin = await (async () => { await user.listen({ host: '127.0.0.1', port: 0 }); closers.push(() => user.close()); return `http://127.0.0.1:${(user.server.address() as AddressInfo).port}`; })();
   const internal = createInternalApp({ broker: service, store: runtimeStore, authenticateWorkload: (h) => (typeof h['x-runtime-workload'] === 'string' ? h['x-runtime-workload'] : undefined), pollIntervalMillis: 20 });
   await internal.listen({ host: '127.0.0.1', port: 0 });
   closers.push(() => internal.close());
   const internalOrigin = `http://127.0.0.1:${(internal.server.address() as AddressInfo).port}`;
-  const feeds = [{ feedRef: 'paper.weth-usd', baseAssetRef: 'paper.WETH', quoteAssetRef: 'paper.USD', baseDecimals: 18, quoteDecimals: 6 }];
+  const feeds = Object.entries(catalog.feeds).filter(([,feed])=>catalog.connectors[feed.connectorRef]?.actions.includes('swap.exactInput')).map(([feedRef,feed]) => ({feedRef, connectorRef:feed.connectorRef, baseAssetRef:feed.baseAssetRef, quoteAssetRef:`paper.${feed.quoteUnit}`,baseDecimals:catalog.assets[feed.baseAssetRef]!.decimals,quoteDecimals:catalog.assets[`paper.${feed.quoteUnit}`]!.decimals}));
   const executor = createExecutor({
     pool, authority: new PostgresAuthority(pool), market: new PostgresMarketData(pool, feeds), capabilitySecret: secret,
     platformLimits: { maxSlippageBps: 100, dailyActionCount: 1000 }, maxQuoteAgeSeconds: 120, ...(options.dispatchInline === undefined ? {} : { dispatchInline: options.dispatchInline }),
@@ -112,24 +120,25 @@ async function stack(options: { dispatchInline?: boolean } = {}) {
   const broker = new HttpBroker({ origin: internalOrigin, capability: () => control.brokerCapability(), forgetCapability: () => control.forgetBrokerCapability() });
   const httpExecutor = new HttpExecutor({ origin: executorOrigin, capability: () => control.executorCapability(), forgetCapability: () => control.forgetExecutorCapability() });
   const config = { runtimeId: 'runtime-stack-1', mode: 'paper' as const, imageDigest: IMAGE, heartbeatMillis: 10_000, pollWaitSeconds: 0 };
-  const runtime = (crashAt?: (point: CrashPoint, command: HostCommand) => void) => new Supervisor({ config, control, broker, executor: httpExecutor, clock: systemClock, ...(crashAt ? { crashAt } : {}) });
+  const runtime = (crashAt?: (point: CrashPoint, command: HostCommand) => void) => new Supervisor({ config, control, broker: options.mainnet ? {request: (body) => control.marketRead(body)} : broker, executor: httpExecutor, clock: systemClock, ...(crashAt ? { crashAt } : {}) });
 
   const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
     const response = await fetch(`${userOrigin}/v1${path}`, { method, headers: { cookie: 'me', ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, json: (await response.json()) as Record<string, any> };
   };
   /** Save the preset as a strategy, estimate it and return the deployment/1 request a launch sends. */
-  const draft = async (presetId = 'ai_gated_purchase', experience: 'rookie' | 'advanced' = 'rookie') => {
-    const strategy = PRESETS.find((p) => p.id === presetId)!.strategy;
-    const saved = await call('POST', '/agents', { schemaVersion: 'control-workspace/1', name: presetId, experience, workspace: workspaceFromStrategy(strategy, syntheticCatalog), budget }, { 'idempotency-key': `save-${randomBytes(6).toString('hex')}` });
+  const draft = async (presetId = 'ai_gated_purchase', experience: 'rookie' | 'advanced' = 'rookie', strategyOverride?: Strategy) => {
+    const strategy = strategyOverride ?? presets.find((p) => p.id === presetId)!.strategy;
+    const saved = await call('POST', '/agents', { schemaVersion: 'control-workspace/1', name: presetId, experience, workspace: workspaceFromStrategy(strategy, catalog), budget }, { 'idempotency-key': `save-${randomBytes(6).toString('hex')}` });
     assert.equal(saved.status, 201, JSON.stringify(saved.json));
     const agentId = saved.json.id as string;
     const estimate = await call('POST', `/agents/${agentId}/estimates`, {});
     assert.equal(estimate.status, 200, JSON.stringify(estimate.json));
     assert.ok(validate('paperEstimate', estimate.json).ok, JSON.stringify(estimate.json));
+    const connector = presetId.startsWith('aave_') ? 'paper.aave' : presetId.startsWith('curve_') ? 'paper.curve' : 'paper.uniswap';
     const request = {
       schemaVersion: 'deployment/1', agentId, strategyRevisionId: saved.json.revisionId, mode: 'paper', networkRef: 'paper-monad',
-      connectorSelections: [{ ref: 'paper.uniswap', version: '1.0.0', capabilities: ['price.read', 'swap.exactInput'] }],
+      connectorSelections: [{ ref: connector, version: options.mainnet ? catalog.connectors[connector]!.version : '1.0.0', capabilities: options.mainnet ? [...catalog.connectors[connector]!.actions] : ['price.read', 'swap.exactInput'] }],
       modelProfiles: presetId === 'ai_gated_purchase' ? [{ ref: 'paper.kimi', version: '1.0.0' }] : [],
       resourceProfileRef: 'paper-small-v1', budgetVersion: estimate.json.budgetVersion, policyVersion: estimate.json.policyVersion, estimateId: estimate.json.id,
     };
@@ -144,6 +153,85 @@ async function stack(options: { dispatchInline?: boolean } = {}) {
 }
 
 describe('paper stack end to end', { skip }, () => {
+  for (const market of MARKETS) test(`${market.protocol}: native price.read and paper purchase with crash/replay`, async () => {
+    const s = await stack({mainnet:true});
+    const fixture = JSON.parse(readFileSync(new URL(`../packages/contracts/fixtures/priceObservation/valid/${market.protocol}.json`,import.meta.url),'utf8'));
+    // Replay a recorded price using an explicit test clock; no CI network dependency.
+    const now = new Date().toISOString();
+    const observation = checkedObservation({...fixture, observedAt:now, receivedAt:now});
+    await s.pool.query('insert into finalized_market_observations values ($1,$2,$3)',[market.feedRef,observation.sourceEventKey,observation]);
+    await s.runtimeStore.ingestPrice(observation);
+    const {agentId,request}=await s.draft(`${market.connectorRef.split('.')[1]}_scheduled_purchase`);
+    const obsolete=structuredClone(request);obsolete.connectorSelections[0]!.version='1.0.0';
+    if (obsolete.connectorSelections[0]!.version!==request.connectorSelections[0]!.version) assert.equal((await s.launch(agentId,obsolete)).status,422);
+    assert.equal((await s.launch(agentId,request)).status,202);
+    await s.runtimeStore.tickSchedules();
+    let crashed=false;
+    const runner=s.runtime((point,command)=>{if(point==='after-dispatch'&&command.kind==='read'&&!crashed){crashed=true;throw new Error('test crash after native read');}});
+    await assert.rejects(runner.cycle(), /test crash after native read/);
+    assert.equal(crashed,true);
+    const readRun=(await s.pool.query('select run_id from market_read_results')).rows[0].run_id;
+    await s.runtimeStore.reassign(readRun);
+    const resumed=await s.runtime().cycle();
+    assert.equal(resumed.outcome,'completed',JSON.stringify(resumed));
+    await s.runtimeStore.consumeExecutorOutbox();
+    const records=await s.pool.query('select document from market_read_results');
+    assert.equal(records.rowCount,1);
+    assert.equal(records.rows[0].document.value.price.quoteUnit,'USDC');
+    assert.equal((await s.pool.query('select * from paper_fills')).rowCount,1);
+    assert.equal((await s.pool.query('select * from market_observations where feed_ref=$1',[market.feedRef])).rowCount,1);
+    assert.equal(await new PostgresMarketData(s.pool,[{feedRef:market.feedRef,connectorRef:market.connectorRef,baseAssetRef:observation.price.baseAssetRef,quoteAssetRef:'paper.USDC',baseDecimals:market.base==='WMON'?18:6,quoteDecimals:6}]).quote('paper.USDC',observation.price.baseAssetRef,'paper.wrong'),undefined);
+  });
+
+  for (const market of MARKETS) test(`${market.protocol}: recorded mainnet crossing produces one paper threshold sale with stage timings`, async () => {
+    const s = await stack({mainnet:true});
+    const fixtures = ['', '-later'].map(suffix => JSON.parse(readFileSync(new URL(`../packages/contracts/fixtures/priceObservation/valid/${market.protocol}${suffix}.json`,import.meta.url),'utf8')));
+    assert.ok(BigInt(fixtures[0].block.number) < BigInt(fixtures[1].block.number));
+    const before = decimal(fixtures[0].price.decimal), after = decimal(fixtures[1].price.decimal);
+    assert.ok(before > after, 'Recorded mainnet prices crossed down; this replay never invents prices.');
+    const midpoint = (before + after) / 2n;
+    const threshold = `${midpoint/10n**18n}.${(midpoint%10n**18n).toString().padStart(18,'0')}`.replace(/0+$/,'').replace(/\.$/,'');
+    const presetId = `${market.connectorRef.split('.')[1]}_threshold_sale`;
+    const strategy = structuredClone(MARKET_PRESETS.find(p=>p.id===presetId)!.strategy);
+    const trigger = strategy.triggers[0]!;
+    assert.ok(trigger.type==='price.crossesAbove');
+    strategy.triggers[0]={...trigger,type:'price.crossesBelow',threshold:{...trigger.threshold,decimal:threshold}}; // Explicit downside-sale configuration.
+    const {agentId,request}=await s.draft(presetId,'rookie',strategy);
+    assert.equal((await s.launch(agentId,request)).status,202);
+    // Virtual inventory fixture, never a real deposit. A standalone sale correctly requires holdings.
+    await s.pool.query('update simulation_balances set available=$1 where asset_ref=$2',[market.base==='WMON'?'1000000000000000000':'1000000',`paper.${market.base}`]);
+    const received = new Date().toISOString();
+    for (let index=0; index<fixtures.length; index++) {
+      const observation=checkedObservation({...fixtures[index],observedAt:new Date(Date.now()-1000+index).toISOString(),receivedAt:received});
+      await s.pool.query('insert into finalized_market_observations values ($1,$2,$3)',[market.feedRef,observation.sourceEventKey,observation]);
+      const results=await s.runtimeStore.ingestPrice(observation);
+      assert.equal(results.filter(r=>r.runId).length,index);
+      assert.equal((await s.runtimeStore.ingestPrice(observation)).filter(r=>r.runId).length,0);
+    }
+    const report=await s.runtime().cycle();assert.equal(report.outcome,'completed',JSON.stringify(report));
+    assert.equal(typeof report.timings?.observedToAccepted,'number');
+    assert.equal(typeof report.timings?.verifiedToFirstDispatch,'number');
+    assert.equal((await s.pool.query('select * from paper_fills')).rowCount,1);
+    assert.equal((await s.pool.query('select * from runs')).rowCount,1);
+  });
+
+  for (const market of AAVE_RESERVES) test(`Aave ${market.base}: native USD price and reserve APR reads, no lending effects`, async () => {
+    const s=await stack({mainnet:true});
+    const fixture=JSON.parse(readFileSync(new URL(`../packages/contracts/fixtures/priceObservation/valid/aave-${market.base.toLowerCase()}.json`,import.meta.url),'utf8'));
+    const now=new Date().toISOString(),observation=checkedObservation({...fixture,observedAt:now,receivedAt:now});
+    await s.pool.query('insert into finalized_market_observations values ($1,$2,$3)',[market.feedRef,observation.sourceEventKey,observation]);
+    await s.runtimeStore.ingestPrice(observation);
+    const {agentId,request}=await s.draft(`aave_${market.base.toLowerCase()}_observe`);
+    assert.equal((await s.launch(agentId,request)).status,202);
+    await s.runtimeStore.tickSchedules();
+    const report=await s.runtime().cycle();assert.equal(report.outcome,'completed',JSON.stringify(report));
+    const reads=await s.pool.query('select document from market_read_results');assert.equal(reads.rowCount,2);
+    assert.ok(reads.rows.some(r=>r.document.value.price?.quoteUnit==='USD'));
+    assert.ok(reads.rows.some(r=>typeof r.document.value.supplyApr==='string'&&typeof r.document.value.variableBorrowApr==='string'));
+    assert.equal((await s.pool.query('select * from paper_fills')).rowCount,0);
+    assert.equal((await s.pool.query('select * from intents')).rowCount,0);
+  });
+
   test('launch an AI-gated purchase: one run reads, decides, buys through the real executor and notifies', async () => {
     const s = await stack();
     await s.observe('2500');
