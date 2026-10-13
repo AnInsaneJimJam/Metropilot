@@ -12,7 +12,7 @@ import pg from 'pg';
 import { contentHash, validate } from '@monad-hack/contracts';
 import { migrate, readMigrations } from './migrate.ts';
 import { liveCatalog, seedLiveCatalog } from './live-catalog.ts';
-import { paperSeed, seedPaper, seedTenantId } from './seed.ts';
+import { paperSeed, seedPaper, seedPaperCatalog, seedTenantId } from './seed.ts';
 
 const required = process.env['REQUIRE_DB'] === '1';
 let skip: string | false = false;
@@ -159,6 +159,17 @@ describe('database', { skip }, () => {
   test('paper asset identities are valid contract shapes', async () => {
     const { rows } = await db.query<{ definition: { identity: unknown } }>(`select definition from catalog_versions where kind = 'asset'`);
     for (const row of rows) assert.ok(validate('assetIdentity', row.definition.identity).ok);
+  });
+
+  test('the catalog-only seed (hosted databases) adds every paper catalog row and no tenant data', async () => {
+    const hosted = await freshClient();
+    await migrate(hosted);
+    await seedPaperCatalog(hosted);
+    await seedPaperCatalog(hosted);
+    assert.equal((await hosted.query('select count(*)::int as n from catalog_versions')).rows[0].n, paperSeed().catalog.length);
+    for (const table of ['tenants', 'agents', 'strategy_revisions', 'policies']) {
+      assert.equal((await hosted.query(`select count(*)::int as n from ${table}`)).rows[0].n, 0, table);
+    }
   });
 
   test('live catalog: idempotent, valid on-chain identities, and found by the executor catalog query', async () => {

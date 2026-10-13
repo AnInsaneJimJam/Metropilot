@@ -26,8 +26,8 @@ resource "aws_lb_target_group" "api" {
   # The hosted API has no health route yet; /v1/session answers 401 without a session, which proves the process
   # serves requests. Any status below 500 is healthy.
   health_check {
-    path                = "/v1/session"
-    matcher             = "200-499"
+    path                = "/healthz"
+    matcher             = "200"
     interval            = 15
     healthy_threshold   = 2
     unhealthy_threshold = 3

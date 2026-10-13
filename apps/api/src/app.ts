@@ -177,6 +177,15 @@ export function createApp(options: ApiOptions) {
           : {}),
     });
   });
+  // Load-balancer health check: unauthenticated, no tenant data, 200 only when the database answers.
+  app.get("/healthz", async (_, reply) => {
+    try {
+      await options.store.ping();
+      return { status: "ok" };
+    } catch {
+      return reply.code(503).send({ status: "unavailable" });
+    }
+  });
   app.get("/v1/session", async (_, reply) => {
     if (!options.localSession)
       throw new ControlError(

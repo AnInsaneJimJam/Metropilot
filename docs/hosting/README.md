@@ -124,7 +124,7 @@ All commands run from the repository root with a clean, committed working tree.
    then `sudo tail /var/log/monad-db-init.log` → `postgres ready on …`.
 6. **Migrate, then start the services:**
    ```
-   infra/scripts/migrate.sh         # migrations + live catalog (exits 0)
+   infra/scripts/migrate.sh         # migrations + paper catalog + live catalog (exits 0)
    infra/scripts/deploy.sh          # terraform apply with the default counts, waits until services are stable
    ```
 7. **Studio on Vercel:**
@@ -138,7 +138,8 @@ All commands run from the repository root with a clean, committed working tree.
 9. **Smoke checks:**
    ```
    API=$(terraform -chdir=infra/terraform output -raw api_origin)
-   curl -s -o /dev/null -w '%{http_code}\n' "$API/v1/session"                 # 401 (no session) = API up
+   curl -s "$API/healthz"                                                      # {"status":"ok"} = API and database up
+   curl -s -o /dev/null -w '%{http_code}\n' "$API/v1/session"                 # 401 (no session) = auth wired
    curl -s -o /dev/null -w '%{http_code}\n' https://<vercel-url>/v1/session   # 401 through the rewrite
    aws logs tail /monad-hack/demo/runtime --profile monad-hack --since 10m     # "Runtime runtime-… serving"
    aws logs tail /monad-hack/demo/control --profile monad-hack --since 10m     # market.ingestion.tick lines
@@ -177,9 +178,10 @@ changes; rerun `vercel-config.sh`.
   database role (restricted roles, issue #25, are not done).
 - **Secrets are environment variables** inside the tasks (from Secrets Manager); the CloudFront origin-verify
   token is in Terraform state.
-- **The paper catalog seed refuses non-local databases**, so a fresh hosted database has the live catalog but not
-  the paper market catalog until a hosted catalog seed command exists.
-- **No health endpoint** in the hosted API: the load balancer treats `/v1/session` answering below 500 as healthy.
+- **One-time codes (step-up) go to the API log** (`stepUp.code` lines in CloudWatch `/monad-hack/demo/api`): MFA or
+  email delivery is not built, so codes reach the team operating the demo, not outside users.
+- **Live launch** needs `LIVE_LAUNCH=1` in `service_env.api`, and signing additionally needs `EXECUTOR_LIVE=1` and
+  `LIVE_OUTFLOWS=1` on the executor. Live v1 runs schedule triggers and swaps only (D60).
 - **Event streams** pass through Vercel and CloudFront (60 s origin read timeout; the stream sends a keep-alive
   about every 15 s). If a proxy cuts long streams, the studio reconnects with `Last-Event-ID`.
 - No WAF, autoscaling, cost budget alert or multi-region recovery.

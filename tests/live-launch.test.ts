@@ -140,6 +140,11 @@ describe('live launch', { skip }, () => {
     assert.equal((catalog.json['liveVersions'] as { connectors: Record<string, string> }).connectors['mainnet.uniswap-v3'], '1.1.0');
   });
 
+  test('the health check answers without a session', async () => {
+    const res = await app.inject({ method: 'GET', url: '/healthz' });
+    assert.deepEqual([res.statusCode, res.json()], [200, { status: 'ok' }]);
+  });
+
   test('live refusals: rookie, market reads or AI steps, price triggers, and no live caps', async () => {
     const rookie = await agent('rookie', strategy([sell]));
     await setCaps(rookie.agentId);

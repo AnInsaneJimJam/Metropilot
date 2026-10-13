@@ -16,6 +16,10 @@ export class ControlStore {
     );
     return rows[0]!.id;
   }
+  /** Health check: the database answers. */
+  async ping(): Promise<void> {
+    await this.pool.query('select 1');
+  }
   async active(tenant: string): Promise<boolean> {
     const { rows } = await this.pool.query(
       "select id from tenants where id=$1 and state='active'",

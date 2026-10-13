@@ -36,9 +36,10 @@ case "${1:-}" in
       node apps/runtime/src/main.ts
     ;;
   migrate)
-    # Forward-only migrations, then the verified live catalog. The synthetic paper seed refuses non-local
-    # databases by design (apps/api/src/db/cli.ts) and is never run here.
+    # Forward-only migrations, the paper catalog rows (no tenant data) and the verified live catalog. The synthetic
+    # paper seed (tenants, agents) refuses non-local databases by design (apps/api/src/db/cli.ts) and is never run here.
     node apps/api/src/db/cli.ts migrate
+    node apps/api/src/db/cli.ts seed-catalog
     exec node apps/api/src/db/cli.ts seed-live
     ;;
   prune)
