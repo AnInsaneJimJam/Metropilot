@@ -70,6 +70,11 @@ export interface WalletObservation {
   /** Identifies this observation, e.g. the finalized block it was read at. */
   readonly observationKey: string;
   readonly now: Date;
+  /**
+   * A traded (non-funding) asset: more on chain than recorded is unsolicited and harmless (never credited), so only
+   * a shortfall or a ledger imbalance freezes. Otherwise anyone could freeze an agent by sending it a token.
+   */
+  readonly surplusTolerated?: boolean;
 }
 
 export interface ReconcileReport {
@@ -108,7 +113,8 @@ export async function reconcileWallet(c: Sql, o: WalletObservation): Promise<Rec
   const chainDifference = o.onChainAtomic - (recordedWallet + o.unpostedInboundAtomic - o.unpostedOutboundAtomic);
   const ledgerDifference = recordedWallet - (liabilities + unswept);
   let freezeId: string | undefined;
-  if (chainDifference !== 0n || ledgerDifference !== 0n) {
+  const toleratedSurplus = o.surplusTolerated === true && chainDifference > 0n && ledgerDifference === 0n;
+  if ((chainDifference !== 0n || ledgerDifference !== 0n) && !toleratedSurplus) {
     freezeId = await freeze(c, {
       mode: o.mode, tenantId: o.tenantId, agentId: o.agentId,
       reasonCode: chainDifference < 0n || ledgerDifference !== 0n ? 'BALANCE_DEFICIT' : 'UNEXPLAINED_SURPLUS',

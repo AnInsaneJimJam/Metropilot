@@ -69,7 +69,13 @@ export function custodyFromEnv(env: NodeJS.ProcessEnv): CustodySetup | undefined
     config: {
       networkRef: need(env, 'CUSTODY_NETWORK_REF'), chainId, gasAssetRef, startHeight: BigInt(env['CUSTODY_START_HEIGHT'] ?? '0'),
       // Mainnet wallets may call the reviewed Uniswap router and approve it on the traded tokens.
-      ...(chainId === 143 ? { tradingContracts: [MAINNET_UNISWAP.router, MAINNET_UNISWAP.wmon, MAINNET_UNISWAP.usdc] } : {}),
+      ...(chainId === 143 ? {
+        tradingContracts: [MAINNET_UNISWAP.router, MAINNET_UNISWAP.wmon, MAINNET_UNISWAP.usdc],
+        tradedAssets: [
+          { assetRef: 'mainnet.WMON', chainId, token: MAINNET_UNISWAP.wmon, decimals: 18, funding: false },
+          { assetRef: 'mainnet.USDC', chainId, token: MAINNET_UNISWAP.usdc, decimals: 6, funding: false },
+        ],
+      } : {}),
       assets: [
         ...(tokenAddress ? [{ assetRef: need(env, 'FUNDING_ASSET_REF'), chainId, token: tokenAddress, decimals, funding: true }] : []),
         { assetRef: gasAssetRef, chainId, token: 'native', decimals: 18, funding: true },
@@ -83,8 +89,9 @@ export function custodyFromEnv(env: NodeJS.ProcessEnv): CustodySetup | undefined
  * asset would let a balance credited on one chain back a spend on another. Checked at startup, before any scan.
  */
 export async function assertCustodyCatalog(pool: { query: (sql: string, params: unknown[]) => Promise<{ rows: { ref: string; definition: { identity?: { kind?: string; chainId?: number; contractAddress?: string } } }[] }> }, config: CustodyConfig): Promise<void> {
-  const { rows } = await pool.query(`select ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) and disabled_reason is null and ref = any($1)`, [config.assets.map((a) => a.assetRef)]);
-  for (const asset of config.assets) {
+  const assets = [...config.assets, ...(config.tradedAssets ?? [])];
+  const { rows } = await pool.query(`select ref, definition from catalog_versions where kind = 'asset' and 'live' = any(modes) and disabled_reason is null and ref = any($1)`, [assets.map((a) => a.assetRef)]);
+  for (const asset of assets) {
     const identity = rows.find((r) => r.ref === asset.assetRef)?.definition.identity;
     const ok = identity !== undefined && identity.chainId === asset.chainId
       && (asset.token === 'native' ? identity.kind === 'native' : identity.kind === 'erc20' && identity.contractAddress?.toLowerCase() === asset.token.toLowerCase());

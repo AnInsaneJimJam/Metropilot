@@ -90,7 +90,10 @@ and `mainnet.MON/WMON/USDC` on Monad mainnet, plus the reviewed route `mainnet.u
 verified on chain (evidence in `docs/decisions.md`). Funding remains MON only. `GAS_ASSET_REF` defaults by chain, and
 the API refuses to start if a custody asset is not the catalog asset of the same chain and contract. For live trading
 run the funds stack on mainnet (`CUSTODY_CHAIN_ID=143`, `CUSTODY_NETWORK_REF=monad-mainnet`, a mainnet
-`CUSTODY_RPC`); mainnet wallets' provider policy also lists the router and the traded tokens.
+`CUSTODY_RPC`); mainnet wallets' provider policy also lists the router and the traded tokens. WMON and USDC are
+reconciled as traded assets (never scanned or credited as deposits): a shortfall freezes the agent, while tokens sent
+unsolicited to the wallet are tolerated so nobody can freeze an agent by sending it a token. Wallets with a trade or
+withdrawal between broadcast and settlement are compared after it settles.
 
 ### Real testnet check (MON-only funding)
 

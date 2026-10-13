@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import {
-  AccountingError, agentBalances, allocate, chargeHostingSlice, escalateUnknownUsage, markModelUnknown, modelProfilePaused, pendingDeposits, publishRateCard,
+  AccountingError, agentBalances, allocate, depositPostings, postJournal, chargeHostingSlice, escalateUnknownUsage, markModelUnknown, modelProfilePaused, pendingDeposits, publishRateCard,
   recordModelDispatch, requestWithdrawal, reserveModelCall, resolveUnknownUsage, settleModelUsage, user, uuidv7, withdrawalById,
 } from '../packages/accounting/src/index.ts';
 import type { AgentScope, StoredRateCard } from '../packages/accounting/src/index.ts';
@@ -212,6 +212,29 @@ describe('custody, deposits, metering and withdrawals', { skip }, () => {
     assert.ok(reports.some((r) => r.freezeId && r.chainDifference < 0n), 'deficit detected');
     const { reserve } = await import('../packages/accounting/src/reservations.ts');
     assert.equal(await code(() => db.tx((c) => reserve(c, { operationKey: `blocked:${b.agentId}`, ...b, purpose: 'trade', now, expiresAt: new Date(now.getTime() + 1000), holds: [{ account: user(b, 'trading', 'local.MON'), amount: 1n }] }))), 'RECONCILIATION_REQUIRED');
+  });
+
+  test('traded tokens reconcile: an unsolicited transfer in is tolerated, a shortfall freezes', async () => {
+    const traded: CustodyConfig = { ...config, tradedAssets: [{ assetRef: 'local.WMON', chainId: config.chainId, token: OTHER, decimals: 18, funding: false }] };
+    const a = await agent();
+    const scanner = new DepositScanner(db.pool, chain, traded);
+    chain.fund(NATIVE, a.address, 10n ** 17n);
+    chain.fund(OTHER, a.address, 5n);
+    chain.mine(3);
+    await scanner.tick(now);
+    // The ledger records 3 of the token (a settled trade's output); 5 on chain: 2 unsolicited, tolerated.
+    await db.tx((c) => postJournal(c, { operationKey: `trade-output:${a.agentId}`, mode: 'live', tenantId: a.tenantId, agentId: a.agentId, kind: 'deposit', postings: depositPostings(a, 'local.WMON', 3n), occurredAt: now }));
+    const { openFreezes } = await import('../packages/accounting/src/index.ts');
+    await reconcileWallets(db.pool, chain, traded, now);
+    assert.deepEqual(await openFreezes(db.pool, 'live', a.tenantId, a.agentId), []);
+    // 3 leave without a platform operation: 2 on chain against 3 recorded.
+    chain.submit(a.address, '0x00000000000000000000000000000000000000ee', OTHER, 3n, `external-traded-${a.agentId}`);
+    chain.mine(3);
+    await scanner.tick(now);
+    await reconcileWallets(db.pool, chain, traded, now);
+    const frozen = await db.pool.query<{ reason_code: string; asset: string }>(`select reason_code, detail ->> 'assetRef' as asset from reconciliation_freezes where agent_id = $1 and cleared_at is null order by asset`, [a.agentId]);
+    // The token's shortfall, and MON: the external send also paid gas the ledger never saw.
+    assert.deepEqual(frozen.rows.map((r) => [r.asset, r.reason_code]), [['local.MON', 'BALANCE_DEFICIT'], ['local.WMON', 'BALANCE_DEFICIT']]);
   });
 
   test('a deposit finalized after the last scanner pass is not mistaken for external activity', async () => {

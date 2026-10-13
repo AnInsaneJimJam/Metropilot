@@ -32,6 +32,8 @@ export interface CustodyConfig {
   readonly startHeight: bigint;
   /** Contracts live trades call (the reviewed router and the traded tokens it is approved on). */
   readonly tradingContracts?: readonly string[];
+  /** Tokens trades can leave in the wallet: reconciled against the ledger, never scanned or credited as deposits. */
+  readonly tradedAssets?: readonly ChainAsset[];
 }
 
 /**
@@ -303,15 +305,23 @@ export async function reconcileWallets(pool: pg.Pool, chain: ChainReader, config
   const wallets = await pool.query<{ id: string; tenant_id: string; agent_id: string; address: string }>(`select id, tenant_id, agent_id, address from wallets where chain_id = $1 and status = 'active'`, [chain.chainId]);
   const reports: ReconcileReport[] = [];
   for (const w of wallets.rows) {
-    const open = await pool.query(`select 1 from withdrawals where wallet_id = $1 and state in ('submitted', 'reconciling') limit 1`, [w.id]);
+    // A withdrawal or trade between broadcast and settlement is on chain but not yet posted: compare after it settles.
+    const open = await pool.query(
+      `select 1 from withdrawals where wallet_id = $1 and state in ('submitted', 'reconciling')
+       union all select 1 from transaction_attempts where wallet_id = $1 and (state in ('prepared', 'sent', 'ambiguous')
+         or (state in ('finalized', 'reverted') and exists (select 1 from intents i where i.id = intent_id and i.state not in ('settled', 'failed', 'cancelled'))))
+       limit 1`, [w.id]);
     if (open.rowCount) continue;
-    for (const asset of config.assets.filter((a) => a.chainId === chain.chainId && (a.funding || a.assetRef === config.gasAssetRef))) {
+    const funding = config.assets.filter((a) => a.chainId === chain.chainId && (a.funding || a.assetRef === config.gasAssetRef));
+    const traded = (config.tradedAssets ?? []).filter((a) => a.chainId === chain.chainId && !funding.some((f) => f.assetRef === a.assetRef));
+    for (const asset of [...funding, ...traded]) {
       const onChain = asset.token === 'native' ? await chain.nativeBalance(w.address, height) : await chain.erc20Balance(asset.token, w.address, height);
       const pending = await pool.query<{ sum: string | null }>(
         `select sum(amount) as sum from deposits where destination = $1 and asset_ref = $2 and state = 'pending' and block_number <= $3`, [w.address, asset.assetRef, height.toString()]);
       reports.push(await tx(pool, (c) => reconcileWallet(c, {
         mode: 'live', tenantId: w.tenant_id, agentId: w.agent_id, assetRef: asset.assetRef, onChainAtomic: onChain,
         unpostedInboundAtomic: BigInt(pending.rows[0]!.sum ?? '0'), unpostedOutboundAtomic: 0n, observationKey: `block:${height}`, now,
+        ...(traded.includes(asset) ? { surplusTolerated: true } : {}),
       })));
     }
   }
