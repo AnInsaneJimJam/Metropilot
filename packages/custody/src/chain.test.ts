@@ -1,7 +1,8 @@
-// Native deposit detection from call traces (JsonRpcChain.nativeTransfers) against a recorded JSON-RPC stub.
+// Native deposit detection from call traces (JsonRpcChain.nativeTransfers) against a recorded JSON-RPC stub, and
+// that provider keys carried in the endpoint path (Alchemy, D60) never reach an error message.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { JsonRpcChain, NATIVE_TOKEN } from './chain.ts';
+import { ChainError, CrossCheckedChain, JsonRpcChain, NATIVE_TOKEN } from './chain.ts';
 
 const WALLET = '0x83874dbad11513d46b4b0a455e7832804d19c130';
 const BLOCK_HASH = `0x${'ab'.repeat(32)}`;
@@ -39,4 +40,41 @@ test('without a trace API the reader falls back to top-level sends only', async 
   const chain = new JsonRpcChain({ endpoint: 'https://rpc.example', chainId: 10143, fetch: rpc(false) });
   const found = await chain.nativeTransfers([WALLET], 5n, 5n);
   assert.deepEqual(found.map((f) => [f.txHash, f.logIndex, f.amount]), [[tx(1), 0, 5n]]);
+});
+
+const KEY = 'alchemy-fake-key-5f3c9a1e7b2d4c6f';
+const KEYED = `https://monad-testnet.g.alchemy.com/v2/${KEY}`;
+const leaks = (error: unknown) => error instanceof Error && (error.message.includes(KEY) || String(error.stack).includes(KEY));
+
+test('RPC failures never echo the keyed endpoint', async (t) => {
+  // Skip the retry backoff; the request timeout uses AbortSignal, not setTimeout.
+  const later = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', ((fn: () => void) => later(fn, 0)) as typeof globalThis.setTimeout);
+  const failures: (typeof globalThis.fetch)[] = [
+    (async () => { throw new TypeError(`fetch failed: ${KEYED}`); }) as unknown as typeof globalThis.fetch,
+    (async () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: `bad key ${KEY}` } }), { status: 401 })) as unknown as typeof globalThis.fetch,
+    (async () => new Response(`<html>${KEYED}</html>`, { status: 429 })) as unknown as typeof globalThis.fetch,
+  ];
+  for (const fetch of failures) {
+    const chain = new JsonRpcChain({ endpoint: KEYED, chainId: 10143, fetch });
+    const error = await chain.finalizedHeight().then(() => undefined, (e: unknown) => e);
+    assert.ok(error instanceof ChainError, 'a failure surfaces as ChainError');
+    assert.equal(leaks(error), false, (error as Error).message);
+  }
+});
+
+test('cross-check disagreements name the block, not either endpoint', async () => {
+  const at = (hash: string, balance: string) => (async (_url: string, init: RequestInit) => {
+    const { id, method } = JSON.parse(init.body as string) as { id: number; method: string };
+    const result = method === 'eth_getBlockByNumber' ? { hash, number: '0x5' } : balance;
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id, result }));
+  }) as unknown as typeof globalThis.fetch;
+  const primary = new JsonRpcChain({ endpoint: 'https://testnet-rpc.monad.xyz', chainId: 10143, fetch: at(BLOCK_HASH, '0x1') });
+  const secondary = new JsonRpcChain({ endpoint: KEYED, chainId: 10143, fetch: at(`0x${'cd'.repeat(32)}`, '0x2') });
+  const chain = new CrossCheckedChain(primary, secondary);
+  for (const read of [() => chain.blockHashAt(5n), () => chain.nativeBalance(WALLET, 5n), () => chain.erc20Balance(WALLET, WALLET, 5n)]) {
+    const error = await read().then(() => undefined, (e: unknown) => e);
+    assert.ok(error instanceof ChainError && /disagree/.test(error.message));
+    assert.equal(leaks(error), false, (error as Error).message);
+  }
 });
