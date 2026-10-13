@@ -149,6 +149,10 @@ All commands run from the repository root with a clean, committed working tree.
    Sign in on the Vercel URL and launch a paper preset.
 
 **Updating:** commit, then `infra/scripts/build-push.sh && infra/scripts/migrate.sh && infra/scripts/deploy.sh`.
+`migrate.sh` first registers the migrate task with the new image, so a release's migrations run before services
+roll. An ordinary release keeps the runtime digest that deployments pinned, so running agents keep running on the new
+workers (runtimes claim only runs of their own mode and pinned digest). When runtime behaviour changes, use
+`build-push.sh --new-runtime`, then stop and relaunch running agents so they pin the new runtime.
 
 **Custom domain (optional):** set `custom_domain` (e.g. `api.example.com`) and `route53_zone_id` (a public hosted
 zone for the domain in this account) and apply; CloudFront gets an ACM certificate and the output `api_origin`

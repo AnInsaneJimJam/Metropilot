@@ -20,7 +20,7 @@ import type { Notice, Stage } from "./StrategyHeading.tsx";
 import { WorkspaceSidebar } from "./WorkspaceSidebar.tsx";
 import { PresetPicker } from "./PresetPicker.tsx";
 import { OperatePanel } from "./OperatePanel.tsx";
-export function EditorPage({ onSignOut }: { onSignOut?: () => void } = {}) {
+export function EditorPage({ onSignOut, onSessionExpired }: { onSignOut?: () => void; onSessionExpired?: () => void } = {}) {
   const [stage, setStage] = useState<Stage>("build");
   const [experience, setExperience] = useState<Experience>("rookie");
   const [name, setName] = useState(PRESETS[0]!.title);
@@ -63,10 +63,15 @@ export function EditorPage({ onSignOut }: { onSignOut?: () => void } = {}) {
       setAgents(list.items);
       setConnected(true);
       setNotice(undefined);
-    } catch {
+    } catch (error) {
+      // A hosted session that expired goes back to sign-in instead of looking like an offline API.
+      if (error instanceof ApiError && error.status === 401 && onSessionExpired) {
+        onSessionExpired();
+        return;
+      }
       setConnected(false);
     }
-  }, []);
+  }, [onSessionExpired]);
   useEffect(() => {
     void refresh();
   }, [refresh]);

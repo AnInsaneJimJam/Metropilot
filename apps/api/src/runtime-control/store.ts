@@ -643,9 +643,13 @@ export class RuntimeControlStore {
       if (worker.rows[0]!.drain) return { schemaVersion: 'assignment-offer/2', disposition: 'drain' };
       const claimed = await c.query<{ assignment_id: string; run_id: string; fencing_token: string }>(
         `select ra.assignment_id, ra.run_id, ra.fencing_token from run_assignments ra join runs r on r.run_id = ra.run_id
+           join deployments d on d.tenant_id = r.tenant_id and d.id = r.deployment_id
          where ra.state = 'queued' and r.status in ('queued', 'assigned', 'waiting')
            and ra.fencing_token = (select max(fencing_token) from run_assignments x where x.run_id = ra.run_id)
+           -- A worker only claims runs it can execute: its mode and the image the deployment pinned.
+           and ($1::text is null or d.mode = $1) and ($2::text is null or d.runtime_image_digest = $2)
          order by ra.created_at for update of ra skip locked limit 1`,
+        [request.mode ?? null, request.imageDigest ?? null],
       );
       const row = claimed.rows[0];
       if (!row) return { schemaVersion: 'assignment-offer/2', disposition: 'none' };

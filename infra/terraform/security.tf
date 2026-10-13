@@ -173,3 +173,14 @@ resource "aws_vpc_security_group_ingress_rule" "endpoints_from_runtime" {
   from_port                    = 443
   to_port                      = 443
 }
+
+# Private DNS makes ECR, Secrets Manager and CloudWatch Logs resolve to these endpoints for the whole VPC, so every
+# caller of those services must be admitted, not only runtimes (image pulls, secrets, logs, the DB password).
+resource "aws_vpc_security_group_ingress_rule" "endpoints_from_services" {
+  for_each                     = { api = aws_security_group.api.id, control = aws_security_group.control.id, executor = aws_security_group.executor.id, migrate = aws_security_group.migrate.id, db = aws_security_group.db.id }
+  security_group_id            = aws_security_group.endpoints.id
+  referenced_security_group_id = each.value
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+}

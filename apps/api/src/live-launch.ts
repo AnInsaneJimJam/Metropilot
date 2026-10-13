@@ -55,3 +55,33 @@ export function promoteStrategy(strategy: Strategy, twins: ReadonlyMap<string, s
   if (unmapped.size) refuse(`These paper references have no live equivalent: ${[...unmapped].sort().join(', ')}.`);
   return promoted;
 }
+
+/**
+ * Every swap must be a pair its live connector offers (the connector row's `pairs`): a strategy that compiles but
+ * trades an unoffered direction would only ever be refused by the executor, so it is refused before launch.
+ * `versions` pins connector versions (launch); without it the newest enabled version is used (estimate).
+ */
+export async function checkLivePairs(db: Queryable, strategy: Strategy, versions?: Readonly<Record<string, string>>): Promise<void> {
+  const swaps: { connectorRef: string; tokenInRef: string; tokenOutRef: string }[] = [];
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (value && typeof value === 'object') {
+      const node = value as Record<string, unknown>;
+      if (node['type'] === 'swap.exactInput') swaps.push(node as unknown as { connectorRef: string; tokenInRef: string; tokenOutRef: string });
+      Object.values(node).forEach(walk);
+    }
+  };
+  walk(strategy);
+  for (const ref of new Set(swaps.map((s) => s.connectorRef))) {
+    const pinned = versions?.[ref];
+    const { rows } = await db.query<{ pairs: [string, string][] | null }>(
+      `select definition -> 'pairs' as pairs from catalog_versions where kind = 'connector' and ref = $1 and 'live' = any(modes) and disabled_reason is null
+         ${pinned ? 'and version = $2' : ''} order by string_to_array(version, '.')::int[] desc limit 1`, pinned ? [ref, pinned] : [ref]);
+    const pairs = rows[0]?.pairs ?? [];
+    for (const s of swaps.filter((x) => x.connectorRef === ref)) {
+      if (!pairs.some(([a, b]) => a === s.tokenInRef && b === s.tokenOutRef)) {
+        throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `Live trading does not offer ${s.tokenInRef} → ${s.tokenOutRef}; offered: ${pairs.map(([a, b]) => `${a} → ${b}`).join(', ') || 'none'}.`);
+      }
+    }
+  }
+}

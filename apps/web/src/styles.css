@@ -2208,3 +2208,5 @@ button.danger { background: var(--danger, #b42318); border-color: var(--danger, 
 .signin-page { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg, #f7f7f5); }
 .signin-card { max-width: 420px; width: 100%; display: grid; gap: 12px; padding: 28px; border: 1px solid var(--line, #e3e3df); border-radius: 12px; background: var(--panel, #fff); }
 .signin-card h1 { font-size: 1.4rem; margin: 0; }
+
+.signout-error { position: fixed; top: 12px; right: 12px; z-index: 50; }

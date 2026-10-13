@@ -160,6 +160,11 @@ describe('live launch', { skip }, () => {
     assert.deepEqual([read.status, read.json['code']], [422, 'UNSUPPORTED_CAPABILITY']);
     assert.match(String(read.json['message']), /market reads or AI/);
 
+    // USDC → native MON compiles but the live connector does not offer that direction.
+    const unwrap = await agent('advanced', strategy([{ ...sell, tokenInRef: 'paper.USDC', tokenOutRef: 'paper.MON', amount: { kind: 'fixed', atomic: '1000000' } }]));
+    await setCaps(unwrap.agentId);
+    assert.match(String((await call('POST', `/v1/agents/${unwrap.agentId}/estimates`, { mode: 'live' })).json['message']), /does not offer mainnet\.USDC → mainnet\.MON/);
+
     const priced = await agent('advanced', strategy([sell], { type: 'price.crossesBelow', feedRef: 'paper.wmon-usdc' } as never));
     await setCaps(priced.agentId);
     assert.match(String((await call('POST', `/v1/agents/${priced.agentId}/estimates`, { mode: 'live' })).json['message']), /schedule triggers/);

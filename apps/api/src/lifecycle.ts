@@ -12,7 +12,7 @@ import { ControlError, newId } from './control.ts';
 import { admitPaper, quotaDocument } from './quota.ts';
 import { agentBalances } from '@monad-hack/accounting';
 import type { Strategy } from '@monad-hack/contracts';
-import { liveTwins, promoteStrategy } from './live-launch.ts';
+import { checkLivePairs, liveTwins, promoteStrategy } from './live-launch.ts';
 import type { LiveLaunchOptions } from './live-launch.ts';
 import type { AuditActor, RuntimeControlStore } from './runtime-control/store.ts';
 import { RunControlError } from './runtime-control/store.ts';
@@ -333,10 +333,11 @@ export class LifecycleService {
   }
 
   /** The saved revision with its paper refs mapped to live twins, compiled against the live catalog. */
-  async #promoted(c: pg.PoolClient, tenantId: string, agentId: string, revisionId: string, catalog: Catalog, networkRef: string): Promise<{ strategy: Strategy; program: CompiledStrategy }> {
+  async #promoted(c: pg.PoolClient, tenantId: string, agentId: string, revisionId: string, catalog: Catalog, networkRef: string, connectorVersions?: Readonly<Record<string, string>>): Promise<{ strategy: Strategy; program: CompiledStrategy }> {
     const { rows } = await c.query<{ ast: Strategy }>('select ast from strategy_revisions where tenant_id = $1 and agent_id = $2 and id = $3', [tenantId, agentId, revisionId]);
     if (!rows[0]) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Strategy revision not found for this agent.', { fieldPath: '/strategyRevisionId' });
     const strategy = promoteStrategy(rows[0].ast, await liveTwins(c, networkRef));
+    await checkLivePairs(c, strategy, connectorVersions);
     try {
       return { strategy, program: await compileStrategy(JSON.stringify(strategy), catalog) };
     } catch (error) {
@@ -394,7 +395,7 @@ export class LifecycleService {
     const connectorVersions = pinsOf(request.connectorSelections, '/connectorSelections');
     const modelProfiles = pinsOf(request.modelProfiles, '/modelProfiles');
     const resolved = await this.#catalog.resolve(c, { mode: 'live', networkRef: live.networkRef, connectors: connectorVersions, modelProfiles, resourceProfileRef: request.resourceProfileRef });
-    const { strategy, program } = await this.#promoted(c, tenantId, agentId, request.strategyRevisionId, resolved.catalog, live.networkRef);
+    const { strategy, program } = await this.#promoted(c, tenantId, agentId, request.strategyRevisionId, resolved.catalog, live.networkRef, connectorVersions);
     const issue = profileIssues(program.strategy, { experience: agent.experience, mode: 'live' })[0];
     if (issue) throw new ControlError(422, issue.code, issue.message);
     checkConnectors(request, program, resolved);

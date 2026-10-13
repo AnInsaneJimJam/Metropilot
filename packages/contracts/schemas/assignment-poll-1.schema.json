@@ -32,6 +32,14 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 30
+    },
+    "mode": {
+      "description": "Mode this runtime serves; when present, only deployments of that mode are offered (absent: any).",
+      "$ref": "common.schema.json#/$defs/mode"
+    },
+    "imageDigest": {
+      "description": "Runtime image digest; when present, only deployments pinned to this image are offered (absent: any).",
+      "$ref": "common.schema.json#/$defs/hash32"
     }
   }
 }

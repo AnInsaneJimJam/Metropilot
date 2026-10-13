@@ -63,7 +63,7 @@ export class Supervisor {
   /** One poll and at most one assignment. Exposed for tests and the demo. */
   async cycle(): Promise<CycleReport> {
     const { config, control } = this.#deps;
-    const poll = { schemaVersion: 'assignment-poll/1' as const, runtimeId: config.runtimeId, state: this.state === 'idle' ? 'idle' as const : 'ready' as const, waitSeconds: config.pollWaitSeconds, ...(this.#lastAssignmentId ? { lastAssignmentId: this.#lastAssignmentId } : {}) };
+    const poll = { schemaVersion: 'assignment-poll/1' as const, runtimeId: config.runtimeId, mode: config.mode, imageDigest: config.imageDigest, state: this.state === 'idle' ? 'idle' as const : 'ready' as const, waitSeconds: config.pollWaitSeconds, ...(this.#lastAssignmentId ? { lastAssignmentId: this.#lastAssignmentId } : {}) };
     const offer = await control.poll(poll);
     if (!validate('assignmentOffer2', offer).ok) throw new RuntimeError('RESULT_INVALID', 'Assignment offer failed its schema.');
     if (offer.disposition === 'drain') { this.drain(); return { disposition: 'drain' }; }

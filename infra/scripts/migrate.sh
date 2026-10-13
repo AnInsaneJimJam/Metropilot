@@ -4,6 +4,11 @@
 set -euo pipefail
 export AWS_PROFILE="${AWS_PROFILE:-monad-hack}" AWS_REGION="${AWS_REGION:-us-east-1}"
 tf="$(cd "$(dirname "$0")/../terraform" && pwd)"
+# Register the migrate task with the image build-push.sh just recorded, so a release's new migrations run before
+# the services roll (deploy.sh) instead of the previous image's migrations.
+if [ -f "$tf/deploy.auto.tfvars.json" ]; then
+  terraform -chdir="$tf" apply -auto-approve -target='aws_ecs_task_definition.service["migrate"]'
+fi
 cluster="$(terraform -chdir="$tf" output -raw cluster_name)"
 task="$(terraform -chdir="$tf" output -json migrate_task)"
 family="$(echo "$task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["task_definition"])')"
