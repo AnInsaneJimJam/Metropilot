@@ -1,6 +1,7 @@
 import { KimiAdapter } from '../kimi-adapter.ts';
 import { KimiBroker } from '../kimi-broker.ts';
 import { kimiVerified } from '../kimi-config.ts';
+import { registerKimiDemo } from '../kimi-demo.ts';
 import { PaperBrokerService } from '../broker-service.ts';
 import { MarketIngestion, RpcMarketSource } from '../market-ingestion.ts';
 import { WS_RPC, rpcClient, MainnetMarkets } from '@monad-hack/connectors';
@@ -36,6 +37,8 @@ if (brokerSecretHex !== undefined && !/^[0-9a-f]{64}$/.test(brokerSecretHex)) th
 const brokerSecret = brokerSecretHex ? Buffer.from(brokerSecretHex, 'hex') : undefined;
 const store = new RuntimeControlStore({ pool, ...(secretHex ? { executorCapabilitySecret: Buffer.from(secretHex, 'hex') } : {}), ...(brokerSecret ? { brokerCapabilitySecret: brokerSecret } : {}) });
 const kimi = new KimiBroker(pool, new KimiAdapter({ apiKey: process.env['AI_GATEWAY_API_KEY'] ?? '', verified: kimiVerified(process.env) }));
+// Hosted opt-in (service_env.control): the hosted user API has no other path that registers the paper Kimi profile.
+if (process.env['DEMO_KIMI'] === '1') await registerKimiDemo(pool);
 const broker = brokerSecret ? new PaperBrokerService({ pool, secret: brokerSecret, kimi }) : undefined;
 const app = createInternalApp({
   store,
