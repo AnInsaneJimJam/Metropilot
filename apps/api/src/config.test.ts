@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { ConfigError, databaseUrl, isLoopback, redactUrl } from './config.ts';
-import { preflight } from './db/cli.ts';
+import { preflight, retentionDays } from './db/cli.ts';
 
 const secret = 'pw-' + 'x'.repeat(12);
 
@@ -48,4 +48,10 @@ test('preflight reports each setup mistake without printing secrets', () => {
     assert.match(problems, expected);
     assert.ok(!problems.includes(secret));
   }
+});
+
+test('audit retention defaults to 30 days and accepts only whole days from 1', () => {
+  assert.equal(retentionDays({}), 30);
+  assert.equal(retentionDays({ AUDIT_RETENTION_DAYS: '7' }), 7);
+  for (const bad of ['0', '-1', '1.5', '30d', '', '10000']) assert.throws(() => retentionDays({ AUDIT_RETENTION_DAYS: bad }), ConfigError, bad);
 });

@@ -1,4 +1,5 @@
-// Local/CI database commands, run from the repository root via `pnpm db:preflight|db:migrate|db:seed`.
+// Database commands, run from the repository root via `pnpm db:preflight|db:migrate|db:seed|db:seed:live|db:prune`.
+// prune is the scheduled audit retention job (D57); it also runs against hosted databases.
 // The root scripts load .env with --env-file-if-exists; existing environment variables take precedence.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -42,6 +43,25 @@ async function withClient(run: (client: pg.Client, url: URL) => Promise<void>): 
   }
 }
 
+/** Audit retention in days from AUDIT_RETENTION_DAYS; security.md keeps paper run summaries 30 days. */
+export function retentionDays(env: NodeJS.ProcessEnv): number {
+  const raw = env['AUDIT_RETENTION_DAYS'] ?? '30';
+  if (!/^[1-9][0-9]{0,3}$/.test(raw)) throw new ConfigError('AUDIT_RETENTION_DAYS must be a whole number of days from 1 to 9999');
+  return Number(raw);
+}
+
+/** Prune each tenant's audit stream in its own transaction, so appends for other tenants never wait on it. */
+export async function pruneAudit(client: pg.Client | pg.Pool, days: number, now: Date = new Date()): Promise<{ tenants: number; removed: number }> {
+  const cutoff = new Date(now.getTime() - days * 86_400_000);
+  const { rows } = await client.query<{ tenant_id: string }>('select tenant_id from tenant_streams where last_sequence > retained_after order by tenant_id');
+  let removed = 0;
+  for (const row of rows) {
+    const result = await client.query<{ removed: string }>('select prune_audit_events($1, $2) as removed', [row.tenant_id, cutoff]);
+    removed += Number(result.rows[0]!.removed);
+  }
+  return { tenants: rows.length, removed };
+}
+
 const commands: Record<string, () => Promise<void>> = {
   async preflight() {
     const problems = preflight(process.env);
@@ -65,6 +85,12 @@ const commands: Record<string, () => Promise<void>> = {
       // Real Monad testnet and mainnet network, asset and route entries (verified addresses); no accounts or secrets.
       await seedLiveCatalog(client);
       console.log(`${redactUrl(url)}: Monad testnet and mainnet live catalogs present`);
+    }),
+  prune: () =>
+    withClient(async (client, url) => {
+      const days = retentionDays(process.env);
+      const { tenants, removed } = await pruneAudit(client, days);
+      console.log(`${redactUrl(url)}: removed ${removed} audit events older than ${days} days across ${tenants} tenant streams`);
     }),
 };
 

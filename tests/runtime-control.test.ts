@@ -20,7 +20,9 @@ import { Telemetry } from '../apps/runtime/src/telemetry.ts';
 import { PaperExecutor } from '../apps/runtime/src/local/paper-executor.ts';
 import { ScriptedBroker } from '../apps/runtime/src/local/scripted-broker.ts';
 import type { ScriptAnswer } from '../apps/runtime/src/local/scripted-broker.ts';
-import { LOCAL_IMAGE_DIGEST, PAPER_CONNECTOR_VERSIONS } from '../apps/runtime/src/local/environment.ts';
+import { LOCAL_IMAGE_DIGEST } from '../apps/runtime/src/local/environment.ts';
+import { seedPaper } from '../apps/api/src/db/seed.ts';
+import { CatalogResolver } from '../apps/api/src/catalog.ts';
 
 const required = process.env['REQUIRE_DB'] === '1';
 let admin: pg.Client | undefined;
@@ -51,6 +53,7 @@ async function freshPool(): Promise<pg.Pool> {
     const client = new pg.Client({ connectionString: urlFor(name) });
     await client.connect();
     await migrate(client);
+    await seedPaper(client);
     await client.end();
     return name;
   })();
@@ -91,8 +94,11 @@ async function deployPreset(pool: pg.Pool, store: RuntimeControlStore, presetId:
   await pool.query("insert into policies (tenant_id, agent_id, version, limits) values ($1, $2, 1, '{\"maxSlippageBps\": 50, \"dailyActionCount\": 24}')", [tenantId, agentId]);
   await pool.query("insert into estimates (tenant_id, id, agent_id, strategy_revision_id, assumptions, created_at, expires_at) values ($1, $2, $3, $4, '{}', now(), now() + interval '15 minutes')", [tenantId, estimateId, agentId, revisionId]);
   await pool.query('insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, $2, $3, 1)', [tenantId, simulationAccountId, agentId]);
+  // The catalog a launch resolves from the seeded catalog_versions rows (issue #18), with its pins.
+  const connectorVersions = { 'paper.uniswap': '1.0.1', 'paper.kuru': '1.1.0' };
+  const resolved = await new CatalogResolver().resolve(pool, { mode: 'paper', networkRef: 'paper-monad', connectors: connectorVersions, resourceProfileRef: 'paper-small-v1' });
   const { deploymentId } = await store.deploy({
-    tenantId, agentId, strategyRevisionId: revisionId, mode: 'paper', catalog: syntheticCatalog, connectorVersions: PAPER_CONNECTOR_VERSIONS, runtimeImageDigest: LOCAL_IMAGE_DIGEST,
+    tenantId, agentId, strategyRevisionId: revisionId, mode: 'paper', catalog: resolved.catalog, catalogPins: resolved.pins, connectorVersions, runtimeImageDigest: LOCAL_IMAGE_DIGEST,
     networkRef: 'paper-monad', policyVersion: 1, budgetVersion: 1, resourceProfileRef: 'paper-small-v1', modelProfiles: {}, estimateId, simulationAccountId,
   });
   return deploymentId;
@@ -217,6 +223,22 @@ describe('paper runs end to end over HTTP and PostgreSQL', { skip }, () => {
     assert.deepEqual((await observe('e2', '2501')).map((f) => f.reason), ['out-of-order']);
     assert.equal((await s.runs()).length, 1);
     assert.equal((await s.supervisor().cycle()).outcome, 'completed');
+  });
+
+  test('a crossing held back by the cooldown is an observation.skipped event with a readable reason (#19)', async () => {
+    const s = await paperStack();
+    await deployPreset(s.pool, s.store, 'threshold_sale');
+    const observe = async (key: string, decimal: string) => {
+      await new Promise((r) => setTimeout(r, 5));
+      const now = new Date().toISOString();
+      return s.store.ingestPrice({ sourceEventKey: key, feedRef: 'paper.weth-usd', price: { baseAssetRef: 'paper.WETH', quoteUnit: 'USD', decimal }, observedAt: now, receivedAt: now });
+    };
+    const reasons = [];
+    for (const [key, decimal] of [['c1', '2499'], ['c2', '2501'], ['c3', '2499'], ['c4', '2502'], ['c4', '2502']] as const) reasons.push(...(await observe(key, decimal)).map((f) => f.reason));
+    assert.deepEqual(reasons, ['baseline', 'crossing', 'no-crossing', 'cooldown', 'out-of-order']);
+    const skipped = await s.pool.query<{ payload: { triggerId: string; reasonCode: string } }>(`select payload from audit_events where type = 'observation.skipped'`);
+    assert.deepEqual(skipped.rows.map((r) => [r.payload.triggerId, r.payload.reasonCode]), [['crossing', 'TRIGGER_COOLDOWN']], 'routine and repeated observations add nothing');
+    assert.equal((await s.runs()).length, 1);
   });
 
   test('a pending swap releases the runtime; settlement records it and the resume completes the run', async () => {

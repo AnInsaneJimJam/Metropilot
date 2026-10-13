@@ -80,6 +80,7 @@ Resolved 2026-10-12:
 | Former gap | Resolution |
 | --- | --- |
 | Deployment state names differed | One vocabulary, `active` / `paused` / `stopping` / `stopped` ([D37](../decisions.md), migration [`0005`](../../apps/api/migrations/0005_deployment_lifecycle.sql)) |
+| Stop with open intents (2026-10-13) | The control plane now writes `stopping` and waits for every intent of the deployment to end before `stopped` ([D59](../decisions.md)); the executor's existing refusal and cancel-on-dispatch for `stopping` drive the drain. Request to the executor owner: recheck the deployment state inside the admission transaction, which closes the window between the authority read and the intent insert. |
 | `deployments` lacked policy version, network ref and simulation account | Columns added in 0005; a paper launch fills them ([D39](../decisions.md)) |
 | No `AuthoritySource` over `deployments` | [`PostgresAuthority`](../../apps/executor/src/authority.ts), read on every admission and fill |
 | Nobody issued executor capabilities | The control API signs D35 tokens on exchange ([D38](../decisions.md)) |

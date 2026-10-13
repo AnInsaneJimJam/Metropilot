@@ -5,9 +5,11 @@
 import pg from 'pg';
 import { contentHash, validate } from '@monad-hack/contracts';
 import type { DeploymentRequest } from '@monad-hack/contracts';
-import { compileStrategy, profileIssues, syntheticCatalog } from '@monad-hack/strategy';
+import { compileStrategy, profileIssues } from '@monad-hack/strategy';
 import type { Catalog, CompiledStrategy, Experience } from '@monad-hack/strategy';
+import { CatalogResolver, type CatalogKind, type ResolvedCatalog } from './catalog.ts';
 import { ControlError, newId } from './control.ts';
+import { admitPaper, quotaDocument } from './quota.ts';
 import type { AuditActor, RuntimeControlStore } from './runtime-control/store.ts';
 import { RunControlError } from './runtime-control/store.ts';
 
@@ -17,6 +19,8 @@ const BUDGET_ERROR = `(select b.response->'reason' || jsonb_build_object('nodeId
   and b.response->>'disposition'='refused' and b.response#>>'{reason,code}'='BROKER_BUDGET_EXHAUSTED'
   order by b.received_at desc,b.id desc limit 1)`;
 
+/** Virtual denomination the market presets trade from (D42): the stack and the hosted entry point both fund it. */
+export const MARKET_PAPER_FUNDING_ASSET = 'paper.USDC';
 const ESTIMATE_MINUTES = 15;
 /** Paper policy defaults by experience (product.md modes); live authority is never granted here. */
 const PAPER_POLICY: Record<Experience, { maxSlippageBps: number; dailyActionCount: number }> = {
@@ -29,7 +33,8 @@ export interface LifecycleOptions {
   readonly runtime: RuntimeControlStore;
   /** Digest of the runtime image deployments pin; runtimes refuse assignments for any other image. */
   readonly runtimeImageDigest: string;
-  readonly catalog?: Catalog;
+  /** Resolves catalogs from catalog_versions (issue #18); a default resolver when absent. */
+  readonly catalog?: CatalogResolver;
   /** Explicit virtual denomination; this is not a USDC/USD market conversion. */
   readonly paperFundingAsset?: string;
   readonly now?: () => Date;
@@ -54,7 +59,7 @@ export class LifecycleService {
   readonly #pool: pg.Pool;
   readonly #runtime: RuntimeControlStore;
   readonly #image: string;
-  readonly #catalog: Catalog;
+  readonly #catalog: CatalogResolver;
   readonly #fundingAsset: string;
   readonly #now: () => Date;
 
@@ -62,9 +67,8 @@ export class LifecycleService {
     this.#pool = options.pool;
     this.#runtime = options.runtime;
     this.#image = options.runtimeImageDigest;
-    this.#catalog = options.catalog ?? syntheticCatalog;
+    this.#catalog = options.catalog ?? new CatalogResolver();
     this.#fundingAsset = options.paperFundingAsset ?? "paper.USD";
-    if (this.#catalog.assets[this.#fundingAsset]?.decimals !== 6) throw new Error("Paper funding denomination must have six decimals.");
     this.#now = options.now ?? (() => new Date());
   }
 
@@ -79,7 +83,8 @@ export class LifecycleService {
       const agent = await this.#agent(c, tenantId, agentId);
       const revisionId = strategyRevisionId ?? agent.revision_id;
       if (!revisionId) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Save a strategy revision before estimating.');
-      const program = await this.#program(c, tenantId, agentId, revisionId);
+      const { catalog } = await this.#catalog.resolve(c, { mode: 'paper' });
+      const program = await this.#program(c, tenantId, agentId, revisionId, catalog);
       const policy = await c.query<{ version: number }>('select max(version) as version from policies where tenant_id = $1 and agent_id = $2', [tenantId, agentId]);
       let policyVersion = policy.rows[0]?.version ?? null;
       if (!policyVersion) {
@@ -116,7 +121,8 @@ export class LifecycleService {
     return this.#idempotent(tenantId, `POST /v1/agents/${agentId}/deployments`, key, request, async (c) => {
       if (request.mode !== 'paper') throw new ControlError(422, 'CAPABILITY_DISABLED', 'Live deployments are not enabled; launch in paper mode.');
       const agent = await this.#agent(c, tenantId, agentId, true);
-      const open = await c.query('select id from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3', [tenantId, agentId, 'stopped']);
+      const open = await c.query<{ desired_state: string }>('select desired_state from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3', [tenantId, agentId, 'stopped']);
+      if (open.rows[0]?.desired_state === 'stopping') throw new ControlError(409, 'REVISION_CONFLICT', 'This agent is still stopping while its open trades settle; launch it again once it has stopped.');
       if (open.rows[0]) throw new ControlError(409, 'REVISION_CONFLICT', 'This agent already has a deployment; pause, resume or stop it instead.');
       const estimate = await c.query<{ strategy_revision_id: string; expires_at: Date }>('select strategy_revision_id, expires_at from estimates where tenant_id = $1 and id = $2 and agent_id = $3', [tenantId, request.estimateId, agentId]);
       if (!estimate.rows[0]) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Estimate not found for this agent.', { fieldPath: '/estimateId' });
@@ -127,26 +133,34 @@ export class LifecycleService {
       if (!policy.rows[0]) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Policy version not found.', { fieldPath: '/policyVersion' });
       if (!agent.paper_budget) throw new ControlError(422, 'FUNDING_PENDING', 'Set virtual budget limits before launching.');
 
-      const program = await this.#program(c, tenantId, agentId, request.strategyRevisionId);
+      // Resolve the pinned catalog first; the revision compiles against exactly what the deployment will pin.
+      const connectorVersions = pinsOf(request.connectorSelections, '/connectorSelections');
+      const modelProfiles = pinsOf(request.modelProfiles, '/modelProfiles');
+      const resolved = await this.#catalog.resolve(c, {
+        mode: 'paper', networkRef: request.networkRef, connectors: connectorVersions, modelProfiles, resourceProfileRef: request.resourceProfileRef,
+      });
+      const program = await this.#program(c, tenantId, agentId, request.strategyRevisionId, resolved.catalog);
       const issue = profileIssues(program.strategy, { experience: agent.experience, mode: 'paper' })[0];
       if (issue) throw new ControlError(422, issue.code, issue.message);
-      await this.#catalogEntry(c, 'network', request.networkRef, undefined, '/networkRef');
-      await this.#catalogEntry(c, 'resourceProfile', request.resourceProfileRef, undefined, '/resourceProfileRef');
-      const connectorVersions = await this.#connectors(c, request, program);
-      const modelProfiles = await this.#models(c, request, program);
+      checkConnectors(request, program, resolved);
+      checkModels(modelProfiles, program);
+      if (resolved.catalog.assets[this.#fundingAsset]?.decimals !== 6) {
+        throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `The paper funding asset ${this.#fundingAsset} is not an enabled six-decimal asset on ${request.networkRef}.`, { fieldPath: '/networkRef' });
+      }
+      await this.#admit(c, tenantId, undefined);
 
       // The simulation account: virtual trading USD and the MON reserve from the saved paper budget.
       const session = await c.query<{ next: number }>('select coalesce(max(session), 0) + 1 as next from simulation_accounts where tenant_id = $1 and agent_id = $2', [tenantId, agentId]);
       const simulationAccountId = newId();
       await c.query('insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, $2, $3, $4)', [tenantId, simulationAccountId, agentId, session.rows[0]!.next]);
       const budget = agent.paper_budget as { tradingUsdMicros: string; monReserveAtomic: string };
-      for (const [asset, amount] of Object.keys(this.#catalog.assets).map((asset) => [asset, asset === this.#fundingAsset ? budget.tradingUsdMicros : asset === 'paper.MON' ? budget.monReserveAtomic : '0'] as const)) {
+      for (const [asset, amount] of Object.keys(resolved.catalog.assets).map((asset) => [asset, asset === this.#fundingAsset ? budget.tradingUsdMicros : asset === 'paper.MON' ? budget.monReserveAtomic : '0'] as const)) {
         await c.query('insert into simulation_balances (tenant_id, account_id, asset_ref, available) values ($1, $2, $3, $4)', [tenantId, simulationAccountId, asset, amount]);
       }
       let deployed;
       try {
         deployed = await this.#runtime.deployIn(c, {
-          tenantId, agentId, strategyRevisionId: request.strategyRevisionId, mode: 'paper', catalog: this.#catalog, connectorVersions, modelProfiles,
+          tenantId, agentId, strategyRevisionId: request.strategyRevisionId, mode: 'paper', catalog: resolved.catalog, catalogPins: resolved.pins, connectorVersions, modelProfiles,
           runtimeImageDigest: this.#image, networkRef: request.networkRef, policyVersion: request.policyVersion, budgetVersion: request.budgetVersion,
           resourceProfileRef: request.resourceProfileRef, estimateId: request.estimateId, simulationAccountId, actor: { kind: 'user', id: tenantId },
         });
@@ -161,10 +175,14 @@ export class LifecycleService {
   async control(tenantId: string, agentId: string, kind: 'pause' | 'resume' | 'stop', key: string): Promise<Operation> {
     return this.#idempotent(tenantId, `POST /v1/agents/${agentId}/${kind}`, key, { kind }, async (c) => {
       await this.#agent(c, tenantId, agentId);
-      const open = await c.query<{ id: string }>('select id from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3 for update', [tenantId, agentId, 'stopped']);
+      const open = await c.query<{ id: string }>('select id from deployments where tenant_id = $1 and agent_id = $2 and desired_state <> $3 for no key update', [tenantId, agentId, 'stopped']);
       const deploymentId = open.rows[0]?.id;
       if (!deploymentId) throw new ControlError(409, 'REVISION_CONFLICT', 'This agent has no open deployment.');
       const actor: AuditActor = { kind: 'user', id: tenantId };
+      if (kind === 'resume') {
+        await this.#checkPins(c, tenantId, deploymentId);
+        await this.#admit(c, tenantId, deploymentId);
+      }
       try {
         if (kind === 'pause') await this.#runtime.pauseIn(c, deploymentId, actor);
         else if (kind === 'resume') await this.#runtime.resumeIn(c, deploymentId, actor);
@@ -174,6 +192,11 @@ export class LifecycleService {
       }
       return this.#operation(c, tenantId, agentId, deploymentId, kind);
     });
+  }
+
+  /** GET /v1/quota: the tenant's paper sandbox usage and limits (issue #17). */
+  async quota(tenantId: string): Promise<Record<string, unknown>> {
+    return quotaDocument(this.#pool, tenantId, this.#now());
   }
 
   async operation(tenantId: string, id: string): Promise<Operation> {
@@ -194,6 +217,7 @@ export class LifecycleService {
     return {
       schemaVersion: 'agent-deployment/1', agentId, deploymentId: d.id, generation: String(d.generation), mode: d.mode, desiredState: d.desired_state,
       strategyRevisionId: d.strategy_revision_id, manifestHash: d.manifest_hash, ...(d.simulation_account_id ? { simulationAccountId: d.simulation_account_id } : {}), updatedAt: iso(d.updated_at),
+      ...(d.desired_state === 'stopping' ? { openIntents: await this.#openIntents(d.id) } : {}),
     };
   }
 
@@ -231,13 +255,28 @@ export class LifecycleService {
     };
   }
 
-  /** audit-event/2 rows for the agent after a sequence (the SSE cursor), oldest first. */
+  /**
+   * audit-event/2 rows for the agent after a sequence (the SSE cursor), oldest first. Cursor 0 means "from the
+   * oldest kept event". A cursor below the tenant's retention floor throws CURSOR_EXPIRED with the sequence to
+   * resume from (D57): events after it may have been pruned, and an empty page must not imply none occurred.
+   */
   async events(tenantId: string, agentId: string, after: bigint, limit: number): Promise<Record<string, unknown>[]> {
+    // One statement, one snapshot: the floor and the page cannot straddle a concurrent prune.
     const { rows } = await this.#pool.query(
-      'select * from audit_events where tenant_id = $1 and agent_id = $2 and sequence > $3 order by sequence limit $4',
+      `with floor as (select coalesce((select retained_after from tenant_streams where tenant_id = $1), 0) as retained_after)
+       select floor.retained_after as floor_sequence, e.* from floor
+       left join lateral (
+         select * from audit_events
+         where tenant_id = $1 and agent_id = $2 and sequence > greatest($3::bigint, floor.retained_after)
+         order by sequence limit $4
+       ) e on true`,
       [tenantId, agentId, after.toString(), limit],
     );
-    return rows.map((e) => ({
+    const floor = BigInt(rows[0].floor_sequence);
+    if (after > 0n && after < floor) {
+      throw new ControlError(410, 'CURSOR_EXPIRED', 'Older activity was removed by retention; reload history and resume from the oldest kept event.', { details: { resumeFrom: floor.toString() } });
+    }
+    return rows.filter((e) => e.sequence !== null).map((e) => ({
       schemaVersion: 'audit-event/2', sequence: String(e.sequence), tenantId: e.tenant_id,
       ...(e.agent_id ? { agentId: e.agent_id } : {}), ...(e.deployment_id ? { deploymentId: e.deployment_id } : {}),
       ...(e.run_id ? { runId: e.run_id } : {}), ...(e.intent_id ? { intentId: e.intent_id } : {}),
@@ -247,14 +286,12 @@ export class LifecycleService {
 
   /** Latest enabled paper versions of connectors and model profiles, for building a deployment request. */
   async paperVersions(): Promise<{ connectors: Record<string, string>; modelProfiles: Record<string, string> }> {
-    const { rows } = await this.#pool.query<{ kind: string; ref: string; version: string }>(
-      `select distinct on (kind, ref) kind, ref, version from catalog_versions
-       where kind in ('connector', 'modelProfile') and 'paper' = any(modes) and disabled_reason is null
-       order by kind, ref, string_to_array(version, '.')::int[] desc`,
-    );
-    const out = { connectors: {} as Record<string, string>, modelProfiles: {} as Record<string, string> };
-    for (const row of rows) (row.kind === 'connector' ? out.connectors : out.modelProfiles)[row.ref] = row.version;
-    return out;
+    return this.#catalog.latestVersions(this.#pool, 'paper');
+  }
+
+  /** The enabled paper catalog drafts compile against (every paper network, newest usable versions). */
+  async paperCatalog(): Promise<Catalog> {
+    return (await this.#catalog.resolve(this.#pool, { mode: 'paper' })).catalog;
   }
 
   async assertAgent(tenantId: string, agentId: string): Promise<void> {
@@ -272,54 +309,36 @@ export class LifecycleService {
     return rows[0];
   }
 
-  async #program(c: pg.PoolClient, tenantId: string, agentId: string, revisionId: string): Promise<CompiledStrategy> {
+  async #program(c: pg.PoolClient, tenantId: string, agentId: string, revisionId: string, catalog: Catalog): Promise<CompiledStrategy> {
     const { rows } = await c.query<{ ast: unknown }>('select ast from strategy_revisions where tenant_id = $1 and agent_id = $2 and id = $3', [tenantId, agentId, revisionId]);
     if (!rows[0]) throw new ControlError(422, 'UNKNOWN_REFERENCE', 'Strategy revision not found for this agent.', { fieldPath: '/strategyRevisionId' });
-    return compileStrategy(JSON.stringify(rows[0].ast), this.#catalog);
+    return compileStrategy(JSON.stringify(rows[0].ast), catalog);
   }
 
-  async #catalogEntry(c: pg.PoolClient, kind: string, ref: string, version: string | undefined, fieldPath: string): Promise<Record<string, unknown>> {
-    const { rows } = await c.query<{ definition: Record<string, unknown> }>(
-      `select definition from catalog_versions where kind = $1 and ref = $2 and ($3::text is null or version = $3) and 'paper' = any(modes) and disabled_reason is null
-       order by version desc limit 1`, [kind, ref, version ?? null],
-    );
-    if (!rows[0]) throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `${ref}${version ? `@${version}` : ''} is not an enabled paper ${kind}.`, { fieldPath });
-    return rows[0].definition;
+  async #openIntents(deploymentId: string): Promise<number> {
+    const { rows } = await this.#pool.query<{ n: string }>(`select count(*) as n from intents where deployment_id = $1 and state not in ('rejected', 'settled', 'failed', 'cancelled')`, [deploymentId]);
+    return Number(rows[0]!.n);
   }
 
-  /** Every selected connector is enabled; every connector and capability the strategy uses is selected. */
-  async #connectors(c: pg.PoolClient, request: DeploymentRequest, program: CompiledStrategy): Promise<Record<string, string>> {
-    const pins: Record<string, string> = {};
-    for (const [i, selection] of request.connectorSelections.entries()) {
-      // Legacy deterministic fixtures retain their historical non-semver catalog tags.
-      if (this.#catalog !== syntheticCatalog && this.#catalog.connectors[selection.ref]?.version !== selection.version) {
-        throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', 'Select the connector version in the current reviewed catalog.', { fieldPath: `/connectorSelections/${i}/version` });
-      }
-      const definition = await this.#catalogEntry(c, 'connector', selection.ref, selection.version, `/connectorSelections/${i}`);
-      const offered = new Set((definition['capabilities'] as string[] | undefined) ?? []);
-      const missing = selection.capabilities.find((capability) => !offered.has(capability));
-      if (missing) throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `${selection.ref} does not offer ${missing}.`, { fieldPath: `/connectorSelections/${i}/capabilities` });
-      pins[selection.ref] = selection.version;
-    }
-    for (const { connectorRef, capability } of usedCapabilities(program)) {
-      const selection = request.connectorSelections.find((s) => s.ref === connectorRef);
-      if (!selection || !selection.capabilities.includes(capability)) {
-        throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `The strategy needs ${capability} on ${connectorRef}; select it.`, { fieldPath: '/connectorSelections' });
-      }
-    }
-    return pins;
+  /** Paper sandbox admission (D58): per-user concurrency, session and daily time, global capacity; 429 with the reason. */
+  async #admit(c: pg.PoolClient, tenantId: string, deploymentId: string | undefined): Promise<void> {
+    const refused = await admitPaper(c, tenantId, deploymentId, this.#now());
+    if (refused) throw new ControlError(429, 'LIMIT_EXCEEDED', refused.message, { details: { reason: refused.reason } });
   }
 
-  async #models(c: pg.PoolClient, request: DeploymentRequest, program: CompiledStrategy): Promise<Record<string, string>> {
-    const pins: Record<string, string> = {};
-    for (const [i, selection] of request.modelProfiles.entries()) {
-      await this.#catalogEntry(c, 'modelProfile', selection.ref, selection.version, `/modelProfiles/${i}`);
-      pins[selection.ref] = selection.version;
-    }
-    for (const ref of usedModels(program)) {
-      if (!pins[ref]) throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `The strategy uses the model profile ${ref}; select it.`, { fieldPath: '/modelProfiles' });
-    }
-    return pins;
+  /** A resume refuses when a pinned catalog row was disabled (or removed) since launch. */
+  async #checkPins(c: pg.PoolClient, tenantId: string, deploymentId: string): Promise<void> {
+    const { rows } = await c.query<{ mode: 'paper' | 'live'; manifest: Record<string, unknown> | null }>('select mode, manifest from deployments where tenant_id = $1 and id = $2', [tenantId, deploymentId]);
+    const manifest = rows[0]?.manifest;
+    if (!rows[0] || !manifest) return;
+    const pins = manifest['schemaVersion'] === 'deployment-manifest/2'
+      ? manifest['catalogPins'] as { kind: CatalogKind; ref: string; version: string; contentHash: string }[]
+      // deployment-manifest/1 recorded only connector and model versions.
+      : [
+        ...Object.entries(manifest['connectorVersions'] as Record<string, string>).map(([ref, version]) => ({ kind: 'connector' as const, ref, version })),
+        ...Object.entries(manifest['modelProfiles'] as Record<string, string>).map(([ref, version]) => ({ kind: 'modelProfile' as const, ref, version })),
+      ];
+    await this.#catalog.checkPins(c, rows[0].mode, pins);
   }
 
   async #operation(c: pg.PoolClient, tenantId: string, agentId: string, deploymentId: string, kind: string): Promise<Operation> {
@@ -380,6 +399,37 @@ function runSummary(row: Record<string, unknown>): Record<string, unknown> {
     ...(error ? { error: { code: error.code, message: error.message, ...(error.nodeId ? { nodeId: error.nodeId } : {}) } } : {}),
     createdAt: iso(row['created_at'] as Date), updatedAt: iso(row['updated_at'] as Date),
   };
+}
+
+/** Exact {ref: version} pins from request selections; a ref selected twice is refused. */
+function pinsOf(selections: readonly { ref: string; version: string }[], fieldPath: string): Record<string, string> {
+  const pins: Record<string, string> = {};
+  for (const [i, selection] of selections.entries()) {
+    if (pins[selection.ref]) throw new ControlError(422, 'SCHEMA_INVALID', `${selection.ref} is selected twice.`, { fieldPath: `${fieldPath}/${i}` });
+    pins[selection.ref] = selection.version;
+  }
+  return pins;
+}
+
+/** Every selected capability is offered; every connector and capability the strategy uses is selected. */
+function checkConnectors(request: DeploymentRequest, program: CompiledStrategy, resolved: ResolvedCatalog): void {
+  for (const [i, selection] of request.connectorSelections.entries()) {
+    const offered = new Set(resolved.capabilities[selection.ref] ?? []);
+    const missing = selection.capabilities.find((capability) => !offered.has(capability));
+    if (missing) throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `${selection.ref} does not offer ${missing}.`, { fieldPath: `/connectorSelections/${i}/capabilities` });
+  }
+  for (const { connectorRef, capability } of usedCapabilities(program)) {
+    const selection = request.connectorSelections.find((s) => s.ref === connectorRef);
+    if (!selection || !selection.capabilities.includes(capability)) {
+      throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `The strategy needs ${capability} on ${connectorRef}; select it.`, { fieldPath: '/connectorSelections' });
+    }
+  }
+}
+
+function checkModels(pins: Readonly<Record<string, string>>, program: CompiledStrategy): void {
+  for (const ref of usedModels(program)) {
+    if (!pins[ref]) throw new ControlError(422, 'UNSUPPORTED_CAPABILITY', `The strategy uses the model profile ${ref}; select it.`, { fieldPath: '/modelProfiles' });
+  }
 }
 
 function walk(program: CompiledStrategy, visit: (node: Record<string, unknown>) => void): void {

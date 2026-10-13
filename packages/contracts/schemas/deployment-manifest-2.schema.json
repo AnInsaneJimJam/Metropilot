@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monad-hack.example/schemas/deployment-manifest-2.schema.json",
+  "title": "DeploymentManifest",
+  "description": "Immutable manifest of one deployment, deployment-manifest/2 (architecture.md section 4; supersedes /1 for new deployments, decision D55): every pinned input a runtime and executor act on, plus catalogPins, the exact catalog_versions rows (kind, ref, version, content hash) the deployment's catalog was resolved from. Its JCS SHA-256 is the assignment's manifestHash. Contains references and hashes only: no secrets, URLs, programs or cloud specifications. A resume keeps the manifest and mints a new generation; a redeploy creates a new deployment and manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "deploymentId",
+    "agentId",
+    "mode",
+    "networkRef",
+    "strategyRevisionId",
+    "strategyHash",
+    "catalogHash",
+    "catalogPins",
+    "connectorVersions",
+    "modelProfiles",
+    "resourceProfileRef",
+    "runtimeImageDigest",
+    "budgetVersion",
+    "policyVersion",
+    "estimateId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "deployment-manifest/2"
+    },
+    "deploymentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "agentId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "mode": {
+      "$ref": "common.schema.json#/$defs/mode"
+    },
+    "networkRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "strategyRevisionId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "strategyHash": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "catalogHash": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "catalogPins": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "description": "Every catalog_versions row the deployment's catalog artifact (catalogHash) was built from, ordered by kind then ref. One version per (kind, ref).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "ref",
+          "version",
+          "contentHash"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "network",
+              "connector",
+              "asset",
+              "feed",
+              "modelProfile",
+              "resourceProfile"
+            ]
+          },
+          "ref": {
+            "$ref": "common.schema.json#/$defs/catalogRef"
+          },
+          "version": {
+            "$ref": "common.schema.json#/$defs/semver"
+          },
+          "contentHash": {
+            "$ref": "common.schema.json#/$defs/hash32"
+          }
+        }
+      }
+    },
+    "connectorVersions": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/catalogRef"
+      },
+      "additionalProperties": {
+        "$ref": "common.schema.json#/$defs/semver"
+      },
+      "description": "Pinned connector versions by catalog reference."
+    },
+    "modelProfiles": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/catalogRef"
+      },
+      "additionalProperties": {
+        "$ref": "common.schema.json#/$defs/semver"
+      },
+      "description": "Pinned model profile versions by catalog reference; empty when the strategy uses no AI."
+    },
+    "resourceProfileRef": {
+      "$ref": "common.schema.json#/$defs/catalogRef"
+    },
+    "runtimeImageDigest": {
+      "$ref": "common.schema.json#/$defs/hash32"
+    },
+    "budgetVersion": {
+      "$ref": "common.schema.json#/$defs/recordVersion"
+    },
+    "policyVersion": {
+      "$ref": "common.schema.json#/$defs/recordVersion"
+    },
+    "estimateId": {
+      "$ref": "common.schema.json#/$defs/uuidv7"
+    },
+    "simulationAccountId": {
+      "$ref": "common.schema.json#/$defs/uuidv7",
+      "description": "Paper only: the simulation account the deployment trades in."
+    }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "mode": {
+        "const": "paper"
+      }
+    },
+    "required": [
+      "mode"
+    ]
+  },
+  "then": {
+    "required": [
+      "simulationAccountId"
+    ]
+  },
+  "else": {
+    "not": {
+      "required": [
+        "simulationAccountId"
+      ]
+    }
+  }
+}

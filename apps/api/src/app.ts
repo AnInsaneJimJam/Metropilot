@@ -1,6 +1,7 @@
 import Fastify, { type FastifyRequest } from "fastify";
 import { validate } from "@monad-hack/contracts";
 import { LanguageError, syntheticCatalog } from "@monad-hack/strategy";
+import type { Catalog } from "@monad-hack/strategy";
 import { ControlError, newId, validateDraft } from "./control.ts";
 import type { ControlStore } from "./store.ts";
 import type { LifecycleService } from "./lifecycle.ts";
@@ -48,11 +49,20 @@ function requestTenant(request: FastifyRequest): string {
 
 export interface ApiOptions {
   store: ControlStore;
-  catalog?: import("@monad-hack/strategy").Catalog;
   /** Production callers must supply a verified session resolver. Never accept a tenant from the body. */
   authenticate: (cookie: string | undefined) => Promise<string | undefined>;
   origin: string;
+  /**
+   * The enabled paper catalog drafts compile against; production resolves it from catalog_versions (issue #18).
+   * Absent only in tests that never compile: the synthetic rehearsal catalog, labelled synthetic.
+   */
+  catalog?: () => Promise<Catalog>;
   localSession?: () => Promise<{ cookie: string; tenant: string }>;
+  /** Hosted sign-in (issue #16): exchanges a verified provider token for a session cookie. Never with localSession. */
+  identity?: {
+    login: (providerToken: string) => Promise<{ cookie: string; expiresAt: string }>;
+    logout: (cookie: string | undefined) => Promise<string>;
+  };
   /** Deployment lifecycle and history (API-2, API-6); absent means launch is unavailable. */
   lifecycle?: LifecycleService;
   /** Live funds: wallet, balances, allocation, quotes, step-up and withdrawals (G5). */
@@ -63,6 +73,9 @@ export interface ApiOptions {
 
 const UUIDV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export function createApp(options: ApiOptions) {
+  const draftCatalog = options.catalog ?? (async () => syntheticCatalog);
+  if (options.identity && options.localSession)
+    throw new Error("A hosted identity provider and the local development session cannot be combined.");
   const app = Fastify({
     bodyLimit: 512 * 1024,
     genReqId: newId,
@@ -103,6 +116,9 @@ export function createApp(options: ApiOptions) {
         "FORBIDDEN",
         "This request origin is not allowed.",
       );
+    // Hosted cookie sessions: every mutation must name the allowed origin (CSRF), not merely omit a foreign one.
+    if (options.identity && !["GET", "HEAD", "OPTIONS"].includes(request.method) && !request.headers.origin)
+      throw new ControlError(403, "FORBIDDEN", "This request origin is not allowed.");
     const now = Date.now();
     if (rates.size >= 1000)
       for (const [ip, rate] of rates)
@@ -176,6 +192,46 @@ export function createApp(options: ApiOptions) {
       tenant: session.tenant,
     };
   });
+  // Sign-in has its own, tighter per-IP bucket (security.md "Identity and authorization").
+  const logins = new Map<string, { time: number; count: number }>();
+  app.post(
+    "/v1/auth/session",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["token"],
+          properties: { token: { type: "string", minLength: 16, maxLength: 8192 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!options.identity)
+        throw new ControlError(404, "NOT_FOUND", "Sign-in is not available on this server.");
+      const now = Date.now();
+      for (const [ip, rate] of logins) if (now - rate.time >= 60_000) logins.delete(ip);
+      const rate = logins.get(request.ip);
+      if (!rate && logins.size >= 1000)
+        throw new ControlError(429, "RATE_LIMITED", "Too many sign-in attempts. Try again in a minute.");
+      if (!rate) logins.set(request.ip, { time: now, count: 1 });
+      else if (++rate.count > 10)
+        throw new ControlError(429, "RATE_LIMITED", "Too many sign-in attempts. Try again in a minute.");
+      const session = await options.identity.login((request.body as { token: string }).token);
+      reply.header("Set-Cookie", session.cookie);
+      return { mode: "hosted", expiresAt: session.expiresAt };
+    },
+  );
+  app.delete("/v1/auth/session", {
+    // Sign-out has no body; clients that always send a JSON content type must not get an empty-body error.
+    onRequest: async (request) => {
+      if (!request.headers["content-length"] || request.headers["content-length"] === "0") delete request.headers["content-type"];
+    },
+  }, async (request, reply) => {
+    if (!options.identity)
+      throw new ControlError(404, "NOT_FOUND", "Sign-in is not available on this server.");
+    reply.header("Set-Cookie", await options.identity.logout(request.headers.cookie)).code(204);
+  });
   app.register(async (routes) => {
     routes.addHook("preHandler", async (request) => {
       const tenant = await options.authenticate(request.headers.cookie);
@@ -190,7 +246,7 @@ export function createApp(options: ApiOptions) {
     routes.get("/v1/catalog", async () => ({
       mode: "paper",
       synthetic: options.catalog === undefined,
-      catalog: options.catalog ?? syntheticCatalog,
+      catalog: await draftCatalog(),
       capabilities: { save: true, deploy: Boolean(options.lifecycle), cloudExecution: false, live: false, custody: Boolean(options.funds?.liveCustody), localFaucet: Boolean(options.funds?.hasLocalFaucet) },
       ...(options.lifecycle ? { paperVersions: await options.lifecycle.paperVersions() } : {}),
     }));
@@ -235,7 +291,7 @@ export function createApp(options: ApiOptions) {
           checked.issues[0]!.message,
           { fieldPath: checked.issues[0]!.fieldPath },
         );
-      const p = await validateDraft(checked.value, options.catalog);
+      const p = await validateDraft(checked.value, await draftCatalog());
       return {
         valid: true,
         hash: p.hash,
@@ -278,7 +334,7 @@ export function createApp(options: ApiOptions) {
           "MALFORMED_REQUEST",
           "If-Match must contain the saved version.",
         );
-      const program = await validateDraft(checked.value, options.catalog);
+      const program = await validateDraft(checked.value, await draftCatalog());
       return options.store.save(
         requestTenant(request),
         key,
@@ -338,6 +394,7 @@ export function createApp(options: ApiOptions) {
         return operation;
       });
     }
+    routes.get("/v1/quota", async (request) => lifecycle().quota(requestTenant(request)));
     routes.get("/v1/operations/:id", async (request) =>
       lifecycle().operation(requestTenant(request), (request.params as { id: string }).id));
     routes.get("/v1/agents/:id/deployment", async (request) =>
@@ -382,15 +439,27 @@ export function createApp(options: ApiOptions) {
         open = false;
       });
       let idle = 0;
+      const cookie = request.headers.cookie;
       while (open) {
+        // Access is rechecked before every page: logout, session expiry or a suspended tenant ends the stream.
+        const still = await options.authenticate(cookie).catch(() => undefined);
+        if (still !== tenant || !(await options.store.active(tenant).catch(() => false))) {
+          out.write("event: unauthenticated\ndata: {}\n\n");
+          break;
+        }
         try {
           for (const event of await service.events(tenant, id, cursor, 100)) {
             out.write(`id: ${String(event.sequence)}\nevent: audit\ndata: ${JSON.stringify(event)}\n\n`);
             cursor = BigInt(String(event.sequence));
             idle = 0;
           }
-        } catch {
-          out.write("event: unavailable\ndata: {}\n\n");
+        } catch (error) {
+          // Retention removed events after the cursor (D57): tell the client to reload history and resume from the
+          // floor. The id line moves the browser's Last-Event-ID there, so its automatic reconnect has no gap.
+          if (error instanceof ControlError && error.code === "CURSOR_EXPIRED") {
+            const resumeFrom = (error.details as { details: { resumeFrom: string } }).details.resumeFrom;
+            out.write(`id: ${resumeFrom}\nevent: reset\ndata: ${JSON.stringify({ code: error.code, resumeFrom })}\n\n`);
+          } else out.write("event: unavailable\ndata: {}\n\n");
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, options.streamPollMillis ?? 500));

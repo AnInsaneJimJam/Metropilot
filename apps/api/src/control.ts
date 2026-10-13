@@ -3,12 +3,12 @@ import {
   compileWorkspace,
   compileStrategy,
   profileIssues,
-  syntheticCatalog,
   LanguageError,
   locateBlock,
 } from "@monad-hack/strategy";
 import { paperBudgetIssue } from "@monad-hack/contracts";
 import type { GeneratedContractMap } from "@monad-hack/contracts";
+import type { Catalog } from "@monad-hack/strategy";
 export type SaveStrategy = GeneratedContractMap["controlSave"];
 export type SavedAgent = GeneratedContractMap["controlAgent"];
 export class ControlError extends Error {
@@ -43,7 +43,8 @@ export function checkBudget(request: SaveStrategy): void {
       fieldPath: "/budget",
     });
 }
-export async function validateDraft(request: SaveStrategy, catalog: import("@monad-hack/strategy").Catalog = syntheticCatalog) {
+/** Server compilation of a draft against the enabled paper catalog (resolved from catalog_versions, issue #18). */
+export async function validateDraft(request: SaveStrategy, catalog: Catalog) {
   if (!request.name.trim())
     throw new ControlError(
       400,

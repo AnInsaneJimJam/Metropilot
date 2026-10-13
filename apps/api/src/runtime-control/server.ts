@@ -5,7 +5,7 @@ import { PaperBrokerService } from '../broker-service.ts';
 import { MarketIngestion, RpcMarketSource } from '../market-ingestion.ts';
 import { WS_RPC, rpcClient, MainnetMarkets } from '@monad-hack/connectors';
 // Local entry point for the runtime-facing internal API plus its worker loop (schedule ticks, lease reclaim,
-// executor outbox consumption).
+// executor outbox consumption, paper quota enforcement, finishing stopping deployments).
 // Development only: loopback, a header-based workload identity and no TLS. A hosted entry point must supply the
 // selected workload-identity mechanism (gate E02) and terminate TLS; this file refuses to run in production.
 import pg from 'pg';
@@ -85,7 +85,7 @@ const worker = setInterval(() => {
   if (busy) return;
   busy = true;
   // Schedules, lost leases and executor outbox → audit stream and resumed runs.
-  Promise.all([store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.meterHosting(), store.consumeBrokerResults(), kimi.recover(), broker?.allowance.settleKnown()])
+  Promise.all([store.tickSchedules(), store.reclaimExpiredLeases(), store.consumeExecutorOutbox(), store.meterHosting(), store.consumeBrokerResults(), kimi.recover(), broker?.allowance.settleKnown(), store.enforcePaperQuotas(), store.finaliseStopping()])
     .catch((error: unknown) => console.error(`worker tick failed: ${(error as Error).name}`))
     .finally(() => { busy = false; });
 }, 1_000);

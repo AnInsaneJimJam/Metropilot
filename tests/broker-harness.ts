@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after } from "node:test";
 import pg from "pg";
-import { operationKey, validate } from "../packages/contracts/src/index.ts";
+import { contentHash, operationKey, validate } from "../packages/contracts/src/index.ts";
 import type {
   BrokerRequest,
   BrokerResult,
@@ -112,6 +112,12 @@ export async function brokerHarness(
     JSON.stringify(options.strategy ?? PRESETS.find((p) => p.id === "ai_gated_purchase")!.strategy),
     catalog,
   );
+  // This harness has no catalog rows (migrations only); its deployments pin the in-code entries they use.
+  const catalogPins = [
+    { kind: "network" as const, ref: "paper-monad", version: "1.0.0", contentHash: await contentHash(catalog.networks["paper-monad"]) },
+    { kind: "connector" as const, ref: "paper.uniswap", version: "1.0.0", contentHash: await contentHash(catalog.connectors["paper.uniswap"]) },
+    { kind: "modelProfile" as const, ref: "paper.kimi", version: "1.0.0", contentHash: await contentHash(catalog.modelProfiles["paper.kimi"]) },
+  ];
   async function waiting(
     assignment: RuntimeAssignment,
     checkpoint: RunCheckpoint,
@@ -187,6 +193,7 @@ export async function brokerHarness(
       strategyRevisionId: revisionId,
       mode: "paper",
       catalog,
+      catalogPins,
       connectorVersions: { "paper.uniswap": "1.0.0" },
       runtimeImageDigest: "0x" + "aa".repeat(32),
       networkRef: "paper-monad",

@@ -13,10 +13,12 @@ import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { after, describe, test } from 'node:test';
 import pg from 'pg';
-import { verifyCapability } from '../packages/contracts/src/capability.ts';
-import { validate } from '../packages/contracts/src/index.ts';
+import { signCapability, verifyCapability } from '../packages/contracts/src/capability.ts';
+import { contentHash, intentKey, validate } from '../packages/contracts/src/index.ts';
 import { PRESETS, syntheticCatalog, workspaceFromStrategy } from '../packages/strategy/src/index.ts';
 import { createApp } from '../apps/api/src/app.ts';
+import { pruneAudit } from '../apps/api/src/db/cli.ts';
+import { dailySeconds, sessionSeconds } from '../apps/api/src/quota.ts';
 import { migrate } from '../apps/api/src/db/migrate.ts';
 import { seedPaper } from '../apps/api/src/db/seed.ts';
 import { LifecycleService } from '../apps/api/src/lifecycle.ts';
@@ -102,8 +104,8 @@ async function stack(options: { dispatchInline?: boolean; mainnet?: boolean } = 
   const tenant = await controlStore.tenant(`stack-${randomBytes(4).toString('hex')}`);
   // The lifecycle clock can be skewed forward to expire estimates (estimate rows are immutable).
   const skew = { millis: 0 };
-  const lifecycle = new LifecycleService({ pool, runtime: runtimeStore, runtimeImageDigest: IMAGE, catalog, ...(options.mainnet ? { paperFundingAsset: 'paper.USDC' } : {}), now: () => new Date(Date.now() + skew.millis) });
-  const user = createApp({ store: controlStore, lifecycle, catalog, origin: 'http://127.0.0.1:5173', authenticate: async (cookie) => (cookie === 'me' ? tenant : undefined), streamPollMillis: 20 });
+  const lifecycle = new LifecycleService({ pool, runtime: runtimeStore, runtimeImageDigest: IMAGE, ...(options.mainnet ? { paperFundingAsset: 'paper.USDC' } : {}), now: () => new Date(Date.now() + skew.millis) });
+  const user = createApp({ store: controlStore, lifecycle, catalog: () => lifecycle.paperCatalog(), origin: 'http://127.0.0.1:5173', authenticate: async (cookie) => (cookie === 'me' ? tenant : undefined), streamPollMillis: 20 });
   await user.ready();
   const userOrigin = await (async () => { await user.listen({ host: '127.0.0.1', port: 0 }); closers.push(() => user.close()); return `http://127.0.0.1:${(user.server.address() as AddressInfo).port}`; })();
   const internal = createInternalApp({ broker: service, store: runtimeStore, authenticateWorkload: (h) => (typeof h['x-runtime-workload'] === 'string' ? h['x-runtime-workload'] : undefined), pollIntervalMillis: 20 });
@@ -138,8 +140,9 @@ async function stack(options: { dispatchInline?: boolean; mainnet?: boolean } = 
     const connector = presetId.startsWith('aave_') ? 'paper.aave' : presetId.startsWith('curve_') ? 'paper.curve' : 'paper.uniswap';
     const request = {
       schemaVersion: 'deployment/1', agentId, strategyRevisionId: saved.json.revisionId, mode: 'paper', networkRef: 'paper-monad',
-      connectorSelections: [{ ref: connector, version: options.mainnet ? catalog.connectors[connector]!.version : '1.0.0', capabilities: options.mainnet ? [...catalog.connectors[connector]!.actions] : ['price.read', 'swap.exactInput'] }],
-      modelProfiles: presetId === 'ai_gated_purchase' ? [{ ref: 'paper.kimi', version: '1.0.0' }] : [],
+      // Mainnet presets take the newest enabled version, as the web does; synthetic ones pin their 1.0.1 definition.
+      connectorSelections: [{ ref: connector, version: options.mainnet ? (await call('GET', '/catalog')).json.paperVersions.connectors[connector] : '1.0.1', capabilities: options.mainnet ? [...catalog.connectors[connector]!.actions] : ['price.read', 'swap.exactInput'] }],
+      modelProfiles: presetId === 'ai_gated_purchase' ? [{ ref: 'paper.kimi', version: '1.1.0' }] : [],
       resourceProfileRef: 'paper-small-v1', budgetVersion: estimate.json.budgetVersion, policyVersion: estimate.json.policyVersion, estimateId: estimate.json.id,
     };
     return { agentId, request };
@@ -310,6 +313,250 @@ describe('paper stack end to end', { skip }, () => {
     assert.ok(BigInt(after[0]!) > BigInt(first[0]!), 'resumes strictly after the cursor');
   });
 
+  test('retention (#19): a pruned cursor gets a reset on REST and SSE; resuming from it has no gap or duplicate', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    // Three events older than the 30-day retention, written through the stream sequence like any other.
+    const old = new Date(Date.now() - 40 * 86_400_000).toISOString();
+    for (const n of [1, 2, 3]) {
+      const seq = await s.pool.query<{ last_sequence: string }>(
+        `insert into tenant_streams (tenant_id, last_sequence) values ($1, 1) on conflict (tenant_id) do update set last_sequence = tenant_streams.last_sequence + 1 returning last_sequence`, [s.tenant]);
+      await s.pool.query(
+        `insert into audit_events (tenant_id, sequence, agent_id, actor_kind, trace_id, type, payload, occurred_at, source) values ($1, $2, $3, 'controlPlane', $4, 'run.step', '{}', $5, $6)`,
+        [s.tenant, seq.rows[0]!.last_sequence, agentId, 'cd'.repeat(16), old, `old-event-${n}`]);
+    }
+    await s.launch(agentId, request);
+    await s.call('POST', `/agents/${agentId}/pause`, undefined, { 'idempotency-key': 'pause-retention' });
+    const before = (await s.call('GET', `/agents/${agentId}/events?limit=100`)).json.items.map((e: any) => e.sequence);
+    assert.deepEqual(before.slice(0, 3), ['1', '2', '3']);
+
+    assert.deepEqual(await pruneAudit(s.pool, 30), { tenants: 1, removed: 3 });
+    const kept = before.slice(3);
+    // REST: a cursor inside the pruned range is refused with where to resume; no cursor and the floor both read the rest.
+    const expired = await s.call('GET', `/agents/${agentId}/events?after=1`);
+    assert.equal(expired.status, 410);
+    assert.ok(validate('error', expired.json).ok, JSON.stringify(expired.json));
+    assert.equal(expired.json.code, 'CURSOR_EXPIRED');
+    assert.equal(expired.json.details.resumeFrom, '3');
+    assert.deepEqual((await s.call('GET', `/agents/${agentId}/events?limit=100`)).json.items.map((e: any) => e.sequence), kept);
+    assert.deepEqual((await s.call('GET', `/agents/${agentId}/events?after=3&limit=100`)).json.items.map((e: any) => e.sequence), kept);
+
+    // SSE: the reset names the floor (also as its id, so a browser reconnect resumes there) and ends the stream.
+    const stream = async (lastEventId: string, until: (text: string) => boolean) => {
+      const controller = new AbortController();
+      const response = await fetch(`${s.userOrigin}/v1/agents/${agentId}/stream`, { headers: { cookie: 'me', 'last-event-id': lastEventId }, signal: controller.signal });
+      const reader = response.body!.getReader();
+      let text = '';
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        text += new TextDecoder().decode(chunk.value);
+        if (until(text)) break;
+      }
+      controller.abort();
+      return text;
+    };
+    const reset = await stream('2', () => false);
+    assert.match(reset, /^id: 3\nevent: reset\ndata: \{"code":"CURSOR_EXPIRED","resumeFrom":"3"\}$/m);
+    assert.doesNotMatch(reset, /event: audit/);
+    const resumed = await stream('3', (text) => [...text.matchAll(/^id: (\d+)$/gm)].length >= kept.length);
+    assert.deepEqual([...resumed.matchAll(/^id: (\d+)$/gm)].map((m) => m[1]), kept, 'every kept event exactly once');
+  });
+
+  test('quota (#17): one running paper agent per user; launch and resume over it are refused with the reason', async () => {
+    const s = await stack();
+    const a = await s.draft();
+    const b = await s.draft('scheduled_purchase');
+    assert.equal((await s.launch(a.agentId, a.request)).status, 202);
+    const refused = await s.launch(b.agentId, b.request);
+    assert.equal(refused.status, 429, JSON.stringify(refused.json));
+    assert.ok(validate('error', refused.json).ok, JSON.stringify(refused.json));
+    assert.equal(refused.json.code, 'LIMIT_EXCEEDED');
+    assert.equal(refused.json.details.reason, 'QUOTA_CONCURRENCY');
+    assert.match(refused.json.message, /one paper agent|pause or stop/i);
+    const quota = await s.call('GET', '/quota');
+    assert.ok(validate('paperQuota', quota.json).ok, JSON.stringify(quota.json));
+    assert.deepEqual(quota.json.concurrentAgents, { used: 1, limit: 1 });
+    assert.equal(quota.json.sessions[0].agentId, a.agentId);
+    assert.equal(quota.json.sessionSecondsLimit, 3600);
+    // Pausing A frees the slot; then A cannot resume while B runs.
+    await s.call('POST', `/agents/${a.agentId}/pause`, undefined, { 'idempotency-key': 'pause-quota-a' });
+    const fresh = await s.call('POST', `/agents/${b.agentId}/estimates`, {});
+    assert.equal((await s.launch(b.agentId, { ...b.request, estimateId: fresh.json.id })).status, 202);
+    const resume = await s.call('POST', `/agents/${a.agentId}/resume`, undefined, { 'idempotency-key': 'resume-quota-a' });
+    assert.equal(resume.status, 429);
+    assert.equal(resume.json.details.reason, 'QUOTA_CONCURRENCY');
+    assert.equal((await s.call('GET', `/agents/${a.agentId}/deployment`)).json.desiredState, 'paused');
+  });
+
+  test('quota (#17): two concurrent launches of different agents → exactly one is admitted', async () => {
+    const s = await stack();
+    const [a, b] = [await s.draft(), await s.draft('scheduled_purchase')];
+    const results = await Promise.all([s.launch(a.agentId, a.request), s.launch(b.agentId, b.request)]);
+    assert.deepEqual(results.map((r) => r.status).sort(), [202, 429], JSON.stringify(results.map((r) => r.json)));
+    const active = await s.pool.query(`select 1 from deployments where desired_state = 'active'`);
+    assert.equal(active.rowCount, 1);
+  });
+
+  test('quota (#17): the global admission cap and the daily limit refuse launches with their reasons', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    await s.pool.query('update platform_limits set paper_active_global = 0');
+    const full = await s.launch(agentId, request);
+    assert.equal(full.status, 429);
+    assert.equal(full.json.details.reason, 'ADMISSION_FULL');
+    assert.equal((await s.call('GET', '/quota')).json.admissionOpen, false);
+    await s.pool.query('update platform_limits set paper_active_global = 10, paper_daily_minutes = 0');
+    const daily = await s.launch(agentId, request);
+    assert.equal(daily.status, 429);
+    assert.equal(daily.json.details.reason, 'QUOTA_DAILY');
+    assert.match(daily.json.message, /midnight UTC/);
+    assert.equal((await s.pool.query('select 1 from deployments')).rowCount, 0, 'a refused launch leaves nothing behind');
+    // A session limit of zero refuses the launch itself instead of starting a session that can never run.
+    await s.pool.query('update platform_limits set paper_daily_minutes = 120, paper_session_minutes = 0');
+    const session = await s.launch(agentId, request);
+    assert.equal(session.status, 429);
+    assert.equal(session.json.details.reason, 'QUOTA_SESSION');
+    assert.equal((await s.pool.query('select 1 from deployments')).rowCount, 0);
+  });
+
+  test('quota (#17): a used-up session refuses new runs, the sweep pauses it with the reason, resume is refused', async () => {
+    const s = await stack();
+    await s.observe();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    const intervals = async () => (await s.pool.query<{ generation: number; open: boolean }>('select generation, ended_at is null as open from paper_active_intervals order by generation')).rows.map((r) => [r.generation, r.open]);
+    assert.deepEqual(await intervals(), [[1, true]]);
+    // 61 minutes of this session have passed.
+    await s.pool.query(`update paper_active_intervals set started_at = now() - interval '61 minutes'`);
+    assert.deepEqual((await s.runtimeStore.tickSchedules()).map((f) => f.reason), ['QUOTA_SESSION']);
+    assert.equal((await s.pool.query('select 1 from runs')).rowCount, 0, 'no run beyond the session');
+    const skipped = await s.pool.query<{ reason: string }>(`select payload ->> 'reasonCode' as reason from audit_events where type = 'observation.skipped'`);
+    assert.deepEqual(skipped.rows.map((r) => r.reason), ['QUOTA_SESSION']);
+    const paused = await s.runtimeStore.enforcePaperQuotas();
+    assert.deepEqual(paused.map((p) => p.reason), ['QUOTA_SESSION']);
+    assert.deepEqual(await s.runtimeStore.enforcePaperQuotas(), [], 'a paused deployment is left alone');
+    assert.deepEqual(await intervals(), [[1, false]]);
+    const event = await s.pool.query<{ payload: { to: string; reasonCode: string }; actor_kind: string }>(`select payload, actor_kind from audit_events where type = 'deployment.stateChanged' order by sequence desc limit 1`);
+    assert.deepEqual([event.rows[0]!.payload.to, event.rows[0]!.payload.reasonCode, event.rows[0]!.actor_kind], ['paused', 'QUOTA_SESSION', 'system']);
+    const resume = await s.call('POST', `/agents/${agentId}/resume`, undefined, { 'idempotency-key': 'resume-session' });
+    assert.equal(resume.status, 429);
+    assert.equal(resume.json.details.reason, 'QUOTA_SESSION');
+    // Stop and launch again: a new session (the daily allowance still has time left).
+    await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-session' });
+    const again = await s.call('POST', `/agents/${agentId}/estimates`, {});
+    const relaunch = await s.launch(agentId, { ...request, estimateId: again.json.id, policyVersion: again.json.policyVersion });
+    assert.equal(relaunch.status, 202, JSON.stringify(relaunch.json));
+  });
+
+  test('quota (#17): pause/resume open and close intervals; minutes split at UTC midnight', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    await s.call('POST', `/agents/${agentId}/pause`, undefined, { 'idempotency-key': 'pause-interval' });
+    await s.call('POST', `/agents/${agentId}/resume`, undefined, { 'idempotency-key': 'resume-interval' });
+    const rows = await s.pool.query<{ generation: number; open: boolean; deployment_id: string }>('select generation, ended_at is null as open, deployment_id from paper_active_intervals order by generation');
+    assert.deepEqual(rows.rows.map((r) => [r.generation, r.open]), [[1, false], [2, true]]);
+    const deploymentId = rows.rows[0]!.deployment_id;
+    // A fixed past day: 23:30 → 00:45 across midnight, then 01:00 → 01:10.
+    await s.pool.query(
+      `insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at, ended_at) values
+       ($1, $2, 10, '2026-01-01T23:30:00Z', '2026-01-02T00:45:00Z'), ($1, $2, 11, '2026-01-02T01:00:00Z', '2026-01-02T01:10:00Z')`, [s.tenant, deploymentId]);
+    assert.equal(await dailySeconds(s.pool, s.tenant, new Date('2026-01-01T23:59:00Z')), 29 * 60);
+    assert.equal(await dailySeconds(s.pool, s.tenant, new Date('2026-01-02T12:00:00Z')), 55 * 60);
+    assert.equal(await dailySeconds(s.pool, s.tenant, new Date('2026-01-02T01:05:00Z')), 50 * 60, 'an interval is counted only up to now');
+    assert.equal(await sessionSeconds(s.pool, deploymentId, new Date('2026-01-02T12:00:00Z')), 85 * 60);
+  });
+
+  test('quota (#17): a sweep that crosses UTC midnight rechecks under the lock and does not pause for yesterday', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    const deploymentId = (await s.pool.query<{ id: string }>('select id from deployments where agent_id = $1', [agentId])).rows[0]!.id;
+    // Three hours used on 2026-01-05 (over the 120-minute day); the session limit is lifted so only the day matters.
+    await s.pool.query('update platform_limits set paper_session_minutes = 100000');
+    await s.pool.query(`insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at, ended_at) values ($1, $2, 10, '2026-01-05T21:00:00Z', '2026-01-05T23:59:00Z')`, [s.tenant, deploymentId]);
+    // The scan reads the clock at 23:59:59; by the time the deployment is locked it is past midnight.
+    const clock = ['2026-01-05T23:59:59.000Z'];
+    const sweeper = new RuntimeControlStore({ pool: s.pool, now: () => clock.shift() ?? '2026-01-06T00:00:01.000Z' });
+    assert.deepEqual(await sweeper.enforcePaperQuotas(), [], "yesterday's allowance does not pause today's agent");
+    assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'active');
+    // Still exhausted under the lock (same day): the sweep pauses with the reason.
+    const sameDay = new RuntimeControlStore({ pool: s.pool, now: () => '2026-01-05T23:59:59.000Z' });
+    assert.deepEqual((await sameDay.enforcePaperQuotas()).map((p) => p.reason), ['QUOTA_DAILY']);
+  });
+
+  test('drain-before-stop (#20): stop with an open paper intent stays stopping until the executor settles it', async () => {
+    const s = await stack({ dispatchInline: false });
+    await s.observe();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    await s.runtimeStore.tickSchedules();
+    assert.equal((await s.runtime().cycle()).outcome, 'waiting', 'the swap is admitted and reserved, not yet filled');
+    const intent = (await s.pool.query<{ id: string; state: string; request: Record<string, unknown>; deployment_id: string; generation: number; run_id: string }>('select id, state, request, deployment_id, generation, run_id from intents')).rows[0]!;
+    assert.equal(intent.state, 'reserved');
+
+    const stop = await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-drain-1' });
+    assert.equal(stop.status, 202);
+    assert.equal(stop.json.state, 'succeeded');
+    const stopping = await s.call('GET', `/agents/${agentId}/deployment`);
+    assert.ok(validate('agentDeployment', stopping.json).ok, JSON.stringify(stopping.json));
+    assert.deepEqual([stopping.json.desiredState, stopping.json.openIntents], ['stopping', 1]);
+    // Stop is idempotent while stopping; pause, resume and a new launch are refused with readable reasons.
+    assert.equal((await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-drain-2' })).status, 202);
+    for (const kind of ['pause', 'resume']) {
+      const refused = await s.call('POST', `/agents/${agentId}/${kind}`, undefined, { 'idempotency-key': `${kind}-while-stopping` });
+      assert.equal(refused.status, 409, kind);
+      assert.match(refused.json.message, /stopping/, kind);
+    }
+    const fresh = await s.call('POST', `/agents/${agentId}/estimates`, {});
+    const early = await s.launch(agentId, { ...request, estimateId: fresh.json.id, policyVersion: fresh.json.policyVersion });
+    assert.equal(early.status, 409);
+    assert.match(early.json.message, /still stopping/);
+
+    // The executor refuses a new intent for the stopping deployment, even with an unexpired capability.
+    const iat = Math.floor(Date.now() / 1000);
+    const token = signCapability({ aud: 'executor', tenantId: s.tenant, agentId, deploymentId: intent.deployment_id, generation: String(intent.generation), mode: 'paper', actions: ['swap.exactInput'], connectors: { 'paper.uniswap': '1.0.1' }, runId: intent.run_id, iat, exp: iat + 60, jti: '019a0000-0000-7000-8000-00000000d001' }, s.secret);
+    const other = { ...intent.request, iterationPath: [7] } as Record<string, unknown>;
+    other['logicalKey'] = await intentKey({ deploymentId: intent.deployment_id, generation: String(intent.generation), runId: intent.run_id, nodeId: String(other['nodeId']), iterationPath: [7] });
+    const refused = await s.executor.service.submit({ authorization: `Bearer ${token}`, idempotencyKey: String(other['logicalKey']), body: JSON.stringify(other) });
+    assert.ok('failure' in refused && refused.failure.reason === 'EXECUTOR_STALE_GENERATION', JSON.stringify(refused));
+
+    // Not stopped while the intent is open; the executor cancels the reserved intent, then the finaliser stops it.
+    assert.deepEqual(await s.runtimeStore.finaliseStopping(), []);
+    await s.executor.service.reconcile();
+    const ended = await s.pool.query<{ state: string }>('select state from intents');
+    assert.deepEqual(ended.rows.map((r) => r.state), ['cancelled']);
+    const holds = await s.pool.query<{ state: string }>('select state from simulation_reservations');
+    assert.deepEqual(holds.rows.map((r) => r.state), ['released'], 'the virtual hold is released');
+    await s.runtimeStore.consumeExecutorOutbox();
+    assert.deepEqual(await s.runtimeStore.finaliseStopping(), [intent.deployment_id]);
+    assert.deepEqual(await s.runtimeStore.finaliseStopping(), [], 'finishing is done once');
+    assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'stopped');
+    const changes = await s.pool.query<{ payload: Record<string, unknown> }>(`select payload from audit_events where type = 'deployment.stateChanged' order by sequence`);
+    assert.deepEqual(changes.rows.map((r) => r.payload['to']), ['active', 'stopping', 'stopped']);
+    assert.deepEqual([changes.rows[1]!.payload['reasonCode'], changes.rows[1]!.payload['openIntents']], ['STOP_DRAINING', 1]);
+    const again = await s.call('POST', `/agents/${agentId}/estimates`, {});
+    assert.equal((await s.launch(agentId, { ...request, estimateId: again.json.id, policyVersion: again.json.policyVersion })).status, 202);
+  });
+
+  test('drain-before-stop (#20): with nothing open a stop reaches stopped at once; a crash between the two resumes', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    await s.launch(agentId, request);
+    await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-direct-1' });
+    assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'stopped');
+    const changes = await s.pool.query<{ to: string }>(`select payload ->> 'to' as to from audit_events where type = 'deployment.stateChanged' order by sequence`);
+    assert.deepEqual(changes.rows.map((r) => r.to), ['active', 'stopping', 'stopped']);
+    // A process that died after writing stopping (simulated): the next finaliser tick completes the stop once.
+    const second = await s.draft('scheduled_purchase');
+    await s.launch(second.agentId, second.request);
+    const id = (await s.call('GET', `/agents/${second.agentId}/deployment`)).json.deploymentId as string;
+    await s.pool.query(`update deployments set desired_state = 'stopping' where id = $1`, [id]);
+    assert.deepEqual(await s.runtimeStore.finaliseStopping(), [id]);
+    assert.equal((await s.call('GET', `/agents/${second.agentId}/deployment`)).json.desiredState, 'stopped');
+  });
+
   test('a pending fill releases the runtime; reconcile → outbox → resume completes the run', async () => {
     const s = await stack({ dispatchInline: false });
     await s.observe();
@@ -356,6 +603,8 @@ describe('paper stack end to end', { skip }, () => {
     assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.generation, '2');
     assert.deepEqual(await s.runtimeStore.tickSchedules(), [], 'a resume does not re-run the slot the old generation ran');
     assert.equal((await s.call('GET', `/agents/${agentId}/runs`)).json.items[0].status, 'revoked');
+    const revoked = await s.pool.query<{ reason: string }>(`select payload ->> 'reasonCode' as reason from audit_events where type = 'run.stateChanged' and payload ->> 'to' = 'revoked'`);
+    assert.deepEqual(revoked.rows.map((r) => r.reason), ['GENERATION_REVOKED'], 'a revoked run carries a vocabulary reason');
     const stopped = await s.call('POST', `/agents/${agentId}/stop`, undefined, { 'idempotency-key': 'stop-000001' });
     assert.equal(stopped.status, 202);
     assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'stopped');
@@ -384,6 +633,75 @@ describe('paper stack end to end', { skip }, () => {
     assert.equal((await s.launch(agentId, { ...ok, networkRef: 'paper-monad', modelProfiles: [] }, 'launch-key-0001')).json.code, 'IDEMPOTENCY_CONFLICT');
   });
 
+  test('catalog resolution (#18): launch compiles against catalog_versions and the manifest pins every row it used', async () => {
+    const s = await stack();
+    const catalog = await s.call('GET', '/catalog');
+    assert.deepEqual(catalog.json.paperVersions, { connectors: { 'paper.aave': '1.1.0', 'paper.curve': '1.1.0', 'paper.kuru': '1.1.0', 'paper.uniswap': '1.2.0' }, modelProfiles: { 'paper.kimi': '1.1.0' } });
+    assert.deepEqual(catalog.json.catalog.connectors['paper.uniswap'], JSON.parse(JSON.stringify(marketCatalog.connectors['paper.uniswap'])), 'drafts compile against the newest (market) connector');
+    const { agentId, request } = await s.draft();
+    assert.equal((await s.launch(agentId, request)).status, 202);
+    const { rows } = await s.pool.query<{ manifest: Record<string, any>; catalog_hash: string; connector_versions: Record<string, string> }>(
+      'select manifest, catalog_hash, connector_versions from deployments where agent_id = $1', [agentId],
+    );
+    const manifest = rows[0]!.manifest;
+    assert.ok(validate('deploymentManifest2', manifest).ok, JSON.stringify(manifest));
+    assert.equal(manifest['catalogHash'], rows[0]!.catalog_hash);
+    assert.deepEqual(rows[0]!.connector_versions, { 'paper.uniswap': '1.0.1' });
+    const pins = manifest['catalogPins'] as { kind: string; ref: string; version: string; contentHash: string }[];
+    for (const pin of pins) {
+      const row = await s.pool.query('select 1 from catalog_versions where kind = $1 and ref = $2 and version = $3 and content_hash = $4', [pin.kind, pin.ref, pin.version, pin.contentHash]);
+      assert.equal(row.rowCount, 1, `${pin.kind} ${pin.ref}@${pin.version} is a real row`);
+    }
+    assert.deepEqual(pins.map((p) => `${p.kind}:${p.ref}@${p.version}`), [
+      'asset:paper.AUSD@1.0.0', 'asset:paper.MON@1.1.0', 'asset:paper.USD@1.1.0', 'asset:paper.USDC@1.0.0', 'asset:paper.WETH@1.1.0', 'asset:paper.WMON@1.0.0',
+      'connector:paper.aave@1.1.0', 'connector:paper.curve@1.1.0', 'connector:paper.kuru@1.1.0', 'connector:paper.uniswap@1.0.1',
+      'feed:paper.aave-ausd-usd@1.1.0', 'feed:paper.aave-usdc-usd@1.1.0', 'feed:paper.ausd-usdc@1.1.0', 'feed:paper.weth-usd@1.1.0', 'feed:paper.weth-usd-kuru@1.1.0',
+      'modelProfile:paper.kimi@1.1.0', 'network:paper-monad@1.2.0', 'resourceProfile:paper-small-v1@1.0.0',
+    ]);
+    // The catalog artifact the runtime fetches is the resolved catalog the manifest hashes.
+    const artifact = await s.pool.query<{ content_hash: string; body: string }>("select content_hash, body from artifacts where deployment_id = (select id from deployments where agent_id = $1) and kind = 'catalog'", [agentId]);
+    assert.equal(artifact.rows[0]!.content_hash, manifest['catalogHash']);
+    const body = JSON.parse(artifact.rows[0]!.body);
+    assert.deepEqual(body.connectors['paper.uniswap'], JSON.parse(JSON.stringify(syntheticCatalog.connectors['paper.uniswap'])), 'the pinned synthetic connector, not the newest');
+    assert.deepEqual(body.reads['paper.uniswap'], JSON.parse(JSON.stringify(syntheticCatalog.reads['paper.uniswap'])));
+  });
+
+  test('catalog resolution (#18): disabled, pre-format and live-only versions refuse launch and resume with the reason', async () => {
+    const s = await stack();
+    const { agentId, request } = await s.draft();
+    const disable = (ref: string, version: string, reason: string | null) =>
+      s.pool.query('update catalog_versions set disabled_reason = $3 where ref = $1 and version = $2', [ref, version, reason]);
+    const refused = async (body: unknown, needle: string) => {
+      const response = await s.launch(agentId, body);
+      assert.equal(response.status, 422, JSON.stringify(response.json));
+      assert.equal(response.json.code, 'UNSUPPORTED_CAPABILITY');
+      assert.ok(String(response.json.message).includes(needle), String(response.json.message));
+    };
+    await refused({ ...request, connectorSelections: [{ ...request.connectorSelections[0], version: '1.0.0' }] }, 'predates the complete catalog format');
+    await disable('paper.uniswap', '1.0.1', 'Venue paused for review.');
+    await refused(request, 'paper.uniswap@1.0.1 is disabled: Venue paused for review.');
+    await disable('paper.uniswap', '1.2.0', 'Pool under review.');
+    assert.equal((await s.call('GET', '/catalog')).json.paperVersions.connectors['paper.uniswap'], undefined, 'a disabled version is not offered');
+    await disable('paper.uniswap', '1.2.0', null);
+    await disable('paper.uniswap', '1.0.1', null);
+    // A live-only registry row is invisible to paper resolution even when well formed.
+    const live = { networkRef: 'monad-mainnet', capabilities: ['swap.exactInput'], adapterVersion: 'uniswap-v3/1', venue: 'uniswap-v3', actions: ['swap.exactInput'], reads: {} };
+    await s.pool.query("insert into catalog_versions (kind, ref, version, modes, content_hash, definition) values ('connector', 'live.uniswap', '1.0.0', '{live}', $1, $2)", [await contentHash(live), live]);
+    assert.equal((await s.call('GET', '/catalog')).json.catalog.connectors['live.uniswap'], undefined);
+    await refused({ ...request, connectorSelections: [...request.connectorSelections, { ref: 'live.uniswap', version: '1.0.0', capabilities: ['swap.exactInput'] }] }, 'live.uniswap@1.0.0 is not an enabled paper connector');
+
+    assert.equal((await s.launch(agentId, request)).status, 202);
+    assert.equal((await s.call('POST', `/agents/${agentId}/pause`, undefined, { 'idempotency-key': 'pause-0000001' })).status, 202);
+    await disable('paper.kimi', '1.1.0', 'Model profile withdrawn.');
+    const resume = await s.call('POST', `/agents/${agentId}/resume`, undefined, { 'idempotency-key': 'resume-000001' });
+    assert.equal(resume.status, 422, JSON.stringify(resume.json));
+    assert.equal(resume.json.code, 'UNSUPPORTED_CAPABILITY');
+    assert.match(String(resume.json.message), /paper\.kimi@1\.1\.0 was disabled: Model profile withdrawn\./);
+    assert.equal((await s.call('GET', `/agents/${agentId}/deployment`)).json.desiredState, 'paused');
+    await disable('paper.kimi', '1.1.0', null);
+    assert.equal((await s.call('POST', `/agents/${agentId}/resume`, undefined, { 'idempotency-key': 'resume-000002' })).status, 202);
+  });
+
   test('executor capabilities: the exchanged token verifies at the executor; the control bearer never does', async () => {
     const s = await stack();
     const { agentId, request } = await s.draft();
@@ -394,7 +712,7 @@ describe('paper stack end to end', { skip }, () => {
     const claims = verifyCapability(token, s.secret, Math.floor(Date.now() / 1000));
     assert.equal(claims.runId, offer.assignment!.run.runId);
     assert.equal(claims.deploymentId, offer.assignment!.deployment.deploymentId);
-    assert.deepEqual(claims.connectors, { 'paper.uniswap': '1.0.0' });
+    assert.deepEqual(claims.connectors, { 'paper.uniswap': '1.0.1' });
     assert.ok(claims.exp - claims.iat <= 300);
     assert.throws(() => verifyCapability(offer.capability!.bearer, s.secret, Math.floor(Date.now() / 1000)));
   });

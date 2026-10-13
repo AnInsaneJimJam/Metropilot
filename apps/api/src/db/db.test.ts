@@ -125,8 +125,8 @@ describe('database', { skip }, () => {
     assert.equal(await one('select 1 from strategy_revisions where tenant_id = $1 and agent_id = $2 and id = $3', [seedTenantId, request.agentId, request.strategyRevisionId]), 1);
     assert.equal(await one('select 1 from estimates where tenant_id = $1 and agent_id = $2 and id = $3 and strategy_revision_id = $4', [seedTenantId, request.agentId, request.estimateId, request.strategyRevisionId]), 1);
     assert.equal(await one('select 1 from policies where tenant_id = $1 and agent_id = $2 and version = $3', [seedTenantId, request.agentId, request.policyVersion]), 1);
-    assert.equal(await one(`select 1 from catalog_versions where kind = 'network' and ref = $1 and $2 = any(modes)`, [request.networkRef, request.mode]), 1);
-    assert.equal(await one(`select 1 from catalog_versions where kind = 'resourceProfile' and ref = $1 and $2 = any(modes)`, [request.resourceProfileRef, request.mode]), 1);
+    assert.equal(await one(`select distinct ref from catalog_versions where kind = 'network' and ref = $1 and $2 = any(modes)`, [request.networkRef, request.mode]), 1);
+    assert.equal(await one(`select distinct ref from catalog_versions where kind = 'resourceProfile' and ref = $1 and $2 = any(modes)`, [request.resourceProfileRef, request.mode]), 1);
     for (const selection of request.connectorSelections) {
       const { rows } = await db.query<{ definition: { capabilities: string[] } }>(
         `select definition from catalog_versions where kind = 'connector' and ref = $1 and version = $2`,
@@ -223,6 +223,17 @@ describe('database', { skip }, () => {
       await rejects(db.query(`insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, '019a0000-0000-7000-8000-0000000000af', $2, 1)`, [seedTenantId, otherAgent]), '23503');
     });
 
+    test('identities (0019): one tenant per provider subject; a session cannot name another tenant', async () => {
+      await db.query(`insert into identities (provider, subject, tenant_id) values ('privy', 'did:privy:cm0dbcheck00001', $1)`, [otherTenant]);
+      await rejects(db.query(`insert into identities (provider, subject, tenant_id) values ('privy', 'did:privy:cm0dbcheck00001', $1)`, [seedTenantId]), '23505');
+      const session = (tenant: string, hash = randomBytes(32), expires = "now() + interval '1 hour'") =>
+        db.query(`insert into sessions (token_hash, tenant_id, provider, subject, expires_at) values ($1, $2, 'privy', 'did:privy:cm0dbcheck00001', ${expires})`, [hash, tenant]);
+      await rejects(session(seedTenantId), '23503');
+      await rejects(session(otherTenant, randomBytes(16)), '23514');
+      await rejects(session(otherTenant, randomBytes(32), 'now()'), '23514');
+      await session(otherTenant);
+    });
+
     test('IDs must be UUIDv7', async () => {
       await rejects(db.query(`insert into tenants (id, auth_subject) values ('3f2b8c1e-9d4a-4f6b-8e2c-1a2b3c4d5e6f', 'synthetic|v4')`), '23514');
     });
@@ -259,6 +270,17 @@ describe('database', { skip }, () => {
         ),
         '23503',
       );
+    });
+
+    test('catalog pins (0018): a deployment-manifest/2 must carry its catalog pins; /1 stays valid', async () => {
+      const set = (manifest: unknown) => db.query('update deployments set manifest = $2 where id = $1', [deployment, manifest]);
+      await rejects(set({}), '23514');
+      await rejects(set({ schemaVersion: 'deployment-manifest/2' }), '23514');
+      await rejects(set({ schemaVersion: 'deployment-manifest/2', catalogPins: [] }), '23514');
+      await rejects(set({ schemaVersion: 'deployment-manifest/3', catalogPins: [{}] }), '23514');
+      await set({ schemaVersion: 'deployment-manifest/2', catalogPins: [{ kind: 'network', ref: 'paper-monad', version: '1.1.0', contentHash: H('ab') }] });
+      await set({ schemaVersion: 'deployment-manifest/1' });
+      await set(null);
     });
 
     test('run identities are 0x SHA-256 and unique; fencing tokens are unique per run', async () => {
@@ -416,7 +438,7 @@ describe('database', { skip }, () => {
     test('catalog versions are immutable except for being disabled', async () => {
       await rejects(db.query(`update catalog_versions set definition = '{}' where ref = 'paper.uniswap'`), 'P0001');
       await rejects(db.query(`delete from catalog_versions where ref = 'paper.uniswap'`), 'P0001');
-      const { rowCount } = await db.query(`update catalog_versions set disabled_reason = 'test withdrawal' where ref = 'paper.USD'`);
+      const { rowCount } = await db.query(`update catalog_versions set disabled_reason = 'test withdrawal' where ref = 'paper.USD' and version = '1.0.0'`);
       assert.equal(rowCount, 1);
     });
 
@@ -444,6 +466,65 @@ describe('database', { skip }, () => {
       await intent('019a0000-0000-7000-8000-0000000000b5', 'paper', 'reserved');
       // One logical effect: a second intent with the same logical key is refused.
       await rejects(intent('019a0000-0000-7000-8000-0000000000b6', 'paper', 'reserved', '0x' + 'b5'.repeat(32)), '23505');
+    });
+
+    test('audit retention (0020): only prune_audit_events deletes, only an old prefix, never money rows', async () => {
+      const tenant = '019a0000-0000-7000-8000-0000000000e1';
+      await db.query(`insert into tenants (id, auth_subject) values ($1, 'retention-check')`, [tenant]);
+      const old = new Date(Date.now() - 40 * 86_400_000).toISOString();
+      const recent = new Date().toISOString();
+      const intent = '019a0000-0000-7000-8000-0000000000e2';
+      // 1–2 old; 3 old money row (intent-linked); 4 recent; 5 old but published after 4 (out of time order); 6 old.
+      const rows: [number, string, string, string | null][] = [
+        [1, 'run.step', old, null], [2, 'policy.denied', old, null], [3, 'transaction.stateChanged', old, intent],
+        [4, 'run.step', recent, null], [5, 'run.step', old, null], [6, 'run.step', old, null],
+      ];
+      await db.query('insert into tenant_streams (tenant_id, last_sequence) values ($1, 6)', [tenant]);
+      for (const [sequence, type, at, intentId] of rows) {
+        await db.query(
+          `insert into audit_events (tenant_id, sequence, intent_id, actor_kind, trace_id, type, payload, occurred_at, source) values ($1, $2, $3, 'system', $4, $5, '{}', $6, $7)`,
+          [tenant, sequence, intentId, 'ab'.repeat(16), type, at, `retention-check:${sequence}`],
+        );
+      }
+      await rejects(db.query(`update audit_events set payload = '{"x":1}' where tenant_id = $1`, [tenant]), 'P0001');
+      await rejects(db.query('delete from audit_events where tenant_id = $1 and sequence = 1', [tenant]), 'P0001');
+      await rejects(db.query(`select prune_audit_events($1, now())`, [tenant]), 'P0001');
+      // Even with the prune flag set by hand, a money row is never deleted.
+      await db.query('begin');
+      await db.query(`select set_config('app.audit_prune', 'on', true)`);
+      await rejects(db.query('delete from audit_events where tenant_id = $1 and sequence = 3', [tenant]), 'P0001');
+      await db.query('rollback');
+
+      const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const pruned = await db.query<{ removed: string }>('select prune_audit_events($1, $2) as removed', [tenant, cutoff]);
+      // Only the prefix before the first recent event (4) is eligible. 1 goes; 2 (a policy denial) and 3 (intent-linked)
+      // are money records and stay; 5 and 6 follow a newer event and stay.
+      assert.equal(pruned.rows[0]!.removed, '1');
+      const left = await db.query<{ sequence: string }>('select sequence from audit_events where tenant_id = $1 order by sequence', [tenant]);
+      assert.deepEqual(left.rows.map((r) => Number(r.sequence)), [2, 3, 4, 5, 6]);
+      const stream = await db.query<{ retained_after: string }>('select retained_after from tenant_streams where tenant_id = $1', [tenant]);
+      assert.equal(stream.rows[0]!.retained_after, '1');
+      // Repeating is a no-op; the floor never moves back, and appends still work afterwards.
+      assert.equal((await db.query<{ removed: string }>('select prune_audit_events($1, $2) as removed', [tenant, cutoff])).rows[0]!.removed, '0');
+      assert.equal((await db.query('select retained_after from tenant_streams where tenant_id = $1', [tenant])).rows[0]!.retained_after, '1');
+      await rejects(db.query('update tenant_streams set retained_after = 7 where tenant_id = $1', [tenant]), '23514');
+    });
+
+    test('paper usage (0021): one open interval per deployment, ordered times, one limits row', async () => {
+      // The stopped deployment created by the executor records test above.
+      const deployment = '019a0000-0000-7000-8000-0000000000b1';
+      const interval = (generation: number, start: string, end: string | null) => db.query(
+        'insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at, ended_at) values ($1, $2, $3, $4, $5)', [seedTenantId, deployment, generation, start, end]);
+      await interval(1, '2026-01-01T00:00:00Z', '2026-01-01T00:10:00Z');
+      await interval(2, '2026-01-01T00:20:00Z', null);
+      await rejects(interval(3, '2026-01-01T00:30:00Z', null), '23505');
+      await rejects(interval(4, '2026-01-01T00:30:00Z', '2026-01-01T00:29:00Z'), '23514');
+      // An interval cannot name another tenant's deployment.
+      await rejects(db.query(`insert into paper_active_intervals (tenant_id, deployment_id, generation, started_at, ended_at) values ($1, $2, 5, now(), now())`, ['019a0000-0000-7000-8000-0000000000e1', deployment]), '23503');
+      const limits = await db.query('select paper_concurrent_per_user, paper_session_minutes, paper_daily_minutes, paper_active_global from platform_limits');
+      assert.deepEqual(limits.rows, [{ paper_concurrent_per_user: 1, paper_session_minutes: 60, paper_daily_minutes: 120, paper_active_global: 10 }]);
+      await rejects(db.query('insert into platform_limits (singleton, paper_concurrent_per_user, paper_session_minutes, paper_daily_minutes, paper_active_global) values (true, 1, 1, 1, 1)'), '23505');
+      await rejects(db.query('update platform_limits set paper_daily_minutes = -1'), '23514');
     });
 
     test('catalog modes are limited to paper and live', async () => {

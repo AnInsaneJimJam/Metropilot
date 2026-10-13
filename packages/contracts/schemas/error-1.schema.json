@@ -67,7 +67,8 @@
         "BUDGET_EXHAUSTED",
         "EFFECT_PENDING",
         "LEASE_FENCED",
-        "GENERATION_REVOKED"
+        "GENERATION_REVOKED",
+        "CURSOR_EXPIRED"
       ]
     }
   }
