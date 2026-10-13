@@ -31,20 +31,24 @@ const app = createInternalApp({
 // A 5-second watchdog also covers quiet pools and missed/disconnected subscriptions.
 if (process.env['LOCAL_SYNTHETIC_FEED'] === '1') throw new Error('Synthetic market feeds are disabled.');
 const ingestion = new MarketIngestion(pool, new RpcMarketSource(new MainnetMarkets(rpcClient(process.env['MARKET_RPC_URL']))), (o) => store.ingestPrice(o), undefined, (entry) => console.log(JSON.stringify(entry)));
-let marketBusy = false;
+let refreshBusy = false, recoveryBusy = false;
 let stopping = false;
 let socket: WebSocket | undefined;
 let reconnect: ReturnType<typeof setTimeout> | undefined;
-const marketTick = async (wake = 'watchdog'): Promise<void> => {
-  if (marketBusy || stopping) return;
-  marketBusy = true;
+const marketLane = async (phase: 'refresh' | 'recovery', wake: string): Promise<void> => {
+  if (stopping || (phase === 'refresh' ? refreshBusy : recoveryBusy)) return;
+  if(phase==='refresh')refreshBusy=true;else recoveryBusy=true;
   const started = performance.now();
   try {
-    await ingestion.tick();
-    console.log(JSON.stringify({ event: 'market.ingestion.tick', wake, elapsedMillis: Math.round(performance.now() - started) }));
-  } catch (error) {
-    console.error(JSON.stringify({ event: 'market.ingestion.failed', error: (error as Error).name }));
-  } finally { marketBusy = false; }
+    if(phase==='refresh')await ingestion.refresh();else await ingestion.tick();
+    console.log(JSON.stringify({ event: 'market.ingestion.tick', phase, wake, elapsedMillis: Math.round(performance.now() - started) }));
+  } catch {
+    // MarketIngestion reports safe per-feed reason codes. Provider errors must never be printed here.
+  } finally { if(phase==='refresh')refreshBusy=false;else recoveryBusy=false; }
+};
+const marketTick = (wake = 'watchdog'): void => {
+  void marketLane('refresh',wake);
+  void marketLane('recovery',wake);
 };
 const connect = (): void => {
   if (stopping) return;
@@ -81,7 +85,7 @@ const close = async (): Promise<void> => {
   if (reconnect) clearTimeout(reconnect);
   socket?.close();
   clearInterval(worker);
-  while (marketBusy || busy) await new Promise((resolve) => setTimeout(resolve, 50));
+  while (refreshBusy || recoveryBusy || busy) await new Promise((resolve) => setTimeout(resolve, 50));
   await app.close();
   await pool.end();
   process.exit(0);

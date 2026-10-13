@@ -75,13 +75,58 @@ describe('finalized market ingestion / PostgreSQL',{skip},()=>{
       assert.equal(count,0);assert.equal((await pool.query('select * from market_cursors')).rowCount,0);
     }
   });
+  test('fresh heads continue while a historical oracle read stalls and fails, without moving its cursor', async(t)=>{
+    await reset();t.mock.timers.enable({apis:['Date'],now:Date.now()});
+    const market=MARKETS[1],s=source(),original=s.observe;
+    let current=head;
+    s.finalized=async()=>({number:current,hash:hash(current)});
+    const start=BigInt(rawLogs[0].blockNumber)-100n;
+    await pool.query('insert into market_cursors values ($1,$2,$3,now())',[market.feedRef,String(start),hash(start)]);
+    let release!:()=>void,entered!:()=>void;
+    const stalled=new Promise<void>(resolve=>{release=resolve;}), reading=new Promise<void>(resolve=>{entered=resolve;});
+    s.observe=async(m,n)=>{
+      if(n<head){entered();await stalled;throw new Error('RPC https://provider.invalid/?key=private-marker failed');}
+      const now=new Date().toISOString();return checkedObservation({...await original(m,n),observedAt:now,receivedAt:now});
+    };
+    const accepted:bigint[]=[],reports:Record<string,unknown>[]=[];
+    const worker=new MarketIngestion(pool,s,async(o)=>{accepted.push(BigInt(checkedObservation(o).block.number));return [];},[market],entry=>reports.push(entry));
+    const recoveryFailed=assert.rejects(worker.tick(),/provider.invalid/);
+    await reading;
+    try {
+      await worker.refresh();assert.deepEqual(accepted,[head]);
+      t.mock.timers.tick(6000);current++;
+      await worker.refresh();assert.deepEqual(accepted,[head,head+1n]);
+      assert.equal((await pool.query('select block_number::text from market_cursors')).rows[0].block_number,String(start));
+    } finally {release();await recoveryFailed;}
+    assert.ok(reports.some(r=>r.event==='market.ingestion.failed'&&r.feedRef===market.feedRef&&r.phase==='recovery'&&r.code==='SOURCE_OR_STORAGE_FAILURE'));
+    assert.ok(!JSON.stringify(reports).includes('private-marker'));
+  });
+  test('failure logs distinguish cursor changes, oversized batches and contradictory oracle results',async()=>{
+    const market=MARKETS[0];
+    for(const code of ['FINALIZED_CURSOR_CHANGED','LOG_BATCH_LIMIT','ORACLE_RESULT_CONFLICT']){
+      await reset();const s=source(),reports:Record<string,unknown>[]=[];
+      if(code==='FINALIZED_CURSOR_CHANGED'){
+        await pool.query('insert into market_cursors values ($1,$2,$3,now())',[market.feedRef,String(head-100n),hash(head-100n)]);
+        s.block=async(n)=>({number:n,hash:'0x'+'ab'.repeat(32)});
+      } else if(code==='LOG_BATCH_LIMIT'){
+        s.logs=async()=>Array.from({length:2049},()=>({...rawLogs[0],blockNumber:head}));
+      } else {
+        const observation=await s.observe(market,head);
+        await pool.query('insert into finalized_market_observations values ($1,$2,$3)',[market.feedRef,observation.sourceEventKey,observation]);
+        s.observe=async()=>({...observation,provenanceHash:'0x'+'ab'.repeat(32)});
+      }
+      const worker=new MarketIngestion(pool,s,async()=>[],[market],entry=>reports.push(entry));
+      await assert.rejects(worker.tick(),(error:unknown)=>(error as {code:string}).code===code);
+      assert.deepEqual(reports.filter(r=>r.event==='market.ingestion.failed'),[{event:'market.ingestion.failed',phase:'recovery',feedRef:market.feedRef,code}]);
+    }
+  });
   test('bounded reconnect backfill and changed finalized cursor fail closed',async()=>{
     await reset();const s=source();let to:bigint|undefined;
     s.logs=async(_m,_f,t)=>{to=t;return [];};
     const start=head-1000n;await pool.query('insert into market_cursors values ($1,$2,$3,now())',[MARKETS[0].feedRef,String(start),hash(start)]);
-    const worker=new MarketIngestion(pool,s,async()=>[]);await worker.process(MARKETS[0],await s.finalized());assert.equal(to,start+100n);
+    const worker=new MarketIngestion(pool,s,async()=>[],[MARKETS[0]]);await worker.process(MARKETS[0],await s.finalized());await worker.refresh();assert.equal(to,start+100n);
     assert.equal((await pool.query('select block_number::text from market_cursors where feed_ref=$1',[MARKETS[0].feedRef])).rows[0].block_number,String(start+100n));
-    assert.equal((await pool.query('select document from finalized_market_observations where feed_ref=$1',[MARKETS[0].feedRef])).rows[0].document.block.number,String(head));
+    assert.equal((await pool.query("select 1 from finalized_market_observations where feed_ref=$1 and document->'block'->>'number'=$2",[MARKETS[0].feedRef,String(head)])).rowCount,1);
     s.block=async(n)=>({number:n,hash:'0x'+'aa'.repeat(32)});
     await assert.rejects(worker.process(MARKETS[0],await s.finalized()),/cursor hash changed/);
   });
