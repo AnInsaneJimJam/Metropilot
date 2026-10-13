@@ -294,7 +294,7 @@ describe('database', { skip }, () => {
     });
 
     test('allowance backfill (0009) preserves an earlier unknown hold exactly once', async () => {
-      const migration = await readFile(new URL('../../migrations/0009_ai_allowance_backfill.sql',import.meta.url),'utf8');
+      const migration = await readFile(new URL('../../migrations/0015_ai_allowance_backfill.sql',import.meta.url),'utf8');
       const key=H('9c'),agent=paperSeed().request.agentId;
       await db.query("insert into run_operations(tenant_id,run_id,operation_key,kind,node_id,iteration_path) values($1,$2,$3,'ai.decide','legacy_ai','[]')",[seedTenantId,runId,key]);
       await db.query("insert into broker_operations(tenant_id,operation_key,run_id,request_hash,request) values($1,$2,$3,$4,'{\"kind\":\"ai.decide\"}')",[seedTenantId,key,runId,H('aa')]);

@@ -77,9 +77,9 @@ describe('paper AI allowance / PostgreSQL', { skip }, () => {
     const rejected = await h.runAgain(first.runId);
     await h.pool.query("update deployments set model_profiles='{}'");
     assert.equal((await h.broker.request(rejected)).reason?.code, 'BROKER_NOT_ALLOWED');
-    const legacy = await readFile(new URL('../apps/api/migrations/0009_ai_allowance_backfill.sql', import.meta.url), 'utf8');
+    const legacy = await readFile(new URL('../apps/api/migrations/0015_ai_allowance_backfill.sql', import.meta.url), 'utf8');
     await h.pool.query(legacy);
-    const correction = await readFile(new URL('../apps/api/migrations/0011_ai_backfill_call_counts.sql', import.meta.url), 'utf8');
+    const correction = await readFile(new URL('../apps/api/migrations/0017_ai_backfill_call_counts.sql', import.meta.url), 'utf8');
     // The schema is already current; exercise the forward correction's data statements.
     await h.pool.query(correction.slice(correction.indexOf('alter table ai_allowance_reservations disable')));
     const rows = (await h.pool.query('select operation_key,counts_call,charged_usd_micros from ai_allowance_reservations')).rows;
@@ -115,7 +115,7 @@ describe('paper AI allowance / PostgreSQL', { skip }, () => {
     h.service.allowance.reserve = async () => ({ allowed:true });
     await h.broker.request(request);
     assert.equal((await h.pool.query('select 1 from ai_allowance_reservations')).rowCount,0);
-    const migration = await readFile(new URL('../apps/api/migrations/0009_ai_allowance_backfill.sql',import.meta.url),'utf8');
+    const migration = await readFile(new URL('../apps/api/migrations/0015_ai_allowance_backfill.sql',import.meta.url),'utf8');
     await h.pool.query(migration); await h.pool.query(migration);
     const row=(await h.pool.query('select state,charged_usd_micros from ai_allowance_reservations')).rows;
     assert.deepEqual(row,[{ state:'settled',charged_usd_micros:'175' }]);
