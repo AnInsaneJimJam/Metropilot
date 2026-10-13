@@ -53,7 +53,7 @@ const fail = (status: Failure['status'], code: ErrorCode, message: string, reaso
 const jsonSafe = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v)));
 
 /** Read the approved policy snapshot's limits; unknown fields are ignored, malformed known fields are dropped (and so deny). */
-function policyLimits(limits: Record<string, unknown> | undefined, tokenInRef: string): ActionLimits {
+export function policyLimits(limits: Record<string, unknown> | undefined, tokenInRef: string): ActionLimits {
   if (!limits) return {};
   const out: { -readonly [K in keyof ActionLimits]: ActionLimits[K] } = {};
   const int = (v: unknown, max: number): number | undefined => (Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= max ? (v as number) : undefined);

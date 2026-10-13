@@ -15,9 +15,12 @@ create table transaction_attempts (
   to_address text not null check (to_address ~ '^0x[0-9a-f]{40}$'),
   data text not null check (data ~ '^0x([0-9a-f]{2})*$'),
   value_atomic numeric(78,0) not null check (value_atomic >= 0),
+  -- Signed gas limit (Monad charges the full limit); recovery re-sends exactly this transaction.
+  gas_limit numeric(78,0) not null check (gas_limit > 0),
   -- prepared: recorded, provider not yet called. sent: provider returned a hash. ambiguous: outcome unknown.
-  -- finalized / reverted: canonical receipt at or below the finalized height.
-  state text not null check (state in ('prepared', 'sent', 'ambiguous', 'finalized', 'reverted')),
+  -- refused: the provider definitively did not broadcast. finalized / reverted: canonical receipt at or below the
+  -- finalized height.
+  state text not null check (state in ('prepared', 'sent', 'ambiguous', 'refused', 'finalized', 'reverted')),
   tx_hash text unique check (tx_hash ~ '^0x[0-9a-f]{64}$'),
   block_number numeric(78,0) check (block_number >= 0),
   block_hash text check (block_hash ~ '^0x[0-9a-f]{64}$'),
@@ -30,7 +33,7 @@ create table transaction_attempts (
   unique (intent_id, kind),
   foreign key (tenant_id, intent_id) references intents (tenant_id, id),
   foreign key (tenant_id, wallet_id) references wallets (tenant_id, id),
-  check (state in ('prepared', 'ambiguous') or tx_hash is not null),
+  check (state in ('prepared', 'ambiguous', 'refused') or tx_hash is not null),
   check ((state in ('finalized', 'reverted')) = (block_hash is not null and block_number is not null and fee_atomic is not null)),
   check ((kind = 'swap') = (quote is not null))
 );

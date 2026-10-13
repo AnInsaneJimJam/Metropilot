@@ -12,9 +12,11 @@
     "@monad-hack/policy": "workspace:*",
     "@monad-hack/strategy": "workspace:*",
     "pg": "8.23.1",
-    "@monad-hack/connectors": "workspace:*"
+    "@monad-hack/connectors": "workspace:*",
+    "@monad-hack/custody": "workspace:*"
   },
   "devDependencies": {
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "viem": "2.57.4"
   }
 }

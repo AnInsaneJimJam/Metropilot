@@ -24,7 +24,7 @@ test('build and full decode round-trip, native input sends value', () => {
   const tx = buildSwap(route, native);
   assert.equal(tx.value, sell.amountIn);
   assert.deepEqual(decodeSwap(route, tx), native);
-  assert.equal(minimumOutput(24_590n, 50), 24_467n, 'floor(24590 × 9950 / 10000)');
+  assert.equal(minimumOutput(24_590n, 50), 24_468n, '24590 − floor(24590 × 50 / 10000)');
 });
 
 test('decode rejects every shape outside the reviewed one', () => {

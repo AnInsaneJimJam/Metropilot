@@ -85,9 +85,12 @@ Set `ENVIO_API_TOKEN` (create one at https://envio.dev/app/api-tokens; `HYPERSYN
 
 ### Live catalog
 
-`pnpm db:seed:live` adds the Monad testnet network and the tradable assets `live.MON`, `live.WMON` and
-`live.USDC` (addresses verified on chain; evidence in `docs/decisions.md`). Funding remains MON only. Live trading
-also needs a live connector entry, which is added with the chosen venue.
+`pnpm db:seed:live` adds both networks with per-network asset refs (D52): `testnet.MON/WMON/USDC` on Monad testnet
+and `mainnet.MON/WMON/USDC` on Monad mainnet, plus the reviewed route `mainnet.uniswap-v3@1.0.0` (D53). Addresses are
+verified on chain (evidence in `docs/decisions.md`). Funding remains MON only. `GAS_ASSET_REF` defaults by chain, and
+the API refuses to start if a custody asset is not the catalog asset of the same chain and contract. For live trading
+run the funds stack on mainnet (`CUSTODY_CHAIN_ID=143`, `CUSTODY_NETWORK_REF=monad-mainnet`, a mainnet
+`CUSTODY_RPC`); mainnet wallets' provider policy also lists the router and the traded tokens.
 
 ### Real testnet check (MON-only funding)
 

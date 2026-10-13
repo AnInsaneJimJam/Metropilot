@@ -4,12 +4,11 @@
 // and fee), token decimals, quotes for the three offered directions, the TWAP reference and its deviation, build →
 // full decode round trip, and an eth_call of the exact native-input swap from an address that holds MON.
 import { JsonRpcChain } from '../packages/custody/src/index.ts';
-import { buildSwap, decodeSwap, minimumOutput, quote, referenceOutput, verifyRoute } from '../packages/connectors/src/index.ts';
+import { MAINNET_UNISWAP, buildSwap, decodeSwap, mainnetRoute, minimumOutput, quote, referenceOutput, verifyRoute } from '../packages/connectors/src/index.ts';
 import type { SwapLeg, UniswapRoute } from '../packages/connectors/src/index.ts';
-import { MAINNET_UNISWAP } from '../apps/api/src/db/live-catalog.ts';
 
 const u = MAINNET_UNISWAP;
-const route: UniswapRoute = { chainId: 143, factory: u.factory, router: u.router, quoter: u.quoter, pool: u.pool, fee: u.fee, wmon: u.wmon, token0: { address: u.wmon, decimals: 18 }, token1: { address: u.usdc, decimals: 6 } };
+const route: UniswapRoute = mainnetRoute();
 const rpc = new JsonRpcChain({ endpoint: process.argv[2] ?? 'https://rpc.monad.xyz', chainId: 143 });
 const results: { check: string; pass: boolean; detail: string }[] = [];
 const record = (check: string, pass: boolean, detail: string) => {

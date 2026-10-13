@@ -290,6 +290,23 @@ export class LiveIntents {
   }
 
   /**
+   * After signing began but before any swap was broadcast (an approval may have been): the swap will not be sent, so
+   * charge the gas actually spent (the approval's) and release the rest. Never used once a swap transaction exists.
+   */
+  async failAfterSigning(intentId: string, reason: Denial, gasAtomic: bigint, now: Date): Promise<IntentRow> {
+    return this.#tx(async (c) => {
+      const row = await this.#lock(c, intentId);
+      if (row.state !== 'signing') return row;
+      const scope = { mode: 'live' as const, tenantId: row.tenantId, agentId: row.agentId };
+      if (gasAtomic > 0n) await settle(c, row.reservationKey!, { journal: { kind: 'gas', postings: gasPostings(scope, this.#config.gasAssetRef, gasAtomic), occurredAt: now, memo: `approval gas, swap not sent: ${reason.code}` }, now });
+      else await release(c, row.reservationKey!, now, reason.message);
+      await c.query('update intents set settled_gas_atomic = $2 where id = $1', [row.id, gasAtomic.toString()]);
+      await outbox(c, row, 'reservation.changed', { state: 'released', assetRef: row.action.tokenInRef, amountAtomic: row.inputAtomic!.toString() }, now);
+      return this.#move(c, row, 'failed', now, { reason });
+    });
+  }
+
+  /**
    * Recovery for undispatched live intents (executor.md section 13): a paused, stopped or replaced deployment, or
    * a hold that expired, cancels the intent and releases its holds. Dispatched intents are left to reconciliation.
    */

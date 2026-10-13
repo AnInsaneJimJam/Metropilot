@@ -7,6 +7,23 @@ import { decodeEventLog, decodeFunctionData, decodeFunctionResult, encodeFunctio
 import type { Hex } from 'viem';
 import { meanTick, tickPrice } from './index.ts';
 
+/**
+ * The reviewed Monad mainnet route (D53), verified on chain 2026-10-13: Uniswap v3 factory, SwapRouter02, QuoterV2
+ * (developers.uniswap.org Monad deployments) and the WMON/USDC 0.3% pool; WMON is the router's WETH9.
+ */
+export const MAINNET_UNISWAP = {
+  chainId: 143,
+  ref: 'mainnet.uniswap-v3',
+  version: '1.0.0',
+  factory: '0x204faca1764b154221e35c0d20abb3c525710498',
+  router: '0xfe31f71c1b106eac32f1a19239c9a9a72ddfb900',
+  quoter: '0x661e93cca42afacb172121ef892830ca3b70f08d',
+  pool: '0x659bd0bc4167ba25c62e05656f78043e7ed4a9da',
+  fee: 3000,
+  wmon: '0x3bd359c1119da7da1d913d1c4d2b7c461115433a',
+  usdc: '0x754704bc059f8c67012fed69bc8a327a5aafb603',
+} as const;
+
 export interface UniswapRoute {
   readonly chainId: number;
   readonly factory: string;
@@ -46,6 +63,11 @@ export interface UnsignedTransaction {
   readonly data: string;
   readonly value: bigint;
 }
+
+export const mainnetRoute = (): UniswapRoute => {
+  const u = MAINNET_UNISWAP;
+  return { chainId: u.chainId, factory: u.factory, router: u.router, quoter: u.quoter, pool: u.pool, fee: u.fee, wmon: u.wmon, token0: { address: u.wmon, decimals: 18 }, token1: { address: u.usdc, decimals: 6 } };
+};
 
 export class RouteError extends Error {
   constructor(message: string) {
@@ -132,8 +154,8 @@ export async function referenceOutput(reader: RouteReader, route: UniswapRoute, 
     : (leg.amountIn * scale * d0) / (num * d1);
 }
 
-/** minimumOutput = floor(expected × (10 000 − slippage) / 10 000). */
-export const minimumOutput = (expected: bigint, slippageBps: number): bigint => (expected * BigInt(10_000 - slippageBps)) / 10_000n;
+/** minimumOutput = expected − floor(expected × slippage / 10 000): the allowed shortfall rounds down, never past the limit. */
+export const minimumOutput = (expected: bigint, slippageBps: number): bigint => expected - (expected * BigInt(slippageBps)) / 10_000n;
 
 export function buildSwap(route: UniswapRoute, swap: FrozenSwap): UnsignedTransaction {
   checkLeg(route, swap);
@@ -171,6 +193,13 @@ export function decodeSwap(route: UniswapRoute, tx: UnsignedTransaction): Frozen
   const swap: FrozenSwap = { tokenIn: lower(p.tokenIn), tokenOut: lower(p.tokenOut), nativeIn, amountIn: p.amountIn, recipient: lower(p.recipient), amountOutMinimum: p.amountOutMinimum, deadline };
   checkLeg(route, swap);
   return swap;
+}
+
+/** The simulated swap's output: multicall returns one bytes result holding exactInputSingle's amountOut. */
+export function decodeSwapResult(raw: string): bigint {
+  const results = decodeFunctionResult({ abi: routeAbi, functionName: 'multicall', data: raw as Hex }) as readonly Hex[];
+  if (results.length !== 1) throw new RouteError('Unexpected simulation result.');
+  return decodeFunctionResult({ abi: routeAbi, functionName: 'exactInputSingle', data: results[0]! }) as bigint;
 }
 
 export function buildApproval(route: UniswapRoute, token: string, amount: bigint): UnsignedTransaction {

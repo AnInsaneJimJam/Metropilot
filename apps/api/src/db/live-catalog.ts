@@ -7,23 +7,14 @@
 //            developers.uniswap.org Monad deployments: factory 0x204f…0498, SwapRouter02 0xfe31…b900,
 //            QuoterV2 0x661e…f08d; WMON/USDC 0.3% pool 0x659b…a9da (the deep pool; the 0.01% pool the market-data
 //            feed reads held about 0.26 USDC on 2026-10-13, see D52).
+import { MAINNET_UNISWAP } from '@monad-hack/connectors';
 import { contentHash } from '@monad-hack/contracts';
 import type pg from 'pg';
 
 export const MONAD_TESTNET = { networkRef: 'monad-testnet', chainId: 10143 } as const;
 export const MONAD_MAINNET = { networkRef: 'monad-mainnet', chainId: 143 } as const;
 
-export const MAINNET_UNISWAP = {
-  ref: 'mainnet.uniswap-v3',
-  version: '1.0.0',
-  factory: '0x204faca1764b154221e35c0d20abb3c525710498',
-  router: '0xfe31f71c1b106eac32f1a19239c9a9a72ddfb900',
-  quoter: '0x661e93cca42afacb172121ef892830ca3b70f08d',
-  pool: '0x659bd0bc4167ba25c62e05656f78043e7ed4a9da',
-  fee: 3000,
-  wmon: '0x3bd359c1119da7da1d913d1c4d2b7c461115433a',
-  usdc: '0x754704bc059f8c67012fed69bc8a327a5aafb603',
-} as const;
+export { MAINNET_UNISWAP };
 
 type CatalogEntry = { kind: string; ref: string; version: string; modes: string[]; definition: Record<string, unknown> };
 

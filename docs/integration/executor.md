@@ -140,6 +140,37 @@ Live capabilities are refused (403) unless the executor is wired with `live` ([`
 
 The signing pipeline (#39–#41) must move live intents only through `LiveIntents`: `markSigning` (after the signing-phase verdict; holds stop expiring), `markSubmitted`, `markReconciling`, `settleFinalized` (actual input/output/gas from the finalized receipt; revert charges gas only) or `cancel` (before any external authorization). `reconcile()` cancels undispatched live intents of paused, stopped or replaced deployments and expired holds. Paper intents, holds and fills are unchanged.
 
+## 7b. Live Uniswap pipeline on Monad mainnet (2026-10-13)
+
+[`LivePipeline`](../../apps/executor/src/live-pipeline.ts) takes admitted live intents to settlement on the reviewed
+route ([D53](../decisions.md)): connector `mainnet.uniswap-v3@1.0.0`, assets `mainnet.MON` (sent as value, the router
+wraps it), `mainnet.WMON` and `mainnet.USDC`; directions MON→USDC, WMON→USDC, USDC→WMON. Each pass:
+
+1. **Serialize per wallet.** An intent waits while another intent's transaction or a withdrawal from the same wallet
+   is unresolved.
+2. **Prepare.** Current authority (paused/replaced → cancel), on-chain balances and allowance, QuoterV2 quote, the
+   pool's finalized 30 s TWAP reference, `minimumOutput = expected − ⌊expected × slippage / 10 000⌋` with the most
+   restrictive slippage, gas estimates plus a 20% margin, fee ceiling within the reserved gas.
+3. **Signing-phase policy** with every live block; the exact swap is built, decoded back and compared with the frozen
+   swap, and simulated with `eth_call` from the wallet (output ≥ minimum). Any denial before signing cancels and
+   releases every hold.
+4. **Approval** (ERC-20 input without allowance): an exact `approve(router, input)` child transaction, finalized
+   before a fresh quote and the swap.
+5. **Send.** The attempt (exact transaction, gas limit, `intent:<id>:<kind>` provider key) is recorded first, the
+   provider policy is refreshed with the router and tokens, then the provider is called. An unknown outcome leaves the
+   intent `reconciling` and the next pass asks again with the same key; a refusal fails it without a trade.
+6. **Finality and settlement.** Only a receipt at or below the finalized height with the canonical block hash counts.
+   The receipt must show exactly the authorized movements (one pool `Swap` paying the wallet, the input to the pool,
+   the output to the wallet, nothing else leaving the wallet); then `settleFinalized` posts input, output and both
+   fees once. A revert charges gas only. Anything else freezes the agent (`UNEXPECTED_TRADE_EFFECTS`) and leaves the
+   intent reconciling.
+
+`EXECUTOR_LIVE=1` (with `LIVE_OUTFLOWS=1`, the Privy values and `CUSTODY_RPC`/`LIVE_RPC` for Monad mainnet) turns it
+on in `pnpm executor:dev`; caps default small (`$5`/day notional, 10 actions, 0.05 MON gas per trade, 0.1 MON native
+reserve; see [`live-wiring.ts`](../../apps/executor/src/live-wiring.ts)). There is no live launch path in the control
+API yet: a live deployment is arranged directly in the database, as the tests do. `node scripts/live-route-check.ts`
+re-verifies the route read-only.
+
 ## 8. Proving compatibility
 
 The [executor conformance kit](../../apps/runtime/src/conformance/executor.ts) checks closed results, idempotent duplicates, body conflicts, key recomputation, closed request bodies, distinct repeat iterations, durable rejections and stale-generation refusal. The stand-in passes it in [`conformance.test.ts`](../../apps/runtime/src/conformance.test.ts).
