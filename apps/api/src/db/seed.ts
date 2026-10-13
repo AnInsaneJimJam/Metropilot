@@ -1,7 +1,7 @@
 // Synthetic paper seed data: every row and catalog entry referenced by the normative deployment/1 and
 // strategy/1 examples. IDs and refs are read from the contracts fixtures so they cannot drift from the specs.
 // Seeds are local/CI test data only; they never describe real networks, contracts or accounts.
-import { catalogSeeds } from '@monad-hack/connectors/registry';
+import { MANIFESTS, SOURCES, catalogSeeds, marketCatalog } from '@monad-hack/connectors/registry';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { contentHash, validate, type DeploymentRequest, type Strategy } from '@monad-hack/contracts';
@@ -67,20 +67,21 @@ export function paperSeed() {
     },
     ...completePaperCatalog(),
   ];
-  return { request, strategy, catalog: [...catalog, ...catalogSeeds()] };
+  return { request, strategy, catalog: [...catalog, ...catalogSeeds(), ...completeMarketCatalog()] };
 }
 
 /**
- * Version 1.1.0 of every paper entry: the complete definitions the API compiles against (issue #18, D42). The 1.0.0
- * rows above predate this format and stay for the records and executor fixtures that pin them; catalog rows are
- * immutable, so completing them means publishing new versions. Built from the strategy package's synthetic
- * catalog so the database registry and the offline rehearsal catalog cannot drift. Existing keys the executor
- * reads (connector networkRef/capabilities, asset identity) keep their meaning.
+ * Complete definitions of the synthetic paper entries (issue #18, D55), for the deterministic fixtures that pin
+ * them. The 1.0.0 rows above predate this format and stay for the records and executor fixtures that pin them;
+ * catalog rows are immutable, so completing them means publishing new versions. Version 1.1.0, except
+ * `paper.uniswap`, whose 1.1.0 is the market-data connector (catalogSeeds), so its synthetic definition is 1.0.1.
+ * Built from the strategy package's synthetic catalog so the registry and the rehearsal catalog cannot drift.
  */
 function completePaperCatalog(): CatalogSeed[] {
   const c = JSON.parse(JSON.stringify(syntheticCatalog)) as typeof syntheticCatalog;
   const paper = ['paper'];
   const version = '1.1.0';
+  const connectorVersion: Record<string, string> = { 'paper.uniswap': '1.0.1' };
   return [
     ...Object.entries(c.networks).map(([ref, n]) => ({
       kind: 'network', ref, version, modes: paper, definition: { registry: 'paper', finality: 'simulated', ...n },
@@ -90,7 +91,7 @@ function completePaperCatalog(): CatalogSeed[] {
       definition: { identity: { kind: 'paper', networkRef: a.networkRef, assetRef: ref }, decimals: a.decimals, ...(a.native ? { native: true } : {}) },
     })),
     ...Object.entries(c.connectors).map(([ref, k]) => ({
-      kind: 'connector', ref, version, modes: paper,
+      kind: 'connector', ref, version: connectorVersion[ref] ?? version, modes: paper,
       definition: {
         networkRef: k.networkRef, capabilities: ['price.read', 'swap.quote', 'swap.exactInput'],
         adapterVersion: k.version, venue: k.venue, actions: k.actions, reads: c.reads[ref] ?? {},
@@ -103,6 +104,40 @@ function completePaperCatalog(): CatalogSeed[] {
       kind: 'modelProfile', ref, version, modes: paper,
       definition: { provider: m.provider, modelId: m.modelId, maxTimeoutSeconds: m.maxTimeoutSeconds, maxOutputTokens: m.maxOutputTokens, note: 'Scripted answers; no model is called.' },
     })),
+  ];
+}
+
+/**
+ * Complete definitions of the reviewed market catalog (`marketCatalog`: Uniswap, Curve and Aave mainnet
+ * observations with paper execution, D42) as the newest paper versions, so the running stack resolves exactly that
+ * catalog. The market-data rows from catalogSeeds carry the connector manifests but not the compiler's fields, and
+ * rows are immutable, so the complete definitions are new versions: connectors and feeds one minor version up,
+ * `paper-monad` 1.2.0 (after the synthetic 1.1.0). Each connector keeps its manifest and capabilities, which the
+ * executor reads, and its adapter version is the marketCatalog version.
+ */
+function completeMarketCatalog(): CatalogSeed[] {
+  const c = JSON.parse(JSON.stringify(marketCatalog)) as typeof marketCatalog;
+  const paper = ['paper'];
+  const next = (version: string) => { const [major, minor] = version.split('.'); return `${major}.${Number(minor) + 1}.0`; };
+  return [
+    ...Object.entries(c.networks).map(([ref, n]) => ({
+      kind: 'network', ref, version: '1.2.0', modes: paper,
+      definition: { registry: 'paper', finality: 'mainnet-observed', sourceNetworkRef: 'monad-mainnet', ...n },
+    })),
+    ...Object.entries(c.connectors).map(([ref, k]) => {
+      const manifest = MANIFESTS.find((m) => m.ref === ref)!;
+      return {
+        kind: 'connector', ref, version: next(k.version), modes: paper,
+        definition: { networkRef: k.networkRef, capabilities: [...manifest.capabilities], adapterVersion: k.version, venue: k.venue, actions: [...k.actions], reads: c.reads[ref] ?? {}, manifest },
+      };
+    }),
+    ...Object.entries(c.feeds).map(([ref, f]) => {
+      const source = SOURCES.find((m) => m.feedRef === ref)!;
+      return {
+        kind: 'feed', ref, version: '1.1.0', modes: paper,
+        definition: { networkRef: c.connectors[f.connectorRef]!.networkRef, ...f, method: source.method, sourceChainId: 143, poolAddress: source.pool },
+      };
+    }),
   ];
 }
 

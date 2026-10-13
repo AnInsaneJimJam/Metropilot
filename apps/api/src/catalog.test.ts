@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test';
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { contentHash } from '@monad-hack/contracts';
+import { marketCatalog } from '@monad-hack/connectors/registry';
 import { syntheticCatalog } from '@monad-hack/strategy';
 import { CatalogResolver, wellFormed, type CatalogKind } from './catalog.ts';
 import { ControlError } from './control.ts';
@@ -53,25 +54,40 @@ describe('catalog resolution / real PostgreSQL', { skip: !url }, () => {
     }
   });
 
-  test('the seeded 1.1.0 rows are complete; the 1.0.0 rows predate the format', async () => {
-    const { rows } = await pool.query<{ kind: CatalogKind; version: string; definition: unknown }>('select kind, version, definition from catalog_versions');
+  test('the seeded complete rows are well formed; the 1.0.0 and market-data manifest rows predate the format', async () => {
+    const { rows } = await pool.query<{ kind: CatalogKind; ref: string; version: string; definition: unknown }>('select kind, ref, version, definition from catalog_versions');
     for (const row of rows) {
-      // Asset identities and resource profiles had a complete shape from the start; nothing else did at 1.0.0.
-      const expected = row.version === '1.1.0' || row.kind === 'asset' || row.kind === 'resourceProfile';
-      assert.equal(wellFormed(row.kind, row.definition, 'paper'), expected, `${row.kind} ${row.version}`);
+      // Asset identities and resource profiles had a complete shape from the start. paper.uniswap@1.1.0 is the
+      // market-data manifest row (catalogSeeds), which carries no compiler fields; its complete form is 1.2.0.
+      const manifestOnly = row.version === '1.0.0' || (row.ref === 'paper.uniswap' && row.version === '1.1.0');
+      const expected = !manifestOnly || row.kind === 'asset' || row.kind === 'resourceProfile';
+      assert.equal(wellFormed(row.kind, row.definition, 'paper'), expected, `${row.kind} ${row.ref}@${row.version}`);
     }
   });
 
-  test('a draft resolve reproduces the synthetic catalog from the database rows', async () => {
+  test('a draft resolve contains the reviewed market catalog from the database rows, at its newest versions', async () => {
     const { catalog, pins } = await resolver.resolve(pool, { mode: 'paper' });
-    assert.deepEqual(plain(catalog), plain(syntheticCatalog));
-    assert.ok(pins.every((p) => p.version === '1.1.0'), JSON.stringify(pins));
-    assert.equal(pins.length, 9, 'network, three assets, two connectors, two feeds, one model profile');
+    const resolved = plain(catalog) as Record<string, Record<string, unknown>>;
+    const market = plain(marketCatalog) as Record<string, Record<string, unknown>>;
+    for (const [section, entries] of Object.entries(market)) {
+      for (const [ref, entry] of Object.entries(entries)) assert.deepEqual(resolved[section]![ref], entry, `${section} ${ref}`);
+    }
+    const version = (kind: string, ref: string) => pins.find((p) => p.kind === kind && p.ref === ref)?.version;
+    assert.deepEqual([version('network', 'paper-monad'), version('connector', 'paper.uniswap'), version('connector', 'paper.curve'), version('connector', 'paper.aave'), version('feed', 'paper.wmon-usdc')], ['1.2.0', '1.2.0', '1.1.0', '1.1.0', '1.1.0']);
+    // The synthetic fixtures' other entries stay resolvable for the deterministic tests that pin them.
+    assert.deepEqual(resolved['connectors']!['paper.kuru'], plain(syntheticCatalog.connectors['paper.kuru']));
+  });
+
+  test('a launch that pins the synthetic connector version compiles against the synthetic definition', async () => {
+    const { catalog } = await resolver.resolve(pool, { mode: 'paper', networkRef: 'paper-monad', connectors: { 'paper.uniswap': '1.0.1' } });
+    assert.deepEqual(plain(catalog.connectors['paper.uniswap']), plain(syntheticCatalog.connectors['paper.uniswap']));
+    assert.deepEqual(plain(catalog.reads['paper.uniswap']), plain(syntheticCatalog.reads['paper.uniswap']));
+    assert.deepEqual(plain(catalog.feeds['paper.weth-usd']), plain(syntheticCatalog.feeds['paper.weth-usd']));
   });
 
   test('a launch resolve pins selections, the network and the resource profile', async () => {
     const { pins, capabilities } = await resolver.resolve(pool, {
-      mode: 'paper', networkRef: 'paper-monad', connectors: { 'paper.uniswap': '1.1.0' }, modelProfiles: {}, resourceProfileRef: 'paper-small-v1',
+      mode: 'paper', networkRef: 'paper-monad', connectors: { 'paper.uniswap': '1.0.1' }, modelProfiles: {}, resourceProfileRef: 'paper-small-v1',
     });
     for (const pin of pins) {
       const { rows } = await pool.query<{ content_hash: string }>('select content_hash from catalog_versions where kind = $1 and ref = $2 and version = $3', [pin.kind, pin.ref, pin.version]);
@@ -82,7 +98,7 @@ describe('catalog resolution / real PostgreSQL', { skip: !url }, () => {
     await refusal(resolver.resolve(pool, { mode: 'paper', networkRef: 'paper-elsewhere' }), 'UNSUPPORTED_CAPABILITY', 'paper-elsewhere is not an enabled paper network');
     await refusal(resolver.resolve(pool, { mode: 'paper', resourceProfileRef: 'paper-huge-v9' }), 'UNSUPPORTED_CAPABILITY', 'paper-huge-v9 is not an enabled paper resource profile');
     await refusal(resolver.resolve(pool, { mode: 'paper', modelProfiles: { 'paper.kimi': '1.0.0' } }), 'UNSUPPORTED_CAPABILITY', 'paper.kimi@1.0.0 predates');
-    await refusal(resolver.resolve(pool, { mode: 'live' , connectors: { 'paper.uniswap': '1.1.0' } }), 'UNSUPPORTED_CAPABILITY', 'not an enabled live connector');
+    await refusal(resolver.resolve(pool, { mode: 'live' , connectors: { 'paper.uniswap': '1.0.1' } }), 'UNSUPPORTED_CAPABILITY', 'not an enabled live connector');
   });
 
   test('a disabled newest version is left out rather than replaced by an older, incomplete one', async () => {
@@ -94,15 +110,27 @@ describe('catalog resolution / real PostgreSQL', { skip: !url }, () => {
       assert.equal(catalog.feeds['paper.weth-usd-kuru'], undefined, 'a feed whose connector is gone is dropped');
       assert.ok(catalog.feeds['paper.weth-usd']);
       assert.ok(!pins.some((p) => p.ref === 'paper.kuru' || p.ref === 'paper.weth-usd-kuru'));
-      assert.deepEqual((await resolver.latestVersions(pool, 'paper')).connectors, { 'paper.uniswap': '1.1.0' });
+      assert.deepEqual((await resolver.latestVersions(pool, 'paper')).connectors, { 'paper.aave': '1.1.0', 'paper.curve': '1.1.0', 'paper.uniswap': '1.2.0' });
       await refusal(resolver.resolve(pool, { mode: 'paper', connectors: { 'paper.kuru': '1.1.0' } }), 'UNSUPPORTED_CAPABILITY', 'paper.kuru@1.1.0 is disabled: Venue withdrawn.');
     } finally {
       await disable('paper.kuru', '1.1.0', null);
     }
   });
 
+  test('disabling the newest market connector leaves it out instead of falling back to its manifest-only row', async () => {
+    await disable('paper.uniswap', '1.2.0', 'Pool under review.');
+    try {
+      const { catalog } = await resolver.resolve(pool, { mode: 'paper' });
+      assert.equal(catalog.connectors['paper.uniswap'], undefined, '1.1.0 is newer than 1.0.1 but incomplete, so nothing resolves');
+      assert.equal(catalog.feeds['paper.wmon-usdc'], undefined);
+      assert.ok(catalog.connectors['paper.curve']);
+    } finally {
+      await disable('paper.uniswap', '1.2.0', null);
+    }
+  });
+
   test('checkPins refuses disabled, missing or changed pins and accepts manifest/1 pins without hashes', async () => {
-    const { pins } = await resolver.resolve(pool, { mode: 'paper', networkRef: 'paper-monad', connectors: { 'paper.uniswap': '1.1.0' } });
+    const { pins } = await resolver.resolve(pool, { mode: 'paper', networkRef: 'paper-monad', connectors: { 'paper.uniswap': '1.0.1' } });
     await resolver.checkPins(pool, 'paper', pins);
     await resolver.checkPins(pool, 'paper', [{ kind: 'connector', ref: 'paper.uniswap', version: '1.0.0' }]);
     await refusal(resolver.checkPins(pool, 'paper', [{ kind: 'connector', ref: 'paper.gone', version: '1.0.0' }]), 'UNSUPPORTED_CAPABILITY', 'no longer in the paper catalog');

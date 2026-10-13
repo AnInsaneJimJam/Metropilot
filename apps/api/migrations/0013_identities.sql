@@ -1,4 +1,4 @@
--- Verified identities and application sessions (API-1, issue #16, decision D43). A provider identity
+-- Verified identities and application sessions (API-1, issue #16, decision D56). A provider identity
 -- (provider, subject) maps to exactly one tenant; the first verified login creates both in one transaction.
 -- Sessions store only the SHA-256 of the cookie token, so a database read never yields a usable cookie.
 

@@ -1,4 +1,4 @@
--- Paper sandbox quotas and global admission (issue #17, INF-4, decision D45). Usage is measured from intervals in
+-- Paper sandbox quotas and global admission (issue #17, INF-4, decision D58). Usage is measured from intervals in
 -- which a paper deployment was active: one row opens on launch or resume and closes on pause or stop, so session
 -- and UTC-day minutes are sums over intervals, and a paused agent uses no quota. Limits are platform configuration
 -- (product.md sandbox contract, runtime.md admission target), one row, changed by an operator with an update.

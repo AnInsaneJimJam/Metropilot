@@ -423,7 +423,7 @@
     },
     "PaperQuota": {
       "title": "PaperQuota",
-      "description": "GET /v1/quota (issue #17, D45): the signed-in user's paper sandbox usage and limits. Seconds of active paper time; a session is one launch. Other users' usage is never included; admissionOpen only says whether the global cap has room.",
+      "description": "GET /v1/quota (issue #17, D58): the signed-in user's paper sandbox usage and limits. Seconds of active paper time; a session is one launch. Other users' usage is never included; admissionOpen only says whether the global cap has room.",
       "type": "object",
       "additionalProperties": false,
       "required": [

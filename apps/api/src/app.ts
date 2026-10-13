@@ -447,7 +447,7 @@ export function createApp(options: ApiOptions) {
             idle = 0;
           }
         } catch (error) {
-          // Retention removed events after the cursor (D44): tell the client to reload history and resume from the
+          // Retention removed events after the cursor (D57): tell the client to reload history and resume from the
           // floor. The id line moves the browser's Last-Event-ID there, so its automatic reconnect has no gap.
           if (error instanceof ControlError && error.code === "CURSOR_EXPIRED") {
             const resumeFrom = (error.details as { details: { resumeFrom: string } }).details.resumeFrom;

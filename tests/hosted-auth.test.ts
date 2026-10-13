@@ -137,7 +137,7 @@ describe('hosted sign-in and tenant isolation', { skip }, () => {
     assert.equal(estimate.status, 200, JSON.stringify(estimate.json));
     const request = {
       schemaVersion: 'deployment/1', agentId, strategyRevisionId: saved.json.revisionId, mode: 'paper', networkRef: 'paper-monad',
-      connectorSelections: [{ ref: 'paper.uniswap', version: '1.1.0', capabilities: ['price.read', 'swap.exactInput'] }],
+      connectorSelections: [{ ref: 'paper.uniswap', version: '1.0.1', capabilities: ['price.read', 'swap.exactInput'] }],
       modelProfiles: [{ ref: 'paper.kimi', version: '1.1.0' }], resourceProfileRef: 'paper-small-v1',
       budgetVersion: estimate.json.budgetVersion, policyVersion: estimate.json.policyVersion, estimateId: estimate.json.id,
     };

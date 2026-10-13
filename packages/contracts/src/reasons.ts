@@ -6,7 +6,7 @@
 import type { ErrorCode, IntentReason } from './generated-contracts.ts';
 
 /** Codes emitted only as reasons, never as error-1 codes. */
-export type ControlReasonCode = 'TRIGGER_COOLDOWN' | 'STOP_DRAINING' | 'QUOTA_CONCURRENCY' | 'QUOTA_SESSION' | 'QUOTA_DAILY' | 'ADMISSION_FULL' | 'HOSTING_BUDGET_EXHAUSTED';
+export type ControlReasonCode = 'TRIGGER_COOLDOWN' | 'STOP_DRAINING' | 'QUOTA_CONCURRENCY' | 'QUOTA_SESSION' | 'QUOTA_DAILY' | 'ADMISSION_FULL' | 'HOSTING_BUDGET_EXHAUSTED' | 'UNEXPECTED_TRADE_EFFECTS';
 export type UserReasonCode = ErrorCode | IntentReason['code'] | ControlReasonCode;
 
 export interface ReasonText {
@@ -84,6 +84,7 @@ export const reasons: Readonly<Record<UserReasonCode, ReasonText>> = {
   QUOTA_DAILY: { title: 'Daily time used', explanation: 'Your paper time for today (UTC) is used up, so agents are paused.', userAction: 'Resume after midnight UTC.' },
   ADMISSION_FULL: { title: 'Sandbox is full', explanation: 'The paper sandbox is at capacity right now.', userAction: 'Try again in a few minutes.' },
   HOSTING_BUDGET_EXHAUSTED: { title: 'Hosting budget used', explanation: 'The agent\'s hosting budget could not pay for the next minutes of running, so it was paused.', userAction: 'Add hosting funds, then resume.' },
+  UNEXPECTED_TRADE_EFFECTS: { title: 'Trade needs review', explanation: 'A live trade changed the wallet in a way its quote did not explain, so new live trades are frozen until it is checked.', userAction: 'Wait for the platform to review it; reads and deposits keep working.' },
 };
 
 export interface DescribedReason extends ReasonText {

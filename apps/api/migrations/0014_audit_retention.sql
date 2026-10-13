@@ -1,4 +1,4 @@
--- Audit stream retention and the SSE reset floor (API-6, issue #19, decision D44). audit_events stays
+-- Audit stream retention and the SSE reset floor (API-6, issue #19, decision D57). audit_events stays
 -- append-only for every caller except prune_audit_events, which removes an old prefix of one tenant's stream and
 -- records how far it went in tenant_streams.retained_after. A client whose cursor is below that floor gets a reset
 -- instruction instead of a silent gap. Money records (intent-linked rows and reservation, transaction, ledger

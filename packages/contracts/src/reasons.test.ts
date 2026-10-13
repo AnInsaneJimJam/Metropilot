@@ -8,7 +8,7 @@ import { describeReason, reasons } from './index.ts';
 
 const errorCodes: string[] = errorSchema.$defs.errorCode.enum;
 const intentReasonCodes: string[] = intentResultSchema.properties.reason.properties.code.enum;
-const controlReasonCodes = ['TRIGGER_COOLDOWN', 'STOP_DRAINING', 'QUOTA_CONCURRENCY', 'QUOTA_SESSION', 'QUOTA_DAILY', 'ADMISSION_FULL'];
+const controlReasonCodes = ['TRIGGER_COOLDOWN', 'STOP_DRAINING', 'QUOTA_CONCURRENCY', 'QUOTA_SESSION', 'QUOTA_DAILY', 'ADMISSION_FULL', 'HOSTING_BUDGET_EXHAUSTED', 'UNEXPECTED_TRADE_EFFECTS'];
 
 test('the vocabulary covers every error-1 and intent-result-1 reason code and nothing else', () => {
   assert.deepEqual(Object.keys(reasons).sort(), [...errorCodes, ...intentReasonCodes, ...controlReasonCodes].sort());

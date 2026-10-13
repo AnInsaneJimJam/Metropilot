@@ -256,7 +256,7 @@ export class LifecycleService {
   /**
    * audit-event/2 rows for the agent after a sequence (the SSE cursor), oldest first. Cursor 0 means "from the
    * oldest kept event". A cursor below the tenant's retention floor throws CURSOR_EXPIRED with the sequence to
-   * resume from (D44): events after it may have been pruned, and an empty page must not imply none occurred.
+   * resume from (D57): events after it may have been pruned, and an empty page must not imply none occurred.
    */
   async events(tenantId: string, agentId: string, after: bigint, limit: number): Promise<Record<string, unknown>[]> {
     // One statement, one snapshot: the floor and the page cannot straddle a concurrent prune.
@@ -318,7 +318,7 @@ export class LifecycleService {
     return Number(rows[0]!.n);
   }
 
-  /** Paper sandbox admission (D45): per-user concurrency, session and daily time, global capacity; 429 with the reason. */
+  /** Paper sandbox admission (D58): per-user concurrency, session and daily time, global capacity; 429 with the reason. */
   async #admit(c: pg.PoolClient, tenantId: string, deploymentId: string | undefined): Promise<void> {
     const refused = await admitPaper(c, tenantId, deploymentId, this.#now());
     if (refused) throw new ControlError(429, 'LIMIT_EXCEEDED', refused.message, { details: { reason: refused.reason } });

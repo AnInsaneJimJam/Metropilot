@@ -6,7 +6,7 @@ Status 2026-10-08 (branch `feat/runtime-control-api`): **the runtime-facing cont
 
 Update 2026-10-12 (branch `feat/lifecycle-executor-integration`): the user lifecycle and history are implemented too (section 11): paper estimates, `deployment/1` launches with a `deployment-manifest/1` record, pause/resume/stop, operations, run history, `audit-event/2` history and a live event stream, the executor capability exchange and the executor outbox consumer (migration [`0005`](../../apps/api/migrations/0005_deployment_lifecycle.sql)). `pnpm stack:dev` runs the whole local paper stack.
 
-What is still yours (API owner): real ingestion from Envio/RPC feeding `ingestPrice` (gate E10), the selected workload-identity mechanism for the poll (gate E02), the hosted web login screen (API sign-in is done, D43), the API Broker (broker-audience capabilities), cloud provisioning (INF-3) and production hosting.
+What is still yours (API owner): real ingestion from Envio/RPC feeding `ingestPrice` (gate E10), the selected workload-identity mechanism for the poll (gate E02), the hosted web login screen (API sign-in is done, D56), the API Broker (broker-audience capabilities), cloud provisioning (INF-3) and production hosting.
 
 ## 1. Who calls whom
 
@@ -35,7 +35,7 @@ The runtime never reads your database, never subscribes to events and has no tim
 | `deployments` (0005 columns) | Network ref, policy and budget versions, resource profile, model pins, estimate, simulation account, `manifest` and `manifest_hash`; `desired_state` is `active`/`paused`/`stopping`/`stopped` ([D37](../decisions.md)) | Paper ⇔ simulation account; at most one non-stopped deployment per agent; FKs to `policies`, `estimates`, `simulation_accounts` |
 | `deployment_operations` | Asynchronous lifecycle operations (`deploy`, `pause`, `resume`, `stop`) | Idempotency rows live in `control_requests` |
 | `market_observations` | Finalized price observations from `ingestPrice`; the executor's recorded market | Primary key `(feed_ref, source_event_key)` |
-| `tenant_streams`, `audit_events` | Per-tenant audit stream (`audit-event/2`), written in the same transaction as each change; `retained_after` is the retention floor (0008) | Immutable except `prune_audit_events` (never money rows); `unique(source)` makes republishing a no-op |
+| `tenant_streams`, `audit_events` | Per-tenant audit stream (`audit-event/2`), written in the same transaction as each change; `retained_after` is the retention floor (0014) | Immutable except `prune_audit_events` (never money rows); `unique(source)` makes republishing a no-op |
 
 Normalized source events (`events`) are not part of this migration; ingestion owns them.
 
@@ -57,8 +57,8 @@ Then, for each row, in its own transaction:
 2. Call `transitionPrice(trigger, crossingState, observation, now)` from `@monad-hack/strategy`. Do not reimplement crossing, staleness or cooldown in SQL.
 3. `UPDATE trigger_state` with the returned state.
 4. If `fire`: insert the run (with `ON CONFLICT (run_id) DO NOTHING`) and its first assignment.
-5. If the deployment is paper and its session or the tenant's UTC-day time is used up, refuse the run (`observation.skipped` with `QUOTA_SESSION`/`QUOTA_DAILY`); the worker's `enforcePaperQuotas()` then pauses the deployment (D45).
-6. If the reason is `cooldown` or `stale`, or `transitionPrice` refused the observation, append an `observation.skipped` audit event with a vocabulary `reasonCode` (`TRIGGER_COOLDOWN`, `STALE_DATA`, or the language error code) so the user sees the blocked run (D44). Routine `baseline`, `no-crossing` and `out-of-order` results are not recorded.
+5. If the deployment is paper and its session or the tenant's UTC-day time is used up, refuse the run (`observation.skipped` with `QUOTA_SESSION`/`QUOTA_DAILY`); the worker's `enforcePaperQuotas()` then pauses the deployment (D58).
+6. If the reason is `cooldown` or `stale`, or `transitionPrice` refused the observation, append an `observation.skipped` audit event with a vocabulary `reasonCode` (`TRIGGER_COOLDOWN`, `STALE_DATA`, or the language error code) so the user sees the blocked run (D57). Routine `baseline`, `no-crossing` and `out-of-order` results are not recorded.
 7. Commit.
 
 Schedules are the same with `scheduleSlot(trigger, now, lastSlot)`; the source event key is `schedule:<slot>`.
@@ -77,7 +77,7 @@ Build each [`runtime-assignment/1`](../../packages/contracts/schemas/runtime-ass
 | `lease.fencingToken` | Previous token for this run + 1, as a decimal string |
 | `lease.expiresAt` | Now + 30 s; heartbeats every 10 s extend it ([runtime.md](../specs/runtime.md)) |
 | `deployment.generation` | Current generation as a decimal string |
-| `deployment.manifestHash` | `contentHash` of the deployment's `deployment-manifest/2` record (`/1` for deployments launched before migration 0006; D42) (`deployments.manifest_hash`); a deployment without one is not offered work |
+| `deployment.manifestHash` | `contentHash` of the deployment's `deployment-manifest/2` record (`/1` for deployments launched before migration 0012; D55) (`deployments.manifest_hash`); a deployment without one is not offered work |
 | `deployment.runtimeImageDigest` | Digest of the pinned runtime image; the runtime refuses any other |
 | `deployment.connectorVersions` | Manifest pins `{connectorRef: "MAJOR.MINOR.PATCH"}` for every connector the strategy uses |
 | `run.triggerId` | The strategy's own trigger ID (for example `crossing`), never a UUID |
@@ -121,7 +121,7 @@ Settlement and reconciliation waits never hold a runtime process.
 
 ## 8. Pause, resume and stop
 
-Pause sets `desired_state = 'paused'`: from that moment `wait`, `results`, `complete`, `timeline`, `heartbeat` and the capability exchange answer `GENERATION_REVOKED` for its runs, the executor refuses new intents and cancels reserved ones before filling, and `trigger_state` rows stop matching. External effects already dispatched keep reconciling. Resume mints a new generation (`active`), revokes the unfinished runs of the old generation, resets crossing state (a fresh baseline is required) and never revives an old generation's assignments. Stop sets `stopping` after revoking unfinished runs (the executor refuses new intents and cancels reserved ones) and `stopped` once no intent of the deployment is open, at once when nothing is open, otherwise from the worker's `finaliseStopping()`; stop is idempotent while stopping and pause/resume are refused (D46). A new launch, after `stopped`, creates a new deployment. Each change writes a `deployment.stateChanged` audit event.
+Pause sets `desired_state = 'paused'`: from that moment `wait`, `results`, `complete`, `timeline`, `heartbeat` and the capability exchange answer `GENERATION_REVOKED` for its runs, the executor refuses new intents and cancels reserved ones before filling, and `trigger_state` rows stop matching. External effects already dispatched keep reconciling. Resume mints a new generation (`active`), revokes the unfinished runs of the old generation, resets crossing state (a fresh baseline is required) and never revives an old generation's assignments. Stop sets `stopping` after revoking unfinished runs (the executor refuses new intents and cancels reserved ones) and `stopped` once no intent of the deployment is open, at once when nothing is open, otherwise from the worker's `finaliseStopping()`; stop is idempotent while stopping and pause/resume are refused (D59). A new launch, after `stopped`, creates a new deployment. Each change writes a `deployment.stateChanged` audit event.
 
 ## 9. Proving compatibility
 
@@ -159,7 +159,7 @@ Implemented in [`apps/api/src/lifecycle.ts`](../../apps/api/src/lifecycle.ts) an
 | `POST /v1/agents/{id}/deployments` | `deployment/1` → `202` `deployment-operation/1`. Paper only (`422 CAPABILITY_DISABLED` for live). Checks the estimate (agent, revision, expiry → `409 ESTIMATE_EXPIRED`), budget and policy versions, the network and resource profile, every selected connector and capability, and that every connector, capability and model profile the strategy uses is selected (`422 UNSUPPORTED_CAPABILITY`). One open deployment per agent (`409`). Creates the simulation account, manifest, deployment, artifacts and trigger rows in one transaction |
 | `POST /v1/agents/{id}/pause`, `/resume`, `/stop` | `202` `deployment-operation/1` (section 8) |
 | `GET /v1/operations/{id}` | `deployment-operation/1` |
-| `GET /v1/quota` | `paper-quota/1`: the user's running agents, UTC-day and session paper time; launch/resume over a limit → `429 LIMIT_EXCEEDED` with `details.reason` (D45) |
+| `GET /v1/quota` | `paper-quota/1`: the user's running agents, UTC-day and session paper time; launch/resume over a limit → `429 LIMIT_EXCEEDED` with `details.reason` (D58) |
 | `GET /v1/agents/{id}/deployment` | `agent-deployment/1`: the open deployment, else the latest |
 | `GET /v1/agents/{id}/runs?limit&cursor` | `run-summary/1` items, newest first |
 | `GET /v1/runs/{runId}` | `run-detail/1`: trigger stage times, operations with outcomes, timeline entries |

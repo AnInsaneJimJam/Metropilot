@@ -1,4 +1,4 @@
-// Application sessions for hosted mode (API-1, issue #16, D43). A verified provider token is exchanged once for
+// Application sessions for hosted mode (API-1, issue #16, D56). A verified provider token is exchanged once for
 // an opaque HTTP-only cookie; the tenant is always derived from the stored session, never from the request.
 import { createHash, randomBytes } from "node:crypto";
 import type pg from "pg";

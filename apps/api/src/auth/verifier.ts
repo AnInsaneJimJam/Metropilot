@@ -1,4 +1,4 @@
-// Provider token verification (API-1, issue #16, D43). Tokens are untrusted input: the algorithm is pinned,
+// Provider token verification (API-1, issue #16, D56). Tokens are untrusted input: the algorithm is pinned,
 // the key comes from configuration (never from the token), and issuer, audience, subject and times are checked
 // before any claim is used. No JWT library: node:crypto verifies ES256 against one configured P-256 key.
 import { createPublicKey, verify, type KeyObject } from "node:crypto";

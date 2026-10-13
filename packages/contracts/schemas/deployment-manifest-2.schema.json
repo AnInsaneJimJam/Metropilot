@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://monad-hack.example/schemas/deployment-manifest-2.schema.json",
   "title": "DeploymentManifest",
-  "description": "Immutable manifest of one deployment, deployment-manifest/2 (architecture.md section 4; supersedes /1 for new deployments, decision D42): every pinned input a runtime and executor act on, plus catalogPins, the exact catalog_versions rows (kind, ref, version, content hash) the deployment's catalog was resolved from. Its JCS SHA-256 is the assignment's manifestHash. Contains references and hashes only: no secrets, URLs, programs or cloud specifications. A resume keeps the manifest and mints a new generation; a redeploy creates a new deployment and manifest.",
+  "description": "Immutable manifest of one deployment, deployment-manifest/2 (architecture.md section 4; supersedes /1 for new deployments, decision D55): every pinned input a runtime and executor act on, plus catalogPins, the exact catalog_versions rows (kind, ref, version, content hash) the deployment's catalog was resolved from. Its JCS SHA-256 is the assignment's manifestHash. Contains references and hashes only: no secrets, URLs, programs or cloud specifications. A resume keeps the manifest and mints a new generation; a redeploy creates a new deployment and manifest.",
   "type": "object",
   "additionalProperties": false,
   "required": [

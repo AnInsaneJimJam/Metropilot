@@ -95,7 +95,7 @@ async function deployPreset(pool: pg.Pool, store: RuntimeControlStore, presetId:
   await pool.query("insert into estimates (tenant_id, id, agent_id, strategy_revision_id, assumptions, created_at, expires_at) values ($1, $2, $3, $4, '{}', now(), now() + interval '15 minutes')", [tenantId, estimateId, agentId, revisionId]);
   await pool.query('insert into simulation_accounts (tenant_id, id, agent_id, session) values ($1, $2, $3, 1)', [tenantId, simulationAccountId, agentId]);
   // The catalog a launch resolves from the seeded catalog_versions rows (issue #18), with its pins.
-  const connectorVersions = { 'paper.uniswap': '1.1.0', 'paper.kuru': '1.1.0' };
+  const connectorVersions = { 'paper.uniswap': '1.0.1', 'paper.kuru': '1.1.0' };
   const resolved = await new CatalogResolver().resolve(pool, { mode: 'paper', networkRef: 'paper-monad', connectors: connectorVersions, resourceProfileRef: 'paper-small-v1' });
   const { deploymentId } = await store.deploy({
     tenantId, agentId, strategyRevisionId: revisionId, mode: 'paper', catalog: resolved.catalog, catalogPins: resolved.pins, connectorVersions, runtimeImageDigest: LOCAL_IMAGE_DIGEST,

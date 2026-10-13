@@ -1,5 +1,5 @@
 // Database commands, run from the repository root via `pnpm db:preflight|db:migrate|db:seed|db:seed:live|db:prune`.
-// prune is the scheduled audit retention job (D44); it also runs against hosted databases.
+// prune is the scheduled audit retention job (D57); it also runs against hosted databases.
 // The root scripts load .env with --env-file-if-exists; existing environment variables take precedence.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

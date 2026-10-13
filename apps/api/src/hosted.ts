@@ -1,4 +1,4 @@
-// Hosted control API entry point (API-1, issue #16, D43). Production only: verified Privy sessions, one HTTPS
+// Hosted control API entry point (API-1, issue #16, D56). Production only: verified Privy sessions, one HTTPS
 // studio origin, no development session. TLS terminates at the ingress in front of this process.
 import pg from "pg";
 import { ConfigError, databaseUrl, requireEnv, type Env } from "./config.ts";

@@ -1,4 +1,4 @@
-// Catalog resolution from catalog_versions (API-2, issue #18; docs/specs/api-and-data.md section 3, decision D42).
+// Catalog resolution from catalog_versions (API-2, issue #18; docs/specs/api-and-data.md section 3, decision D55).
 // Compilation and launch build the strategy Catalog from enabled, immutable catalog rows instead of the synthetic
 // one, and a deployment pins the exact rows it used (deployment-manifest/2 catalogPins). Definitions are platform
 // data, not trusted code: each is hash-checked against its row and shape-checked before it reaches the compiler.
@@ -44,6 +44,7 @@ const KIND_ORDER: readonly CatalogKind[] = ['network', 'asset', 'connector', 'fe
 const KIND_LABEL: Record<CatalogKind, string> = {
   network: 'network', connector: 'connector', asset: 'asset', feed: 'price feed', modelProfile: 'model profile', resourceProfile: 'resource profile',
 };
+const VENUES = new Set(['uniswap-v3', 'kuru', 'curve', 'aave']);
 const SCALAR_TYPES = new Set(['Boolean', 'Integer', 'Decimal', 'Timestamp', 'Enum', 'Text']);
 const REF = /^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9][A-Za-z0-9_-]*)*$/;
 
@@ -92,14 +93,17 @@ const shapes = {
   },
   feed(d: Obj) {
     if (!isRef(d['networkRef']) || !isRef(d['baseAssetRef']) || !isText(d['quoteUnit'], 16) || !isRef(d['connectorRef'])) return undefined;
-    if (d['source'] !== 'poolTwap' || d['finality'] !== 'finalized' || !isInt(d['windowSeconds'], 1, 86_400)) return undefined;
+    // A native oracle has no averaging window (0); pool TWAP and EMA feeds average over at least a second.
+    const source = d['source'];
+    if ((source !== 'poolTwap' && source !== 'poolEma' && source !== 'nativeOracle') || d['finality'] !== 'finalized') return undefined;
+    if (!isInt(d['windowSeconds'], source === 'nativeOracle' ? 0 : 1, 86_400)) return undefined;
     return {
       networkRef: d['networkRef'],
-      entry: { baseAssetRef: d['baseAssetRef'], quoteUnit: d['quoteUnit'], source: 'poolTwap' as const, connectorRef: d['connectorRef'], windowSeconds: d['windowSeconds'], finality: 'finalized' as const },
+      entry: { baseAssetRef: d['baseAssetRef'], quoteUnit: d['quoteUnit'], source, connectorRef: d['connectorRef'], windowSeconds: d['windowSeconds'], finality: 'finalized' as const },
     };
   },
   connector(d: Obj, mode: CatalogMode) {
-    if (!isRef(d['networkRef']) || !isText(d['adapterVersion'], 64) || (d['venue'] !== 'uniswap-v3' && d['venue'] !== 'kuru')) return undefined;
+    if (!isRef(d['networkRef']) || !isText(d['adapterVersion'], 64) || !VENUES.has(String(d['venue']))) return undefined;
     if (!isStringList(d['actions']) || !isStringList(d['capabilities']) || !isObj(d['reads'])) return undefined;
     const reads: Record<string, { arguments: RecordType; result: RecordType; maxAgeSeconds: number }> = {};
     for (const [operation, read] of Object.entries(d['reads'])) {
@@ -110,7 +114,7 @@ const shapes = {
       reads[operation] = { arguments: args, result, maxAgeSeconds: read['maxAgeSeconds'] };
     }
     return {
-      entry: { networkRef: d['networkRef'], mode, version: d['adapterVersion'], venue: d['venue'], actions: [...d['actions']] },
+      entry: { networkRef: d['networkRef'], mode, version: d['adapterVersion'], venue: d['venue'] as Catalog['connectors'][string]['venue'], actions: [...d['actions']] },
       reads,
     };
   },
