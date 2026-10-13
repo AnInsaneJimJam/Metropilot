@@ -1,0 +1,28 @@
+{
+  "description": "rejects unapproved mode",
+  "expect": {
+    "fieldPath": "/mode",
+    "keyword": "const"
+  },
+  "document": {
+    "schemaVersion": "connector-manifest/1",
+    "ref": "paper.uniswap",
+    "version": "1.1.0",
+    "networkRef": "paper-monad",
+    "mode": "live",
+    "sourceNetworkRef": "monad-mainnet",
+    "sourceChainId": 143,
+    "protocol": "uniswap-v3",
+    "poolAddress": "0x83fef384587d07731880416db8850f8af66fda03",
+    "capabilities": [
+      "price.read",
+      "swap.quote",
+      "swap.exactInput"
+    ],
+    "limitations": [
+      "Mainnet observations; virtual inventory and simulated fills only.",
+      "One reviewed pool; no live signing, routing or liquidity positions."
+    ],
+    "verifiedAt": "2026-10-12T17:21:04.000Z"
+  }
+}

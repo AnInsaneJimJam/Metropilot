@@ -129,7 +129,7 @@ describe('database', { skip }, () => {
         if (statement.type === 'swap.exactInput') refs.add(statement.connectorRef).add(statement.tokenInRef).add(statement.tokenOutRef);
       }
     }
-    const { rows } = await db.query<{ ref: string }>('select ref from catalog_versions where ref = any($1)', [[...refs]]);
+    const { rows } = await db.query<{ ref: string }>('select distinct ref from catalog_versions where ref = any($1)', [[...refs]]);
     assert.deepEqual(rows.map((row) => row.ref).sort(), [...refs].sort());
   });
 

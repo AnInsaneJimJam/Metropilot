@@ -1,3 +1,5 @@
+import { SOURCES, rayToApr, checkedObservation } from '@monad-hack/connectors';
+import type { BrokerRequest, BrokerResult } from '@monad-hack/contracts';
 // Runtime-facing control plane on PostgreSQL (docs/integration/control-api.md). Two roles:
 //  - the routes a runtime calls (poll, artifacts, run state, wait, results, complete, timeline, heartbeat);
 //  - API-worker roles the runtime never performs (deploy, fan-out, schedules, resume, pause, lease reclaim).
@@ -508,6 +510,52 @@ export class RuntimeControlStore {
     return { schemaVersion: 'artifact/1', ref, kind: row.kind, contentHash: row.content_hash, text: row.body, deploymentId: row.deployment_id };
   }
 
+  /** A capability-scoped price.read, pinned durably before returning. No RPC/provider access in the runtime. */
+  async marketRead(scope: CapabilityScope, request: BrokerRequest): Promise<BrokerResult> {
+    this.#valid('brokerRequest', request);
+    if (scope.runId !== request.runId) throw new RunControlError('FORBIDDEN', 'Broker request is outside the capability run.');
+    return this.#tx(async (c) => {
+      const lease = await c.query<{ fencing_token: string }>('select fencing_token from run_assignments where assignment_id = $1', [scope.assignmentId]);
+      if (!lease.rows[0]) throw new RunControlError('LEASE_FENCED', 'Assignment is no longer available.');
+      const run = await this.#fenced(c, request.runId, scope.assignmentId, String(lease.rows[0].fencing_token));
+      const op = await this.#operation(c, request.runId, request.operationKey);
+      if (!op || op.kind !== request.kind || op.node_id !== request.nodeId || JSON.stringify(op.iteration_path) !== JSON.stringify(request.iterationPath)) throw new RunControlError('FORBIDDEN', 'Persist the matching waiting operation before broker dispatch.');
+      const requestHash = await contentHash(request);
+      const prior = (await c.query<{ request_hash: string; document: BrokerResult }>('select request_hash, document from market_read_results where run_id = $1 and operation_key = $2', [request.runId, request.operationKey])).rows[0];
+      if (prior) {
+        if (prior.request_hash !== requestHash) throw new RunControlError('IDEMPOTENCY_CONFLICT', 'Broker operation body changed.');
+        return prior.document;
+      }
+      const program = await this.#program(run.deployment_id);
+      const find = (value: unknown): Record<string, unknown> | undefined => {
+        if (!value || typeof value !== 'object') return undefined;
+        const record = value as Record<string, unknown>;
+        if (record['id'] === request.nodeId) return record;
+        for (const child of Object.values(record)) { const found = find(child); if (found) return found; }
+        return undefined;
+      };
+      const node = find(program.strategy);
+      const market = SOURCES.find((m) => m.connectorRef === request.connectorRef && (m.protocol !== 'aave-v3' || m.base === (request.operation?.startsWith('ausd.') ? 'AUSD' : 'USDC')));
+      const allowedOperation = market?.protocol === 'aave-v3' ? ['price.read','reserve.read','ausd.price.read','ausd.reserve.read'].includes(request.operation ?? '') : request.operation === 'price.read';
+      const base = { schemaVersion: 'broker-result/1' as const, operationKey: request.operationKey };
+      let result: BrokerResult;
+      if (request.kind !== 'read' || !allowedOperation || !market || Object.keys(request.arguments ?? {}).length || node?.['type'] !== 'read' || node['connectorRef'] !== request.connectorRef || node['operation'] !== request.operation) {
+        result = { ...base, disposition: 'refused', reason: { code: 'BROKER_NOT_ALLOWED', message: 'Only approved native price and reserve reads are available.' } };
+      } else {
+        const row = (await c.query<{ document: unknown }>(`select document from finalized_market_observations where feed_ref = $1 order by (document->>'observedAt') desc limit 1`, [market.feedRef])).rows[0];
+        const observation = row ? checkedObservation(row.document) : undefined;
+        const now = this.#now();
+        if (!observation || Date.parse(now) - Date.parse(observation.observedAt) > 30_000) {
+          result = { ...base, disposition: 'refused', reason: { code: 'BROKER_STALE_DATA', message: 'No fresh finalized native oracle observation is available.' } };
+        } else {
+          result = { ...base, disposition: 'completed', resultId: uuidv7(), value: request.operation?.endsWith('reserve.read') && observation.reserve ? {supplyApr:rayToApr(observation.reserve.supplyRateRay),variableBorrowApr:rayToApr(observation.reserve.variableBorrowRateRay),observedAt:observation.observedAt} : { price: observation.price, observedAt: observation.observedAt }, observedAt: observation.observedAt, receivedAt: now };
+        }
+      }
+      await c.query('insert into market_read_results (run_id, operation_key, request_hash, document, tenant_id) values ($1,$2,$3,$4,$5)', [request.runId, request.operationKey, requestHash, result, run.tenant_id]);
+      return result;
+    });
+  }
+
   async loadRun(runId: string, assignmentId: string, fencingToken: string): Promise<RunState> {
     return this.#tx(async (c) => {
       const run = await this.#fenced(c, runId, assignmentId, fencingToken);
@@ -628,7 +676,7 @@ export class RuntimeControlStore {
     }
   }
 
-  #valid(kind: 'assignmentPoll' | 'runWait' | 'runResult' | 'runComplete' | 'timelineEntry', body: unknown): void {
+  #valid(kind: 'brokerRequest' | 'assignmentPoll' | 'runWait' | 'runResult' | 'runComplete' | 'timelineEntry', body: unknown): void {
     const result = validate(kind, body);
     if (!result.ok) throw new RunControlError('SCHEMA_INVALID', `Malformed ${kind} at ${result.issues[0]?.fieldPath || '/'}.`);
   }

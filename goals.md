@@ -18,6 +18,8 @@ Status date: 2026-10-01. This is the authoritative root checklist. Gate IDs are 
 - [ ] **G11 — Connector-only distribution:** versioned library/MCP server, sanitized export, local configuration guide, independent operator policy/key ownership, and conformance checks. Exit: another operator runs a connector without platform secrets or hosted-wallet authority.
 - [ ] **G12 — Expansion:** additional verified protocols and action families, deeper monitoring, historical evaluation, and optional mobile client. Exit: each increment has a separate scoped requirement and acceptance evidence; this gate is not permission to build speculative modules.
 
+Current connector scope (user decision, 2026-10-12): **Aave, Uniswap, Curve**. Mainnet native prices; Aave reserve rates; Uniswap/Curve paper swaps. Live signing and Aave lending actions are deferred. See [context](CONTEXT.md) and [capability boundaries](docs/specs/connectors.md#selected-connectors-2026-10-12).
+
 ## Progress rules
 
 Check local task prerequisites in the relevant `AGENTS.md`. Work may proceed in parallel where [plan.md](plan.md) allows it, but a root gate cannot be completed out of dependency order. Checklists describe implementation, not design approval. Feature removal or changed acceptance criteria must update the specification and plan, not silently erase an unchecked item.

@@ -63,7 +63,7 @@ export function StrategyScope({
             : "—"}
         </strong>
       </div>
-      <span className="scope-mode">SYNTHETIC</span>
+      <span className="scope-mode">PAPER</span>
     </div>
   );
 }

@@ -31,7 +31,7 @@ export function RehearsePanel({
     setPlaying(false);
     setBlock(0);
     setResult(undefined);
-    if (!program) return;
+    if (!program || Object.values(editorCatalog.feeds).some((f) => f.quoteUnit === 'USDC')) return;
     let active = true;
     rehearse(program, editorCatalog, scenario, aiScript).then(
       (rehearsal) => {
@@ -104,6 +104,13 @@ export function RehearsePanel({
     ),
   );
   const trades = shown.filter((e) => e.kind === "settled").length;
+  if (Object.values(editorCatalog.feeds).some((f) => f.quoteUnit === 'USDC')) return (
+    <section className="rehearse-page" aria-labelledby="rehearse-heading">
+      <div className="section-intro"><span className="eyebrow">02 / REHEARSE</span><h2 id="rehearse-heading">Native market observations.</h2></div>
+      <p>These strategies use finalized Monad mainnet data: Uniswap’s 30-second geometric TWAP, Curve’s native EMA, and Aave’s native USD prices and reserve rates. Scenario playback for these oracle methods is not available yet.</p>
+      <p>Review your example threshold and virtual USDC budget, then launch in Operate to run against actual observations with simulated fills.</p>
+    </section>
+  );
   return (
     <section className="rehearse-page" aria-labelledby="rehearse-heading">
       <div className="section-intro">

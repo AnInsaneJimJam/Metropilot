@@ -16,3 +16,5 @@ export { profileIssues, PROFILE_LIMITS } from './workspace/modes.ts';
 export type { Experience, ExecutionMode, DeploymentProfile } from './workspace/modes.ts';
 export { PRESETS } from './workspace/presets.ts';
 export type { Preset } from './workspace/presets.ts';
+
+export { MARKET_PRESETS } from './workspace/market-presets.ts';
