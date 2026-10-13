@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as Blockly from "blockly/core";
 import * as En from "blockly/msg/en";
-import { BLOCK } from "@monad-hack/strategy";
+import { BLOCK, INPUT } from "@monad-hack/strategy";
 import { ensureRoot, injectOptions, setUpBlockly } from "./blocks/index.ts";
 import { PRESETS, loadPreset } from "./presets/index.ts";
 import { saveEnvelope } from "./useLiveValidation.ts";
@@ -43,7 +43,10 @@ export function useBlocklyStudio(
     else ensureRoot(ws);
     setWorkspace(ws);
     let last = JSON.stringify(saveEnvelope(ws));
-    const first = ws.getBlocksByType(BLOCK.crossesAbove, false)[0];
+    // Open on the first trigger, whatever its type, so the inspector starts with something to edit.
+    const first = ws
+      .getBlocksByType(BLOCK.root, false)[0]
+      ?.getInputTargetBlock(INPUT.triggers);
     if (first) callbacks.current.onSelect(first.id);
     const frame = requestAnimationFrame(() => fitWorkspace(ws));
     const observer = new ResizeObserver(() => Blockly.svgResize(ws));

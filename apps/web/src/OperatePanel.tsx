@@ -224,12 +224,11 @@ export function OperatePanel({
   if (!current)
     return (
       <section className="operate-page review-page" aria-label="Operate">
-        <div className="section-intro">
-          <span className="eyebrow">04 / OPERATE</span>
-          <h2>Save it, then launch it.</h2>
-          <p>Launching runs the saved revision in paper mode with virtual funds.</p>
+        <h2 className="visually-hidden">Operate</h2>
+        <div className="empty-state">
+          Save a revision first. Launching runs the saved revision in paper
+          mode with virtual funds.
         </div>
-        <div className="empty-state">Save a revision first.</div>
       </section>
     );
 
@@ -238,19 +237,13 @@ export function OperatePanel({
   const stopping = state === "stopping";
   return (
     <section className="operate-page review-page" aria-label="Operate">
-      <div className="section-intro">
-        <span className="eyebrow">04 / OPERATE</span>
-        <h2>Run it on paper.</h2>
-        <p>
-          The saved revision runs on the local stack with virtual funds. Prices come from finalized Monad mainnet native oracles. Trades use virtual USDC and simulated fills. AI profiles are not enabled. No wallet is connected.
-        </p>
-      </div>
+      <h2 className="visually-hidden">Operate</h2>
       {error && (
         <p className="budget-error" role="alert">
           {error}
         </p>
       )}
-      <div className="review-grid">
+      <div className="review-grid operate-grid">
         <div className="budget-section">
           <div className="section-line">
             <h3>Deployment</h3>
@@ -259,6 +252,12 @@ export function OperatePanel({
               {deployment === undefined ? "Loading" : deployment === null ? "Not launched" : state}
             </span>
           </div>
+          <p
+            className="operate-scope"
+            title="The saved revision runs on the local stack with virtual funds. Prices come from finalized Monad mainnet native oracles. Trades use virtual USDC and simulated fills. AI profiles are not enabled. No wallet is connected."
+          >
+            Mainnet prices · virtual USDC · simulated fills
+          </p>
           {deployment && (
             <dl className="review-limits operate-facts">
               <div>
@@ -267,7 +266,7 @@ export function OperatePanel({
               </div>
               <div>
                 <dt>Manifest</dt>
-                <dd className="hash">{deployment.manifestHash.slice(0, 14)}…</dd>
+                <dd title={deployment.manifestHash}>{deployment.manifestHash.slice(0, 14)}…</dd>
               </div>
             </dl>
           )}
@@ -398,7 +397,7 @@ export function OperatePanel({
           {custody.enabled && agentId && <FundsPanel agentId={agentId} localFaucet={custody.localFaucet} />}
         </div>
         <aside className="review-aside">
-          <span className="eyebrow">LIVE ACTIVITY</span>
+          <h3>Activity</h3>
           {trimmed && <p className="note">Older activity was removed by retention; showing events from the oldest kept one.</p>}
           {events.length === 0 ? (
             <p className="note">Waiting for events…</p>
