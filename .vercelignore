@@ -8,7 +8,7 @@
 node_modules/
 **/node_modules/
 **/dist/
-infra/terraform/.terraform/
+**/.terraform/
 infra/terraform/*.tfstate*
 infra/terraform/terraform.tfvars
 .env.hosting
@@ -16,3 +16,9 @@ graphify-out/
 apps/web/test-results/
 apps/web/playwright-report/
 *.dump
+infra/tunnel/cloudflared/
+infra/tunnel/.env.server
+infra/stack/.env.server
+infra/lightsail/.env.server
+infra/lightsail/terraform.tfvars
+**/*.tfstate*

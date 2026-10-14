@@ -1,0 +1,15 @@
+# Laptop hosting overlay (docs/hosting/TUNNEL.md): no public ports; cloudflared dials out to Cloudflare and forwards
+# https://<api hostname> to the API. Used with infra/stack/docker-compose.yml (Caddy profile off).
+services:
+  cloudflared:
+    # cloudflare/cloudflared:2026.9.1, multi-arch index digest.
+    image: cloudflare/cloudflared:2026.9.1@sha256:b269e8abd07a5bf6f3f4be65d5050b2174eca89c56a0241a8ff32a16aec454e4
+    restart: unless-stopped
+    # The credentials are owner-only (0600, infra/tunnel/up.sh); run as that owner.
+    user: ${TUNNEL_UID}
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      - ${TUNNEL_CONFIG_DIR}:/etc/cloudflared:ro
+    networks: [edge, egress]
+    depends_on: [api]
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }

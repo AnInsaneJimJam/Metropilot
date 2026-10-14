@@ -35,6 +35,14 @@ describe("Privy access-token verification", () => {
     assert.equal((await verifier.verify(signToken(claims({ aud: ["other", APP_ID] })))).subject, SUBJECT);
   });
 
+  test("several published keys (rotation): a token signed by any of them verifies, others are refused", async () => {
+    const second = pair();
+    const both = new PrivyVerifier({ appId: APP_ID, verificationKey: `${pem}\n${second.publicKey.export({ type: "spki", format: "pem" }).toString()}`, now: () => NOW * 1000 });
+    assert.equal((await both.verify(signToken(claims(), { key: second.privateKey }))).subject, SUBJECT);
+    assert.equal((await both.verify(signToken(claims()))).subject, SUBJECT);
+    await assert.rejects(both.verify(signToken(claims(), { key: pair().privateKey })), AuthError);
+  });
+
   test("forged, tampered, foreign and expired tokens are refused", async () => {
     const good = signToken(claims());
     const [h, , s] = good.split(".");

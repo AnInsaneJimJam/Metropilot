@@ -1,5 +1,6 @@
 // G1 workspace baseline: manifests stay pinned, private and in the declared dependency direction.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -63,14 +64,17 @@ test('Node and pnpm pins are exact and agree with the engines range', () => {
 test('module and rule-bearing directories have AGENTS.md (design.md directory rules)', () => {
   // Code/data subfolders inherit the nearest AGENTS.md.
   const inherits = new Set(['src', 'scripts', 'generated', 'workflows']);
-  // Git-ignored build output (.gitignore) is not repository structure.
+  // Git-ignored directories (build output, local credentials, demo renders) are not repository structure.
   const ignored = new Set(['node_modules', 'dist', 'build', 'coverage']);
+  const gitIgnored = new Set(execFileSync('git', ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'], { cwd: root, encoding: 'utf8' })
+    .split('\n').filter((l) => l.endsWith('/')).map((l) => l.slice(0, -1)));
   const missing: string[] = [];
   const walk = (dir: string, underFixtures: boolean): void => {
     for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
       if (!entry.isDirectory() || ignored.has(entry.name) || entry.name === '.git') continue;
       if (entry.name.startsWith('.') && entry.name !== '.github') continue;
       const path = dir === '.' ? entry.name : `${dir}/${entry.name}`;
+      if (gitIgnored.has(path)) continue;
       if (inherits.has(entry.name) || underFixtures) continue;
       if (!existsSync(join(root, path, 'AGENTS.md'))) missing.push(path);
       walk(path, entry.name === 'fixtures');

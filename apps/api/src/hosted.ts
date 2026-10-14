@@ -75,6 +75,8 @@ export function createHostedApp(pool: pg.Pool, config: HostedConfig, wiring: { f
     ...(wiring.funds ? { funds: wiring.funds } : {}),
     catalog: () => lifecycle.paperCatalog(),
     origin: config.origin,
+    // TRUSTED_PROXY_HOPS: proxies in front of the API (Lightsail: Vercel rewrite + Caddy = 2), so rate limits see clients.
+    ...(Number(process.env["TRUSTED_PROXY_HOPS"]) > 0 ? { trustedProxyHops: Number(process.env["TRUSTED_PROXY_HOPS"]) } : {}),
     authenticate: (cookie) => sessions.authenticate(cookie),
     identity: sessions,
   });

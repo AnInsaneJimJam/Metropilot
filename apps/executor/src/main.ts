@@ -26,6 +26,8 @@ if (!secretHex || !/^[0-9a-f]{64}$/.test(secretHex)) throw new Error('EXECUTOR_C
 
 // Paper feeds come from the synthetic catalog: USD-quoted feeds price their base asset in paper.USD.
 const feeds: FeedPair[] = MARKETS.map(m => ({feedRef:m.feedRef,connectorRef:m.connectorRef,baseAssetRef:`paper.${m.base}`,quoteAssetRef:`paper.${m.quote}`,baseDecimals:TOKENS[m.base].decimals,quoteDecimals:TOKENS[m.quote].decimals}));
+// Native MON swaps 1:1 through WMON (the router wraps it), so the WMON feeds also price paper MON.
+feeds.push(...feeds.filter(f => f.baseAssetRef === 'paper.WMON').map(f => ({ ...f, baseAssetRef: 'paper.MON' })));
 const pool = new pg.Pool({ connectionString: url, max: 10, connectionTimeoutMillis: 3000 });
 const live = liveFromEnv(process.env);
 await live?.verify();
